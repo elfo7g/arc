@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Arc</title>
+    <link rel="icon" type="image/png" sizes="64x64" href="assets/favicon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&family=Noto+Serif+JP:wght@400;500;600;700&family=Shippori+Mincho:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Arc navigation">
+        <button class="brand" type="button" data-tab="home">
+          <span class="brand-main">
+            <strong>Arc</strong>
+            <span class="brand-action" aria-label="Settings" role="button" tabindex="0"><span class="icon icon-gear"></span></span>
+          </span>
+          <span class="brand-sub">夜に帰ってくる人生アプリ</span>
+        </button>
+        <nav class="nav-list" aria-label="Primary">
+          <button class="nav-item is-active" type="button" data-tab="home">
+            <span class="icon icon-home" aria-hidden="true"></span>
+            <span><strong>ホーム</strong><small>Niloと過ごす夜</small></span>
+          </button>
+          <button class="nav-item" type="button" data-tab="journal">
+            <span class="icon icon-book" aria-hidden="true"></span>
+            <span><strong>日記</strong><small>今日の記録</small></span>
+          </button>
+          <button class="nav-item" type="button" data-tab="quests">
+            <span class="icon icon-compass" aria-hidden="true"></span>
+            <span><strong>クエスト</strong><small>やりたいこと</small></span>
+          </button>
+          <button class="nav-item" type="button" data-tab="story">
+            <span class="icon icon-flag" aria-hidden="true"></span>
+            <span><strong>人生の章</strong><small>あなたのストーリー</small></span>
+          </button>
+          <button class="nav-item" type="button" data-tab="memory">
+            <span class="icon icon-memory" aria-hidden="true"></span>
+            <span><strong>Niloの記憶</strong><small>覚えてくれていること</small></span>
+          </button>
+        </nav>
+        <div class="nilo-level-card">
+          <img src="assets/nilo/nilo-normal.png" alt="" aria-hidden="true">
+          <div>
+            <span>Niloレベル</span>
+            <strong id="nilo-level">Lv. 1</strong>
+            <i aria-hidden="true"><b id="nilo-level-progress"></b></i>
+          </div>
+        </div>
+      </aside>
+
+      <main>
+        <section id="home" class="screen home-screen is-active" aria-labelledby="home-title">
+          <div class="night-stage" aria-hidden="true">
+            <span class="spark spark-a"></span>
+            <span class="spark spark-b"></span>
+            <span class="spark spark-c"></span>
+            <img class="nilo-glow" src="assets/nilo/nilo-light.png" alt="">
+          </div>
+
+          <header class="welcome">
+            <div>
+              <p class="eyebrow">20時以降の帰還</p>
+              <h1 id="home-title">おかえり。</h1>
+              <p>今日はどんな一日だった？ Niloは答えを急がず、あなたの言葉を静かに映します。</p>
+            </div>
+            <div class="time-card" aria-label="今日の日付">
+              <strong id="clock-date">5月28日（水）</strong>
+              <small id="clock-time" hidden></small>
+              <small id="life-day-count" class="life-day-count"></small>
+            </div>
+          </header>
+
+          <section class="ritual-log" aria-label="Night Ritual">
+            <div class="ritual-head">
+              <p class="eyebrow">Night Ritual</p>
+            </div>
+            <div id="ritual-messages" class="ritual-messages"></div>
+            <p id="ritual-status" class="ritual-status" aria-live="polite"></p>
+          </section>
+
+          <form id="reflection-form" class="reflection-box">
+            <label for="reflection-text">
+              <span class="sr-only">今日の振り返り</span>
+            </label>
+            <textarea id="reflection-text" maxlength="50" placeholder="Niloに短く答える..."></textarea>
+            <output id="reflection-counter" class="reflection-counter" for="reflection-text">0/50</output>
+            <button class="primary-action" type="submit">答える <span aria-hidden="true">›</span></button>
+          </form>
+
+          <section class="hint-row" aria-label="書くヒント">
+            <span>ヒント</span>
+            <button type="button" data-prompt="嬉しかったこと">嬉しかったこと</button>
+            <button type="button" data-prompt="悩んだこと">悩んだこと</button>
+            <button type="button" data-prompt="学んだこと">学んだこと</button>
+            <button type="button" data-prompt="感謝したこと">感謝したこと</button>
+            <button type="button" data-prompt="未来の自分へ">未来の自分へ</button>
+          </section>
+
+          <p class="closing-line">あなたの人生は、世界でひとつの物語。<br>Niloは、その物語の、いちばんの味方です。</p>
+        </section>
+
+        <aside class="insight-rail" aria-label="Today panels">
+          <section class="panel today-panel" aria-labelledby="today-title">
+            <div class="panel-head">
+              <h2 id="today-title">今日のあなた</h2>
+              <span class="pulse" aria-hidden="true"></span>
+            </div>
+            <div class="nilo-note">
+              <img src="assets/nilo/nilo-normal.png" alt="" aria-hidden="true">
+              <div>
+                <strong>今夜の記録はこれからです。</strong>
+                <p id="nilo-message">まだ今日の記録はありません。</p>
+              </div>
+            </div>
+            <div class="mood-line">
+              <span>今日の気分</span>
+              <strong>未記録</strong>
+              <span class="dots is-empty" aria-label="not recorded"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+              <b>--/10</b>
+            </div>
+            <div class="daily-word">
+              <span>今日の一言</span>
+              <p>今日の言葉を書くと、ここにNiloの映した一言が入ります。</p>
+            </div>
+          </section>
+
+          <section class="panel quests-panel" aria-labelledby="quests-title">
+            <div class="panel-head">
+              <h2 id="quests-title">進行中のクエスト</h2>
+              <button type="button" data-tab="quests">すべて見る ›</button>
+            </div>
+            <div id="quest-list" class="quest-list"></div>
+          </section>
+
+          <section class="panel memories-panel" aria-labelledby="memories-title">
+            <div class="panel-head">
+              <h2 id="memories-title">最近の気づき</h2>
+              <button type="button" data-tab="memory">すべて見る ›</button>
+            </div>
+            <div id="memory-list" class="memory-list"></div>
+          </section>
+
+        </aside>
+
+        <section id="journal" class="screen sub-screen" aria-labelledby="journal-title">
+          <div class="sub-hero">
+            <p class="eyebrow">One reflection a day</p>
+            <h1 id="journal-title">日記</h1>
+            <p>無限に話し続ける場所ではなく、今日の自分に戻る場所。</p>
+          </div>
+          <div class="journal-layout">
+            <aside class="journal-calendar-panel" aria-label="日記カレンダー">
+              <div class="journal-calendar-head">
+                <button id="journal-prev-month" type="button" aria-label="前の月" title="前の月">‹</button>
+                <strong id="journal-month-label"></strong>
+                <button id="journal-next-month" type="button" aria-label="次の月" title="次の月">›</button>
+              </div>
+              <div class="journal-weekdays" aria-hidden="true">
+                <span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span>
+              </div>
+              <div id="journal-calendar" class="journal-calendar"></div>
+            </aside>
+
+            <section class="journal-day-panel" aria-labelledby="journal-selected-title">
+              <div class="journal-day-head">
+                <div>
+                  <small>Selected day</small>
+                  <h2 id="journal-selected-title">今日の日記</h2>
+                </div>
+                <button id="journal-today" type="button">今日</button>
+              </div>
+              <div id="journal-list" class="large-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="quests" class="screen sub-screen" aria-labelledby="quest-page-title">
+          <div class="sub-hero">
+            <p class="eyebrow">Quiet quests</p>
+            <h1 id="quest-page-title">クエスト</h1>
+            <p>比較やランキングではなく、明日の自分が少し続きを見たくなる約束。</p>
+          </div>
+          <section class="quest-generator" aria-labelledby="tomorrow-quests-title">
+            <div>
+              <small>Tomorrow</small>
+              <h2 id="tomorrow-quests-title">明日のクエスト</h2>
+              <p>明日の自分が少し楽になる、やさしい行動をそっと用意します。</p>
+            </div>
+            <div id="tomorrow-quest-candidates" class="tomorrow-quest-candidates" hidden></div>
+            <button id="accept-tomorrow-quests" class="accept-tomorrow-quests" type="button" hidden></button>
+            <p id="tomorrow-quests-status" class="quest-generator-status" aria-live="polite"></p>
+          </section>
+          <div id="quest-page-list" class="large-list"></div>
+        </section>
+
+        <section id="story" class="screen sub-screen" aria-labelledby="story-title">
+          <div class="sub-hero">
+            <p class="eyebrow">Life chapters</p>
+            <h1 id="story-title">人生の章</h1>
+            <p>Niloが覚えている転機や言葉を、章として残します。</p>
+          </div>
+          <ol id="chapter-list" class="chapter-list"></ol>
+        </section>
+
+        <section id="memory" class="screen sub-screen" aria-labelledby="memory-title">
+          <div class="sub-hero">
+            <p class="eyebrow">Nilo remembers</p>
+            <h1 id="memory-title">Niloの記憶</h1>
+            <p>アカウントに紐づく圧縮された記憶。全部を持ち歩かず、あなたらしさだけを灯します。</p>
+          </div>
+          <div id="memory-page-list" class="large-list"></div>
+        </section>
+      </main>
+
+      <button class="mobile-settings-button" type="button" aria-label="設定を開く" data-settings-open>
+        <span class="icon icon-gear" aria-hidden="true"></span>
+      </button>
+
+      <nav class="bottom-tabs" aria-label="Primary">
+        <button class="tab is-active" type="button" data-tab="home"><span class="icon icon-home"></span><small>ホーム</small></button>
+        <button class="tab" type="button" data-tab="journal"><span class="icon icon-book"></span><small>日記</small></button>
+        <button class="tab" type="button" data-tab="quests"><span class="icon icon-compass"></span><small>クエスト</small></button>
+        <button class="tab" type="button" data-tab="story"><span class="icon icon-flag"></span><small>章</small></button>
+        <button class="tab" type="button" data-tab="memory"><span class="icon icon-memory"></span><small>記憶</small></button>
+      </nav>
+
+      <div id="settings-panel" class="settings-panel" hidden>
+        <div class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+          <aside class="settings-side">
+            <div class="settings-head">
+              <div>
+                <small>Arc</small>
+                <h2 id="settings-title">設定</h2>
+                <p>旅の準備を整えよう。</p>
+              </div>
+              <img src="assets/icons/status-stability.png" alt="" aria-hidden="true">
+            </div>
+
+            <div class="settings-tabs" role="tablist" aria-label="設定カテゴリ">
+              <button class="settings-tab is-active" type="button" role="tab" aria-selected="true" data-settings-tab="bgm">
+                <span>♪</span>
+                <strong>音楽</strong>
+                <small>BGMの設定</small>
+              </button>
+              <button class="settings-tab" type="button" role="tab" aria-selected="false" data-settings-tab="profile">
+                <span>♟</span>
+                <strong>冒険者</strong>
+                <small>あなたの情報</small>
+              </button>
+              <button class="settings-tab" type="button" role="tab" aria-selected="false" data-settings-tab="language">
+                <span>◎</span>
+                <strong>言語</strong>
+                <small>Language</small>
+              </button>
+              <button class="settings-tab" type="button" role="tab" aria-selected="false" data-settings-tab="notifications">
+                <span>♢</span>
+                <strong>夜の呼びかけ</strong>
+                <small>Niloからのリマインド</small>
+              </button>
+              <button class="settings-tab" type="button" role="tab" aria-selected="false" data-settings-tab="privacy">
+                <span>▤</span>
+                <strong>プライバシー</strong>
+                <small>データとプライバシー</small>
+              </button>
+            </div>
+            <button class="settings-close-wide" type="button" data-settings-close>× 閉じる</button>
+          </aside>
+
+          <section class="settings-main">
+            <div class="settings-page" data-settings-page="bgm">
+              <div class="settings-page-title">
+                <span>♪</span>
+                <div>
+                  <h3 id="bgm-title">音楽</h3>
+                  <p>旅のBGMを選んで、心地よい時間を。</p>
+                </div>
+              </div>
+
+              <section class="setting-row settings-feature" aria-labelledby="bgm-title">
+                <div class="settings-art" aria-hidden="true">
+                  <img src="assets/arc-home-bg.png" alt="">
+                </div>
+                <div class="settings-feature-copy">
+                  <small>現在のBGM</small>
+                  <strong id="bgm-track-label">ランダムに夜のサウンドトラックを流します。</strong>
+                  <p>静かな夜に合う曲をランダムで再生します。</p>
+                  <button id="bgm-random" class="setting-secondary" type="button">別の曲を選ぶ ›</button>
+                </div>
+                <button id="bgm-toggle" class="setting-toggle" type="button" aria-pressed="false">OFF</button>
+              </section>
+
+              <section class="settings-track-panel" aria-labelledby="bgm-list-title">
+                <small id="bgm-list-title">BGMを選ぶ</small>
+                <div id="bgm-track-list" class="settings-track-list"></div>
+              </section>
+
+            </div>
+
+            <div class="settings-page" data-settings-page="profile" hidden>
+              <div class="settings-page-title">
+                <span>♟</span>
+                <div>
+                  <h3 id="profile-title">冒険者</h3>
+                  <p>名前、生年月日、プロフィール画像を保存します。</p>
+                </div>
+              </div>
+
+              <section class="settings-section" aria-labelledby="profile-title">
+                <div class="profile-editor">
+                  <button id="profile-avatar-button" class="profile-avatar" type="button" aria-label="プロフィール画像を変更">
+                    <img id="profile-avatar-preview" alt="" hidden>
+                    <span id="profile-avatar-fallback" aria-hidden="true">A</span>
+                  </button>
+                  <div class="profile-fields">
+                    <label>
+                      <span>名前</span>
+                      <input id="profile-name" type="text" maxlength="24" placeholder="ユーザーネーム">
+                    </label>
+                    <label>
+                      <span>生年月日</span>
+                      <input id="profile-birthdate" type="date">
+                    </label>
+                    <label>
+                      <span>プロフィール画像</span>
+                      <input id="profile-image" class="sr-only" type="file" accept="image/*">
+                      <small>画像アイコンをクリックして変更できます。</small>
+                    </label>
+                    <button id="profile-save" class="setting-secondary" type="button">プロフィールを保存</button>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div class="settings-page" data-settings-page="language" hidden>
+              <div class="settings-page-title">
+                <span>◎</span>
+                <div>
+                  <h3 id="language-title">言語</h3>
+                  <p>アプリで使う言語を選びます。</p>
+                </div>
+              </div>
+
+              <section class="settings-section" aria-labelledby="language-title">
+                <label class="language-field">
+                  <span>表示言語</span>
+                  <select id="language-select">
+                    <option value="ja">日本語</option>
+                    <option value="en">English</option>
+                    <option value="es">Español</option>
+                    <option value="zh">中文</option>
+                  </select>
+                </label>
+                <p id="language-status" class="setting-note" aria-live="polite"></p>
+              </section>
+            </div>
+
+            <div class="settings-page" data-settings-page="notifications" hidden>
+              <div class="settings-page-title">
+                <span>♢</span>
+                <div>
+                  <h3 id="notifications-title">夜の呼びかけ</h3>
+                  <p>Niloからのリマインドを整えます。</p>
+                </div>
+              </div>
+
+              <section class="settings-section settings-stack" aria-labelledby="notifications-title">
+                <div class="settings-control-row">
+                  <div>
+                    <strong>通知</strong>
+                    <p>Night Ritualの時間に知らせます。</p>
+                  </div>
+                  <button id="notification-toggle" class="setting-toggle" type="button" aria-pressed="false">OFF</button>
+                </div>
+
+                <label class="language-field">
+                  <span>呼びかける時間</span>
+                  <input id="notification-time" type="time" value="22:00">
+                </label>
+
+                <div class="settings-chip-group" aria-label="通知する曜日">
+                  <button type="button" data-notification-day="0">日</button>
+                  <button type="button" data-notification-day="1">月</button>
+                  <button type="button" data-notification-day="2">火</button>
+                  <button type="button" data-notification-day="3">水</button>
+                  <button type="button" data-notification-day="4">木</button>
+                  <button type="button" data-notification-day="5">金</button>
+                  <button type="button" data-notification-day="6">土</button>
+                </div>
+
+                <button id="notification-permission" class="setting-secondary" type="button">通知を許可する</button>
+                <p id="notification-status" class="setting-note" aria-live="polite"></p>
+              </section>
+            </div>
+
+            <div class="settings-page" data-settings-page="privacy" hidden>
+              <div class="settings-page-title">
+                <span>▤</span>
+                <div>
+                  <h3 id="privacy-title">プライバシー</h3>
+                  <p>Arcが記録をどう扱うかを選びます。</p>
+                </div>
+              </div>
+
+              <section class="settings-section settings-stack" aria-labelledby="privacy-title">
+                <div class="settings-control-row">
+                  <div>
+                    <strong>日記からクエストを作る</strong>
+                    <p>Night Ritualの内容をクエスト生成に使います。</p>
+                  </div>
+                  <button class="setting-toggle" type="button" data-privacy-toggle="questLink" aria-pressed="true">ON</button>
+                </div>
+
+                <div class="settings-control-row">
+                  <div>
+                    <strong>Niloの記憶に保存する</strong>
+                    <p>大事な場面として残す候補に使います。</p>
+                  </div>
+                  <button class="setting-toggle" type="button" data-privacy-toggle="memoryLink" aria-pressed="true">ON</button>
+                </div>
+
+                <div class="settings-control-row">
+                  <div>
+                    <strong>プロフィールを反映する</strong>
+                    <p>名前や日数を表示に使います。</p>
+                  </div>
+                  <button class="setting-toggle" type="button" data-privacy-toggle="profileUse" aria-pressed="true">ON</button>
+                </div>
+
+                <button id="privacy-export" class="setting-secondary" type="button">データを書き出す</button>
+                <p id="privacy-status" class="setting-note" aria-live="polite"></p>
+              </section>
+            </div>
+          </section>
+          <p class="settings-foot">設定はいつでも変更できます。あなたの旅は、あなたのペースで。</p>
+        </div>
+      </div>
+
+      <audio id="bgm-player" preload="auto"></audio>
+      <div id="nilo-cursor" class="nilo-cursor" aria-hidden="true">
+        <img src="assets/nilo/nilo-normal.png" alt="">
+      </div>
+    </div>
+
+    <script src="client.js"></script>
+  </body>
+</html>

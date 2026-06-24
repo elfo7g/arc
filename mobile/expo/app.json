@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "Arc",
+    "slug": "arc-nilo",
+    "scheme": "arc-nilo",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#03050b"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.arc.nilo"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#03050b"
+      },
+      "package": "app.arc.nilo"
+    },
+    "extra": {
+      "arcApiBaseUrl": "http://192.168.0.19:4173",
+      "supabaseUrl": "https://fbpczitkbxefjxudcqmq.supabase.co"
+    },
+    "plugins": [
+      "expo-web-browser",
+      "expo-audio"
+    ]
+  }
+}
