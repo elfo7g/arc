@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "expo-web",
+      "runtimeExecutable": "scripts\\expo-web.cmd",
+      "runtimeArgs": [],
+      "port": 8090,
+      "autoPort": false
+    }
+  ]
+}
