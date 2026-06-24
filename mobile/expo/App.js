@@ -204,6 +204,7 @@ function AppContent() {
   const [ritualLocked, setRitualLocked] = useState(false);
   const [homePromptVisible, setHomePromptVisible] = useState(false);
   const [unlockNotice, setUnlockNotice] = useState("");
+  const [sealActive, setSealActive] = useState(false);
   const [journal, setJournal] = useState([]);
   const [quests, setQuests] = useState(() => createDailyQuests());
   const [memories, setMemories] = useState([]);
@@ -253,6 +254,7 @@ function AppContent() {
   const unlockNoticeOpacity = useRef(new Animated.Value(0)).current;
   const tabPressListener = useRef(null);
   const unlockNoticeTimer = useRef(null);
+  const sealTimer = useRef(null);
   const pageScrollRef = useRef(null);
   const composerInputRef = useRef(null);
   const ritualLockedRef = useRef(false);
@@ -305,6 +307,8 @@ function AppContent() {
     ritualLockedRef.current = false;
     ritualFocusTimers.current.forEach(clearTimeout);
     ritualFocusTimers.current = [];
+    if (sealTimer.current) clearTimeout(sealTimer.current);
+    setSealActive(false);
     setRitualLocked(false);
     setInputMode(false);
     setHomePromptVisible(false);
@@ -340,6 +344,7 @@ function AppContent() {
     ritualFocusTimers.current.forEach(clearTimeout);
     ritualFocusTimers.current = [];
     if (unlockNoticeTimer.current) clearTimeout(unlockNoticeTimer.current);
+    if (sealTimer.current) clearTimeout(sealTimer.current);
   }, []);
 
   useEffect(() => {
@@ -855,6 +860,7 @@ function AppContent() {
           isSending={isSending}
           keyboardVisible={keyboardVisible}
           inputLocked={ritualLocked}
+          sealed={sealActive}
           screenHeight={height}
           onBeginInput={beginReflectionInput}
         />
@@ -874,6 +880,7 @@ function AppContent() {
     const text = input.trim().slice(0, 50);
     if (!text || isSending || !reflectionInputEnabled) return;
 
+    playUiSound();
     const nextMessages = [...ritualMessages, { role: "user", text }];
     setRitualMessages(nextMessages);
     setAnswerPreview({ id: createId("answer"), text });
@@ -921,7 +928,23 @@ function AppContent() {
       setCurrentReflectionQuestion(question);
       setAnswerPreview(null);
       setQuestionTransitioning(false);
-    }, 460);
+    }, 560);
+  }
+
+  // Close the night with a quiet sealed beat instead of snapping back to a button.
+  function sealRitual(closing) {
+    ritualLockedRef.current = false;
+    setRitualLocked(false);
+    setInputMode(false);
+    composerInputRef.current?.blur();
+    Keyboard.dismiss();
+    setSealActive(true);
+    showReflectionQuestion(closing);
+    if (sealTimer.current) clearTimeout(sealTimer.current);
+    sealTimer.current = setTimeout(() => {
+      setSealActive(false);
+      showReflectionQuestion(reflectionQuestions[0]);
+    }, 3400);
   }
 
   function applyNightResult(result, messages) {
@@ -931,13 +954,7 @@ function AppContent() {
       const finalMessages = [...messages, { role: "nilo", text: closing }];
       const journalId = createId("journal");
       setRitualMessages([{ role: "nilo", text: reflectionQuestions[0] }]);
-      showReflectionQuestion(closing);
       setQuestionCount(1);
-      ritualLockedRef.current = false;
-      setRitualLocked(false);
-      setInputMode(false);
-      composerInputRef.current?.blur();
-      Keyboard.dismiss();
       setJournal((items) => [
         {
           id: journalId,
@@ -952,6 +969,7 @@ function AppContent() {
       ]);
       addRitualMemory({ messages: finalMessages, journalId, entryDateKey, essence: result.niloLine, closing, result });
       addGeneratedQuests(result);
+      sealRitual(closing);
       return;
     }
 
@@ -1001,13 +1019,8 @@ function AppContent() {
     ]);
     addRitualMemory({ messages: finalMessages, journalId, entryDateKey, essence: "", closing });
     setRitualMessages([{ role: "nilo", text: reflectionQuestions[0] }]);
-    showReflectionQuestion(closing);
     setQuestionCount(1);
-    ritualLockedRef.current = false;
-    setRitualLocked(false);
-    setInputMode(false);
-    composerInputRef.current?.blur();
-    Keyboard.dismiss();
+    sealRitual(closing);
   }
 
   function createLocalFollowUpQuestion(messages) {
@@ -1231,7 +1244,7 @@ function AppContent() {
           ) : (
             <NightRitualButton
               enabled={reflectionInputEnabled}
-              visible={activeTab === "home" && homePromptVisible}
+              visible={activeTab === "home" && homePromptVisible && !sealActive}
               streakDays={journalStreakDays}
               onPress={beginReflectionInput}
               animatedStyle={{
@@ -1326,14 +1339,14 @@ function Header({ onSettings }) {
   );
 }
 
-function NiloHomeStage({ question, dimmed, thinking, hideQuestion, compact }) {
+function NiloHomeStage({ question, dimmed, thinking, hideQuestion, compact, sealed }) {
   const opacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     opacity.setValue(0);
     Animated.timing(opacity, {
       toValue: dimmed ? 0 : 1,
-      duration: dimmed ? 320 : 720,
+      duration: dimmed ? 360 : 820,
       easing: Easing.inOut(Easing.cubic),
       useNativeDriver: true
     }).start();
@@ -1344,7 +1357,10 @@ function NiloHomeStage({ question, dimmed, thinking, hideQuestion, compact }) {
       <View style={[styles.niloStageCopy, compact && styles.niloStageCopyCompact]}>
         {thinking && <NiloThinkingIndicator />}
         {!hideQuestion && (
-          <Animated.Text style={[styles.niloStageQuestion, compact && styles.niloStageQuestionCompact, { opacity }]}>{question}</Animated.Text>
+          <>
+            {sealed && <Animated.Text style={[styles.niloSealMark, { opacity }]}>✦ 今夜を綴じました</Animated.Text>}
+            <Animated.Text style={[styles.niloStageQuestion, compact && styles.niloStageQuestionCompact, { opacity }]}>{question}</Animated.Text>
+          </>
         )}
       </View>
     </View>
@@ -1411,7 +1427,7 @@ function AnswerPreview({ answer, fading, compact }) {
       index += 1;
       setTypedText(text.slice(0, index));
       if (index >= text.length) clearInterval(interval);
-    }, 34);
+    }, 42);
 
     return () => clearInterval(interval);
   }, [answer, fade, text]);
@@ -1596,6 +1612,7 @@ function HomeScreen({
   isSending,
   keyboardVisible,
   inputLocked,
+  sealed,
   screenHeight,
   onBeginInput
 }) {
@@ -1625,6 +1642,7 @@ function HomeScreen({
           thinking={questionTransitioning || isSending}
           hideQuestion={Boolean(answerPreview)}
           compact={compact}
+          sealed={sealed}
         />
         <AnswerPreview answer={answerPreview} fading={questionTransitioning} compact={compact} />
       </Animated.View>
@@ -1745,7 +1763,9 @@ function RitualComposer({
             style={styles.composerInput}
           />
         </View>
-        <Text style={styles.counter}>{input.length}/50</Text>
+        {input.length > 0 && (
+          <Text style={[styles.counter, input.length >= 44 && styles.counterNear]}>{input.length}/50</Text>
+        )}
       </Pressable>
     </Animated.View>
   );
@@ -3198,6 +3218,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 26
   },
+  niloSealMark: {
+    color: "rgba(217,179,106,0.82)",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.5,
+    marginBottom: 8,
+    textAlign: "center"
+  },
   niloStageQuestion: {
     color: "#f6efe4",
     fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
@@ -3472,6 +3500,9 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     minWidth: 34,
     textAlign: "right"
+  },
+  counterNear: {
+    color: "rgba(217,179,106,0.92)"
   },
   primaryButton: {
     alignItems: "center",
