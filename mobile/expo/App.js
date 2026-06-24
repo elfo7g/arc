@@ -22,6 +22,7 @@ import {
   View
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import * as WebBrowser from "expo-web-browser";
 import { supabase } from "./src/supabase";
@@ -129,6 +130,7 @@ const dailyBank = [
 
 const apiBaseUrl = Constants.expoConfig?.extra?.arcApiBaseUrl || "http://localhost:4173";
 const arcStartDate = "2026-06-01";
+const STORAGE_KEY = "arc.state.v1";
 const DEV_MODE = true;
 const DEV_USER = {
   id: "dev-user-001",
@@ -205,6 +207,7 @@ function AppContent() {
   const [journal, setJournal] = useState([]);
   const [quests, setQuests] = useState(() => createDailyQuests());
   const [memories, setMemories] = useState([]);
+  const [hydrated, setHydrated] = useState(false);
   const [profile, setProfile] = useState(() => DEV_MODE ? DEV_PROFILE : { name: "", birthdate: "" });
   const [settings, setSettings] = useState({
     bgmEnabled: false,
@@ -365,6 +368,50 @@ function AppContent() {
       subscription.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    // Load any saved life data once on launch, before the save effect can run.
+    let mounted = true;
+    AsyncStorage.getItem(STORAGE_KEY)
+      .then((raw) => {
+        if (!mounted) return;
+        if (raw) {
+          try {
+            const saved = JSON.parse(raw);
+            if (Array.isArray(saved.journal)) setJournal(saved.journal);
+            if (Array.isArray(saved.quests) && saved.quests.length) setQuests(saved.quests);
+            if (Array.isArray(saved.memories)) setMemories(saved.memories);
+            if (saved.profile) setProfile((current) => ({ ...current, ...saved.profile }));
+            if (saved.settings) {
+              setSettings((current) => ({
+                ...current,
+                ...saved.settings,
+                privacy: { ...current.privacy, ...(saved.settings.privacy || {}) }
+              }));
+            }
+          } catch {
+            // Corrupt cache should never block launch; fall back to defaults.
+          }
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (mounted) setHydrated(true);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    // Persist only after hydration so initial defaults never overwrite saved data.
+    if (!hydrated) return;
+    AsyncStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ journal, quests, memories, profile, settings })
+    ).catch(() => undefined);
+  }, [hydrated, journal, quests, memories, profile, settings]);
 
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
