@@ -484,6 +484,61 @@ JSONだけを返してください。Markdownは禁止です。
 `.trim();
 }
 
+function normalizeChapters(value) {
+  const chapters = Array.isArray(value?.chapters)
+    ? value.chapters.slice(0, 8).map((chapter) => ({
+      title: String(chapter.title || "無題の章").slice(0, 40),
+      period: String(chapter.period || "").slice(0, 32),
+      summary: String(chapter.summary || "").slice(0, 160),
+      memoryIds: Array.isArray(chapter.memoryIds)
+        ? chapter.memoryIds.slice(0, 80).map((id) => String(id || "").slice(0, 80)).filter(Boolean)
+        : []
+    })).filter((chapter) => chapter.title)
+    : [];
+  return { chapters };
+}
+
+function buildChapterPrompt({ memories }) {
+  const safeMemories = Array.isArray(memories)
+    ? memories.slice(0, 120).map((memory, index) => {
+      const date = String(memory.dateKey || memory.dateLabel || "").slice(0, 10);
+      const essence = String(memory.essence || "").slice(0, 120);
+      const kept = String(memory.keptPhrase || "").slice(0, 80);
+      const mood = String(memory.moodLabel || "").slice(0, 16);
+      return `- id:${String(memory.id || index)} / ${date || "日付不明"} / 意味:${essence}${kept ? ` / 言葉:「${kept}」` : ""}${mood ? ` / 気分:${mood}` : ""}`;
+    }).join("\n")
+    : "";
+
+  return `
+あなたは人生アプリ ARC の Nilo です。
+ユーザーが夜ごとに残してきた「記憶」（その日の意味）を、人生の章として静かに束ねます。
+これは要約ではなく、時間の流れの中で意味のまとまりを見つける作業です。
+
+記憶一覧（日付つき）:
+${safeMemories || "なし"}
+
+章のまとめ方:
+- 記憶を時期やテーマのまとまりで 2〜5 個の章に分けてください。記憶が少なければ 1 章でもよいです。
+- 各章には、その時期の温度が伝わる短いタイトルをつけてください。出来事名の羅列にしないでください。
+- period は章が含む記憶の時期（例 "2026.06" や "2026.06.01 – 2026.06.20"）。
+- summary はその章が何を意味する時期だったかを 1〜2 文で静かに。説明ではなく余韻を残してください。
+- memoryIds には、その章に含まれる記憶の id を入れてください。与えられた id 以外は作らないでください。
+- 圧、評価、励まし、アドバイスはしないでください。ただ、そっと束ねるだけ。
+
+次のJSONだけを返してください。Markdownは不要です。
+{
+  "chapters": [
+    {
+      "title": "章のタイトル。40文字以内",
+      "period": "時期の表記",
+      "summary": "1〜2文。160文字以内",
+      "memoryIds": ["含まれる記憶のid"]
+    }
+  ]
+}
+`.trim();
+}
+
 async function callGeminiJson(prompt, options = {}) {
   const temperature = Number.isFinite(Number(options.temperature)) ? Number(options.temperature) : 0.7;
   let lastDetail = "";
@@ -587,6 +642,30 @@ async function handleNightRitual(req, res) {
   }
 }
 
+async function handleChapters(req, res) {
+  if (!process.env.GEMINI_API_KEY) {
+    sendJson(res, 500, { message: "GEMINI_API_KEY が設定されていません。" });
+    return;
+  }
+
+  try {
+    const body = JSON.parse(await readBody(req) || "{}");
+    const memories = Array.isArray(body.memories) ? body.memories : [];
+    if (!memories.length) {
+      sendJson(res, 400, { message: "章にする記憶がまだありません。" });
+      return;
+    }
+
+    const json = await callGeminiJson(buildChapterPrompt(body), { temperature: 0.7 });
+    sendJson(res, 200, normalizeChapters(json));
+  } catch (error) {
+    sendJson(res, error.detail ? 502 : 500, {
+      message: error.message || "章の生成でエラーが発生しました。",
+      detail: error.detail
+    });
+  }
+}
+
 async function handleEveningMessage(req, res) {
   if (!process.env.GEMINI_API_KEY) {
     sendJson(res, 500, { message: "GEMINI_API_KEY is not set." });
@@ -658,6 +737,11 @@ function routeRequest(req, res) {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/api/nilo/chapters") {
+    handleChapters(req, res);
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/api/nilo/evening-message") {
     handleEveningMessage(req, res);
     return;
@@ -683,4 +767,5 @@ module.exports = routeRequest;
 module.exports.handleNiloReflection = handleNiloReflection;
 module.exports.handleTomorrowQuests = handleTomorrowQuests;
 module.exports.handleNightRitual = handleNightRitual;
+module.exports.handleChapters = handleChapters;
 module.exports.routeRequest = routeRequest;
