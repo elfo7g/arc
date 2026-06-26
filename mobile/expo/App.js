@@ -24,7 +24,9 @@ import {
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
+import * as Haptics from "expo-haptics";
 import * as WebBrowser from "expo-web-browser";
+import { BlurView } from "expo-blur";
 import { supabase } from "./src/supabase";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -208,6 +210,8 @@ function AppContent() {
   const [journal, setJournal] = useState([]);
   const [quests, setQuests] = useState(() => createDailyQuests());
   const [memories, setMemories] = useState([]);
+  const [chapters, setChapters] = useState([]);
+  const [chaptersBusy, setChaptersBusy] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [profile, setProfile] = useState(() => DEV_MODE ? DEV_PROFILE : { name: "", birthdate: "" });
   const [settings, setSettings] = useState({
@@ -215,10 +219,18 @@ function AppContent() {
     bgmTrackId: "arc-night",
     bgmVolume: 0.36,
     soundEffectsEnabled: true,
+    hapticsEnabled: true,
     backgroundId: "navy-check",
     language: "ja",
     notificationsEnabled: false,
     notificationTime: "22:00",
+    ritual: {
+      questionCount: 5,
+      autoSaveJournal: true,
+      confirmExit: true,
+      windowStart: "20:00",
+      windowEnd: "03:00"
+    },
     privacy: {
       questLink: true,
       memoryLink: true,
@@ -229,7 +241,9 @@ function AppContent() {
   const activeQuests = useMemo(() => quests.filter((quest) => !quest.completed), [quests]);
   const journalDateKey = getJournalDateKey();
   const journalRecordedToday = journal.some((entry) => entry.dateKey === journalDateKey);
-  const ritualAvailable = isRitualWindow(new Date()) && !journalRecordedToday;
+  const ritualSettings = settings.ritual || {};
+  const ritualQuestionTarget = Math.max(1, Math.min(maxReflectionQuestions, Number(ritualSettings.questionCount) || maxReflectionQuestions));
+  const ritualAvailable = isRitualWindow(new Date(), ritualSettings) && !journalRecordedToday;
   const reflectionInputEnabled = ritualLocked || (!journalRecordedToday && (ritualAvailable || DEV_MODE));
   const composerPrompt = journalRecordedToday ? "今日は記録済みです" : "短く答える";
   const journalRecordDays = new Set(journal.map((entry) => entry.dateKey || getJournalDateKey())).size;
@@ -249,10 +263,10 @@ function AppContent() {
   const bgmPlayerRef = useRef(null);
   const sfxPlayerRef = useRef(null);
   const pageScrollX = useRef(new Animated.Value(0)).current;
-  const tabPressMotion = useRef(new Animated.Value(0)).current;
   const tabBarOpacity = useRef(new Animated.Value(1)).current;
   const unlockNoticeOpacity = useRef(new Animated.Value(0)).current;
-  const tabPressListener = useRef(null);
+  const programmaticScroll = useRef(false);
+  const programmaticScrollTimer = useRef(null);
   const unlockNoticeTimer = useRef(null);
   const sealTimer = useRef(null);
   const pageScrollRef = useRef(null);
@@ -324,6 +338,10 @@ function AppContent() {
   }
 
   function requestExitNightRitual() {
+    if (settings.ritual?.confirmExit === false) {
+      exitNightRitual();
+      return;
+    }
     Alert.alert(
       "本当に終了しますか？",
       "",
@@ -345,6 +363,7 @@ function AppContent() {
     ritualFocusTimers.current = [];
     if (unlockNoticeTimer.current) clearTimeout(unlockNoticeTimer.current);
     if (sealTimer.current) clearTimeout(sealTimer.current);
+    if (programmaticScrollTimer.current) clearTimeout(programmaticScrollTimer.current);
   }, []);
 
   useEffect(() => {
@@ -386,11 +405,13 @@ function AppContent() {
             if (Array.isArray(saved.journal)) setJournal(saved.journal);
             if (Array.isArray(saved.quests) && saved.quests.length) setQuests(saved.quests);
             if (Array.isArray(saved.memories)) setMemories(saved.memories);
+            if (Array.isArray(saved.chapters)) setChapters(saved.chapters);
             if (saved.profile) setProfile((current) => ({ ...current, ...saved.profile }));
             if (saved.settings) {
               setSettings((current) => ({
                 ...current,
                 ...saved.settings,
+                ritual: { ...current.ritual, ...(saved.settings.ritual || {}) },
                 privacy: { ...current.privacy, ...(saved.settings.privacy || {}) }
               }));
             }
@@ -414,9 +435,9 @@ function AppContent() {
     if (!hydrated) return;
     AsyncStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ journal, quests, memories, profile, settings })
+      JSON.stringify({ journal, quests, memories, chapters, profile, settings })
     ).catch(() => undefined);
-  }, [hydrated, journal, quests, memories, profile, settings]);
+  }, [hydrated, journal, quests, memories, chapters, profile, settings]);
 
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
@@ -653,6 +674,7 @@ function AppContent() {
   }
 
   async function pickProfileImage() {
+    playUiSound();
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert("写真を選択できません", "プロフィール写真を変更するには、写真ライブラリへのアクセスを許可してください。");
@@ -671,6 +693,9 @@ function AppContent() {
   }
 
   function playUiSound() {
+    if (settings.hapticsEnabled) {
+      Haptics.selectionAsync().catch(() => undefined);
+    }
     if (!settings.soundEffectsEnabled) return;
     const player = sfxPlayerRef.current;
     if (!player) return;
@@ -725,30 +750,17 @@ function AppContent() {
     const nextIndex = tabs.findIndex((tab) => tab.id === tabId);
     if (nextIndex < 0) return;
     if (tabId !== activeTab) playUiSound();
-    const startX = pagePosition.current;
     const endX = nextIndex * pageStep;
     setActiveTab(tabId);
     currentPageIndex.current = nextIndex;
-    tabPressMotion.stopAnimation();
-    if (tabPressListener.current) {
-      tabPressMotion.removeListener(tabPressListener.current);
-      tabPressListener.current = null;
-    }
-    tabPressMotion.setValue(startX);
-    const listenerId = tabPressMotion.addListener(({ value }) => {
-      pageScrollRef.current?.scrollTo({ x: value, animated: false });
-    });
-    tabPressListener.current = listenerId;
-    Animated.timing(tabPressMotion, {
-      toValue: endX,
-      duration: 560,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false
-    }).start(() => {
-      tabPressMotion.removeListener(listenerId);
-      tabPressListener.current = null;
-      pageScrollRef.current?.scrollTo({ x: endX, animated: false });
-    });
+    // Let the platform run one smooth native scroll instead of stepping
+    // scrollTo every frame on the JS thread (which fought snap + re-renders).
+    programmaticScroll.current = true;
+    if (programmaticScrollTimer.current) clearTimeout(programmaticScrollTimer.current);
+    programmaticScrollTimer.current = setTimeout(() => {
+      programmaticScroll.current = false;
+    }, 480);
+    pageScrollRef.current?.scrollTo({ x: endX, animated: true });
   }
 
   const handlePageScroll = useMemo(() => Animated.event(
@@ -764,7 +776,9 @@ function AppContent() {
         }
         const offsetX = event.nativeEvent.contentOffset.x;
         pagePosition.current = offsetX;
-        if (tabPressListener.current) return;
+        // While we drive a tab-tap scroll, let pageScrollX track the glide
+        // (for scale/indicator) but don't churn activeTab through passed tabs.
+        if (programmaticScroll.current) return;
         const nextIndex = Math.max(0, Math.min(tabs.length - 1, Math.round(offsetX / pageStep)));
         if (!tabUnlocks[tabs[nextIndex].id]) {
           currentPageIndex.current = initialPageIndex;
@@ -784,6 +798,11 @@ function AppContent() {
   ), [initialPageIndex, pageScrollX, pageStep, ritualLocked, tabUnlocks]);
 
   function settlePage(event) {
+    programmaticScroll.current = false;
+    if (programmaticScrollTimer.current) {
+      clearTimeout(programmaticScrollTimer.current);
+      programmaticScrollTimer.current = null;
+    }
     if (ritualLocked) {
       currentPageIndex.current = initialPageIndex;
       pagePosition.current = initialPageIndex * pageStep;
@@ -808,6 +827,7 @@ function AppContent() {
 
   function beginReflectionInput() {
     if (activeTab !== "home" || !reflectionInputEnabled || isSending) return;
+    playUiSound();
     currentPageIndex.current = initialPageIndex;
     pagePosition.current = initialPageIndex * pageStep;
     pageScrollX.setValue(initialPageIndex * pageStep);
@@ -835,7 +855,7 @@ function AppContent() {
   const pageViews = [
     {
       id: "quests",
-      node: <QuestScreen quests={activeQuests} completeQuest={completeQuest} />
+      node: <QuestScreen quests={activeQuests} completeQuest={completeQuest} onUiSound={playUiSound} />
     },
     {
       id: "journal",
@@ -868,7 +888,7 @@ function AppContent() {
     },
     {
       id: "story",
-      node: <StoryScreen />
+      node: <StoryScreen memories={memories} chapters={chapters} onGenerate={generateChapters} busy={chaptersBusy} />
     },
     {
       id: "memory",
@@ -900,7 +920,7 @@ function AppContent() {
         body: JSON.stringify({
           messages: nextMessages,
           questionCount,
-          forceFinish: questionCount >= maxReflectionQuestions,
+          forceFinish: questionCount >= ritualQuestionTarget,
           activeQuests: activeQuests.map((quest) => ({
             id: quest.id,
             title: quest.title,
@@ -955,6 +975,10 @@ function AppContent() {
       const journalId = createId("journal");
       setRitualMessages([{ role: "nilo", text: reflectionQuestions[0] }]);
       setQuestionCount(1);
+      if (settings.ritual?.autoSaveJournal === false) {
+        sealRitual(closing);
+        return;
+      }
       setJournal((items) => [
         {
           id: journalId,
@@ -974,7 +998,7 @@ function AppContent() {
     }
 
     const nextQuestion = result.nextQuestion || createLocalFollowUpQuestion(messages);
-    setQuestionCount((value) => Math.min(maxReflectionQuestions, value + 1));
+    setQuestionCount((value) => Math.min(ritualQuestionTarget, value + 1));
     setRitualMessages([
       ...messages,
       { role: "nilo", text: nextQuestion }
@@ -984,13 +1008,13 @@ function AppContent() {
   }
 
   function applyReflectionFallback(messages) {
-    if (questionCount >= maxReflectionQuestions) {
+    if (questionCount >= ritualQuestionTarget) {
       completeFallback(messages);
       return;
     }
 
     const nextQuestion = createLocalFollowUpQuestion(messages);
-    setQuestionCount((value) => Math.min(maxReflectionQuestions, value + 1));
+    setQuestionCount((value) => Math.min(ritualQuestionTarget, value + 1));
     setRitualMessages([
       ...messages,
       { role: "nilo", text: nextQuestion }
@@ -1005,6 +1029,12 @@ function AppContent() {
     const closing = "今夜の記録を、静かに残しました。";
     const journalId = createId("journal");
     const finalMessages = [...messages, { role: "nilo", text: closing }];
+    if (settings.ritual?.autoSaveJournal === false) {
+      setRitualMessages([{ role: "nilo", text: reflectionQuestions[0] }]);
+      setQuestionCount(1);
+      sealRitual(closing);
+      return;
+    }
     setJournal((items) => [
       {
         id: journalId,
@@ -1103,6 +1133,39 @@ function AppContent() {
     setQuests((items) => items.map((quest) => quest.id === id ? { ...quest, completed: true } : quest));
   }
 
+  async function generateChapters() {
+    if (chaptersBusy || !memories.length) return;
+    setChaptersBusy(true);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/nilo/chapters`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memories: memories.map((memory) => ({
+            id: memory.id,
+            dateKey: memory.dateKey,
+            essence: memory.essence,
+            keptPhrase: memory.keptPhrase,
+            moodLabel: memory.moodLabel
+          }))
+        })
+      });
+
+      if (!response.ok) throw new Error("request failed");
+      const result = await response.json();
+      const generated = (result.chapters || [])
+        .filter((chapter) => chapter?.title)
+        .map((chapter) => ({ id: createId("chapter"), ...chapter }));
+      setChapters(generated.length ? generated : buildLocalChapters(memories));
+    } catch {
+      // Offline or no API key: still bind the days into months locally.
+      setChapters(buildLocalChapters(memories));
+    } finally {
+      setChaptersBusy(false);
+    }
+  }
+
   if (authLoading) {
     return (
       <ImageBackground source={activeBackground.source} style={styles.background} resizeMode="cover">
@@ -1158,7 +1221,10 @@ function AppContent() {
     <ImageBackground source={activeBackground.source} style={styles.background} resizeMode="cover">
       <View style={styles.scrim} />
       <SafeAreaView style={styles.safe}>
-        <Header onSettings={() => setSettingsOpen(true)} />
+        <Header onSettings={() => {
+          playUiSound();
+          setSettingsOpen(true);
+        }} />
 
         <Animated.ScrollView
           ref={pageScrollRef}
@@ -1294,8 +1360,13 @@ function AppContent() {
           activeBgmTrack={activeBgmTrack}
           bgmStatus={bgmStatus}
           journal={journal}
+          setJournal={setJournal}
           quests={quests}
+          setQuests={setQuests}
           memories={memories}
+          setMemories={setMemories}
+          chapters={chapters}
+          setChapters={setChapters}
           session={session}
           authLoading={authLoading}
           authBusy={authBusy}
@@ -1332,9 +1403,28 @@ function Header({ onSettings }) {
         <Text style={styles.brand}>Arc</Text>
         <Text style={styles.brandSub}>夜に帰ってくる人生アプリ</Text>
       </View>
-      <Pressable onPress={onSettings} style={styles.settingsButton}>
+      <Pressable onPress={onSettings} style={({ pressed }) => [styles.settingsButton, pressed && styles.touchPressedTight]}>
         <SettingsIcon id="settings" active />
       </Pressable>
+    </View>
+  );
+}
+
+function GlassBackdrop({ intensity = 24 }) {
+  return (
+    <>
+      <BlurView pointerEvents="none" intensity={intensity} tint="dark" style={StyleSheet.absoluteFill} />
+      <View pointerEvents="none" style={styles.glassWash} />
+      <View pointerEvents="none" style={styles.glassEdge} />
+    </>
+  );
+}
+
+function GlassView({ children, style, intensity = 24 }) {
+  return (
+    <View style={style}>
+      <GlassBackdrop intensity={intensity} />
+      {children}
     </View>
   );
 }
@@ -1736,6 +1826,7 @@ function RitualComposer({
         </Pressable>
       )}
       <Pressable onPress={onPress} onPressIn={onPress} style={styles.composerLine}>
+        <GlassBackdrop intensity={28} />
         <Text style={styles.composerSparkle}>✦</Text>
         <View style={styles.composerInputWrap}>
           {!input && (
@@ -1773,15 +1864,36 @@ function RitualComposer({
 
 function NightRitualButton({ enabled, visible, streakDays, onPress, animatedStyle }) {
   const fade = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  const breath = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(fade, {
       toValue: visible ? 1 : 0,
-      duration: visible ? 220 : 180,
+      duration: visible ? 260 : 180,
       easing: Easing.inOut(Easing.cubic),
       useNativeDriver: true
     }).start();
   }, [fade, visible]);
+
+  // A slow breath on the mark — Nilo quietly inviting the ritual.
+  useEffect(() => {
+    if (!visible || !enabled) {
+      breath.stopAnimation();
+      breath.setValue(0);
+      return undefined;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(breath, { toValue: 1, duration: 2200, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(breath, { toValue: 0, duration: 2200, easing: Easing.inOut(Easing.quad), useNativeDriver: true })
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [breath, enabled, visible]);
+
+  const markOpacity = breath.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] });
+  const markScale = breath.interpolate({ inputRange: [0, 1], outputRange: [1, 1.18] });
 
   return (
     <Animated.View pointerEvents={visible ? "box-none" : "none"} style={[styles.ritualButtonWrap, animatedStyle, { opacity: fade }]}>
@@ -1794,7 +1906,9 @@ function NightRitualButton({ enabled, visible, streakDays, onPress, animatedStyl
           !enabled && styles.ritualStartButtonDisabled
         ]}
       >
-        <Text style={[styles.ritualStartIcon, !enabled && styles.ritualStartTextDisabled]}>✦</Text>
+        <GlassBackdrop intensity={30} />
+        <View pointerEvents="none" style={styles.ritualButtonSheen} />
+        <Animated.Text style={[styles.ritualStartIcon, !enabled && styles.ritualStartTextDisabled, enabled && { opacity: markOpacity, transform: [{ scale: markScale }] }]}>✦</Animated.Text>
         <View style={styles.ritualStartCopy}>
           <Text style={[styles.ritualStartText, !enabled && styles.ritualStartTextDisabled]}>Night Ritual</Text>
           <Text style={[styles.ritualStreakText, !enabled && styles.ritualStartTextDisabled]}>
@@ -1836,7 +1950,7 @@ function FirstRunCard({ session, needsProfile, authBusy, onGoogleSignIn, onOpenP
   );
 }
 
-function QuestScreen({ quests, completeQuest }) {
+function QuestScreen({ quests, completeQuest, onUiSound }) {
   const [questView, setQuestView] = useState("daily");
   const [renderedQuestView, setRenderedQuestView] = useState("daily");
   const [questSwitchWidth, setQuestSwitchWidth] = useState(0);
@@ -1917,8 +2031,8 @@ function QuestScreen({ quests, completeQuest }) {
       <Animated.View style={{ opacity: questContentFade, transform: [{ translateY: questContentLift }] }}>
         {renderedQuestView === "daily" ? (
           <>
-            <QuestSection title="習慣クエスト" quests={habitQuests} completeQuest={completeQuest} />
-            <QuestSection title="NRクエスト" quests={nrQuests} completeQuest={completeQuest} />
+            <QuestSection title="習慣クエスト" quests={habitQuests} completeQuest={completeQuest} onUiSound={onUiSound} />
+            <QuestSection title="NRクエスト" quests={nrQuests} completeQuest={completeQuest} onUiSound={onUiSound} />
             {!dailyQuestCount && (
               <EmptyState
                 title="今日のデイリークエストはありません"
@@ -1930,7 +2044,7 @@ function QuestScreen({ quests, completeQuest }) {
           <>
             <View style={styles.questGrid}>
               {lifeQuests.map((quest) => (
-                <QuestTile key={quest.id} quest={quest} onComplete={completeQuest} />
+                <QuestTile key={quest.id} quest={quest} onComplete={completeQuest} onUiSound={onUiSound} />
               ))}
             </View>
             {!lifeQuests.length && (
@@ -1946,21 +2060,21 @@ function QuestScreen({ quests, completeQuest }) {
   );
 }
 
-function QuestSection({ title, quests, completeQuest }) {
+function QuestSection({ title, quests, completeQuest, onUiSound }) {
   if (!quests.length) return null;
   return (
     <View style={styles.questSection}>
       <Text style={styles.questSectionTitle}>{title}</Text>
       <View style={styles.questGrid}>
         {quests.map((quest) => (
-          <QuestTile key={quest.id} quest={quest} onComplete={completeQuest} />
+          <QuestTile key={quest.id} quest={quest} onComplete={completeQuest} onUiSound={onUiSound} />
         ))}
       </View>
     </View>
   );
 }
 
-function QuestTile({ quest, onComplete }) {
+function QuestTile({ quest, onComplete, onUiSound }) {
   const collapse = useRef(new Animated.Value(0)).current;
   const dust = useRef(questDust.map(() => new Animated.Value(0))).current;
   const [isCompleting, setIsCompleting] = useState(false);
@@ -1968,19 +2082,20 @@ function QuestTile({ quest, onComplete }) {
   function completeWithAnimation() {
     if (isCompleting) return;
     setIsCompleting(true);
+    onUiSound?.();
 
     Animated.parallel([
       Animated.timing(collapse, {
         toValue: 1,
-        duration: 720,
+        duration: 640,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: false
       }),
       Animated.stagger(
-        34,
+        30,
         dust.map((value) => Animated.timing(value, {
           toValue: 1,
-          duration: 680,
+          duration: 620,
           easing: Easing.out(Easing.quad),
           useNativeDriver: true
         }))
@@ -1988,28 +2103,30 @@ function QuestTile({ quest, onComplete }) {
     ]).start(() => onComplete(quest.id));
   }
 
+  // A small settle, then the card lifts up and to the right and fades —
+  // a quiet "carried away" rather than a busy shatter.
   const tileOpacity = collapse.interpolate({
-    inputRange: [0, 0.34, 0.78, 1],
-    outputRange: [1, 1, 0.46, 0]
+    inputRange: [0, 0.5, 0.82, 1],
+    outputRange: [1, 0.96, 0.5, 0]
   });
   const tileScale = collapse.interpolate({
-    inputRange: [0, 0.28, 0.72, 1],
-    outputRange: [1, 1.01, 0.62, 0.04]
+    inputRange: [0, 0.14, 1],
+    outputRange: [1, 1.04, 0.7]
   });
   const tileRotate = collapse.interpolate({
-    inputRange: [0, 0.72, 1],
-    outputRange: ["0deg", "-3deg", "-7deg"]
+    inputRange: [0, 0.14, 1],
+    outputRange: ["0deg", "-1.5deg", "6deg"]
   });
   const tileTranslateX = collapse.interpolate({
-    inputRange: [0, 0.24, 0.72, 1],
-    outputRange: [0, 18, 62, 74]
+    inputRange: [0, 0.14, 1],
+    outputRange: [0, -6, 128]
   });
   const tileTranslateY = collapse.interpolate({
-    inputRange: [0, 0.24, 0.72, 1],
-    outputRange: [0, -16, -52, -34]
+    inputRange: [0, 0.14, 1],
+    outputRange: [0, 10, -184]
   });
   const tileHeight = collapse.interpolate({
-    inputRange: [0, 0.48, 1],
+    inputRange: [0, 0.5, 1],
     outputRange: [154, 154, 0]
   });
   const tileWidth = collapse.interpolate({
@@ -2041,12 +2158,17 @@ function QuestTile({ quest, onComplete }) {
           }
         ]}
       >
+        <GlassBackdrop intensity={22} />
         <View style={styles.questTileHead}>
           <View style={styles.questIconMark}>
             <View style={styles.questIconMarkLine} />
             <View style={styles.questIconMarkDot} />
           </View>
-          <Pressable disabled={isCompleting} onPress={completeWithAnimation} style={[styles.checkButton, isCompleting && styles.checkButtonActive]}>
+          <Pressable
+            disabled={isCompleting}
+            onPress={completeWithAnimation}
+            style={({ pressed }) => [styles.checkButton, pressed && !isCompleting && styles.checkButtonPressed, isCompleting && styles.checkButtonActive]}
+          >
             <Text style={styles.checkButtonText}>✓</Text>
           </Pressable>
         </View>
@@ -2095,11 +2217,20 @@ function QuestTile({ quest, onComplete }) {
 function JournalScreen({ journal }) {
   const calendarDays = getJournalCalendarDays();
   const [selectedDate, setSelectedDate] = useState(getJournalDateKey());
+  const [pastOpen, setPastOpen] = useState(false);
   const selectedEntries = journal.filter((entry) => (entry.dateKey || getJournalDateKey()) === selectedDate);
+
+  // The weekly strip covers "this week"; everything before it lives in the
+  // past-records list so the whole history stays reachable.
+  const weekStartKey = calendarDays[0]?.key || getJournalDateKey();
+  const pastEntries = journal
+    .filter((entry) => (entry.dateKey || "") < weekStartKey)
+    .sort((a, b) => (a.dateKey < b.dateKey ? 1 : -1));
 
   return (
     <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
       <PageTitle eyebrow="One reflection a day" title="日記" subtitle="今日の自分に戻る場所。" />
+      <Text style={styles.calendarSectionLabel}>今週</Text>
       <View style={styles.calendarStrip}>
         {calendarDays.map((day) => {
           const hasEntry = journal.some((entry) => entry.dateKey === day.key);
@@ -2118,7 +2249,7 @@ function JournalScreen({ journal }) {
         })}
       </View>
       {selectedEntries.length === 0 ? (
-        <EmptyState title="まだ日記はありません" body="今夜の会話を終えると、ここに記録が残ります。" />
+        <EmptyState title="この日の記録はありません" body="今夜の会話を終えると、ここに記録が残ります。" />
       ) : selectedEntries.map((entry) => (
         <View key={entry.id} style={styles.panel}>
           <Text style={styles.entryDate}>{entry.dateLabel || formatDotDate(entry.dateKey)}</Text>
@@ -2126,17 +2257,108 @@ function JournalScreen({ journal }) {
           {entry.lines.map((line, index) => <Text key={index} style={styles.mutedText}>{line}</Text>)}
         </View>
       ))}
+
+      {pastEntries.length > 0 && (
+        <View style={styles.pastSection}>
+          <Pressable onPress={() => setPastOpen((open) => !open)} style={styles.pastToggle}>
+            <View>
+              <Text style={styles.pastToggleLabel}>過去の記録</Text>
+              <Text style={styles.pastToggleMeta}>これまでの {pastEntries.length} 件</Text>
+            </View>
+            <Text style={styles.pastToggleChevron}>{pastOpen ? "▲" : "▼"}</Text>
+          </Pressable>
+          {pastOpen && pastEntries.map((entry) => {
+            const active = selectedDate === entry.dateKey;
+            return (
+              <Pressable
+                key={entry.id}
+                onPress={() => setSelectedDate(entry.dateKey)}
+                style={[styles.pastRow, active && styles.pastRowActive]}
+              >
+                <Text style={styles.pastRowDate}>{entry.dateLabel || formatDotDate(entry.dateKey)}</Text>
+                <Text style={styles.pastRowTitle} numberOfLines={1}>{entry.title}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
     </ScrollView>
   );
 }
 
-function StoryScreen() {
+function StoryScreen({ memories, chapters, onGenerate, busy }) {
+  const hasMemories = (memories?.length || 0) > 0;
+  const hasChapters = (chapters?.length || 0) > 0;
+
   return (
     <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
       <PageTitle eyebrow="Life chapters" title="人生の章" subtitle="あなたのストーリーを章として残します。" />
-      <EmptyState title="まだ章はありません" body="大きな場面が日記に残ると、ここに章として灯ります。" />
+      {!hasMemories ? (
+        <EmptyState title="まだ章はありません" body="夜の振り返りで記憶が増えると、ここに章として束ねられます。" />
+      ) : (
+        <>
+          <Pressable
+            disabled={busy}
+            onPress={onGenerate}
+            style={({ pressed }) => [styles.chapterButton, pressed && !busy && styles.chapterButtonPressed, busy && styles.disabledButton]}
+          >
+            <Text style={styles.chapterButtonIcon}>✦</Text>
+            <Text style={styles.chapterButtonText}>{busy ? "編んでいます…" : hasChapters ? "章を編みなおす" : "記憶を章に編む"}</Text>
+          </Pressable>
+          {hasChapters ? (
+            chapters.map((chapter, index) => (
+              <ChapterCard key={chapter.id} chapter={chapter} index={index} total={chapters.length} />
+            ))
+          ) : (
+            <EmptyState
+              title="まだ章になっていません"
+              body={`${memories.length}個の記憶があります。「記憶を章に編む」で、時期ごとの章にまとめます。`}
+            />
+          )}
+        </>
+      )}
     </ScrollView>
   );
+}
+
+function ChapterCard({ chapter, index, total }) {
+  // Chapters render newest-first, but the story reads oldest-first — so the
+  // earliest memory becomes Chapter I.
+  const chapterNo = total - index;
+  const count = chapter.memoryIds?.length || 0;
+  return (
+    <View style={styles.chapterCard}>
+      <View style={styles.chapterAccent} />
+      <View style={styles.chapterEyebrowRow}>
+        <Text style={styles.chapterOrdinal}>{`CHAPTER ${toRoman(chapterNo)}`}</Text>
+        {!!chapter.period && <Text style={styles.chapterDot}>·</Text>}
+        {!!chapter.period && <Text style={styles.chapterPeriod}>{chapter.period}</Text>}
+      </View>
+      <Text style={styles.chapterCardTitle}>{chapter.title}</Text>
+      {!!chapter.summary && <Text style={styles.chapterSummary}>{chapter.summary}</Text>}
+      {count > 0 && (
+        <View style={styles.chapterFooter}>
+          <View style={styles.chapterCountDot} />
+          <Text style={styles.chapterCount}>{`${count}つの記憶`}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+// Small roman numerals for chapter headings (I, II, …). Plenty for a life.
+function toRoman(n) {
+  if (!Number.isFinite(n) || n < 1) return "I";
+  const map = [[10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]];
+  let result = "";
+  let value = n;
+  for (const [amount, symbol] of map) {
+    while (value >= amount) {
+      result += symbol;
+      value -= amount;
+    }
+  }
+  return result;
 }
 
 function MemoryScreen({ memories }) {
@@ -2177,6 +2399,7 @@ function PageTitle({ eyebrow, title, subtitle }) {
 function EmptyState({ title, body }) {
   return (
     <View style={styles.panel}>
+      <GlassBackdrop intensity={20} />
       <Text style={styles.panelTitle}>{title}</Text>
       <Text style={styles.mutedText}>{body}</Text>
     </View>
@@ -2198,6 +2421,7 @@ function TabBar({ activeTab, setActiveTab, scrollX, pageStep, hidden, opacity, u
       style={[styles.tabBar, { opacity }]}
       onLayout={(event) => setBarWidth(event.nativeEvent.layout.width)}
     >
+      <GlassBackdrop intensity={34} />
       {!!barWidth && (
         <Animated.View
           pointerEvents="none"
@@ -2217,11 +2441,12 @@ function TabBar({ activeTab, setActiveTab, scrollX, pageStep, hidden, opacity, u
           <Pressable
             key={tab.id}
             onPress={() => setActiveTab(tab.id)}
-            style={[
+            style={({ pressed }) => [
               styles.tabItem,
               tab.id === "home" && styles.tabItemHome,
               isActive && tab.id === "home" && styles.tabItemHomeActive,
-              !isUnlocked && styles.tabItemLocked
+              !isUnlocked && styles.tabItemLocked,
+              pressed && isUnlocked && styles.touchPressedSoft
             ]}
           >
             <TabIcon id={tab.id} active={isActive} locked={!isUnlocked} />
@@ -2303,8 +2528,13 @@ function SettingsModal({
   activeBgmTrack,
   bgmStatus,
   journal,
+  setJournal,
   quests,
+  setQuests,
   memories,
+  setMemories,
+  chapters,
+  setChapters,
   session,
   authLoading,
   authBusy,
@@ -2353,6 +2583,72 @@ function SettingsModal({
     }));
   }
 
+  function updateRitualSettings(patch) {
+    onUiSound?.();
+    setSettings((current) => ({
+      ...current,
+      ritual: {
+        ...(current.ritual || {}),
+        ...patch
+      }
+    }));
+  }
+
+  function confirmClearData(kind) {
+    onUiSound?.();
+    const actions = {
+      journal: {
+        title: "日記を削除しますか？",
+        body: "保存された日記だけをこの端末から削除します。",
+        run: () => setJournal([])
+      },
+      memories: {
+        title: "記憶を削除しますか？",
+        body: "保存された記憶と章をこの端末から削除します。",
+        run: () => {
+          setMemories([]);
+          setChapters([]);
+        }
+      },
+      quests: {
+        title: "クエストをリセットしますか？",
+        body: "現在のクエストを消して、デイリークエストを作り直します。",
+        run: () => setQuests(createDailyQuests())
+      },
+      all: {
+        title: "すべての記録を削除しますか？",
+        body: "日記、クエスト、記憶、章をこの端末から削除します。この操作は元に戻せません。",
+        run: () => {
+          setJournal([]);
+          setQuests(createDailyQuests());
+          setMemories([]);
+          setChapters([]);
+        }
+      }
+    };
+    const target = actions[kind];
+    if (!target) return;
+    Alert.alert(target.title, target.body, [
+      { text: "キャンセル", style: "cancel" },
+      { text: "削除", style: "destructive", onPress: target.run }
+    ]);
+  }
+
+  const displayName = name || profile.name || session?.user?.user_metadata?.name || session?.user?.email?.split("@")[0] || "あなた";
+  const profileInitial = displayName.slice(0, 1).toUpperCase();
+  const profileDay = daysSince(birthdate) || daysSince(profile.birthdate) || daysSince(arcStartDate) + 1;
+  const completedQuestCount = quests.filter((quest) => quest.completed).length;
+  const syncStatus = authLoading ? "確認中" : session ? "接続済み" : "未接続";
+  const accountLabel = authLoading ? "確認中..." : session?.user?.email || "Googleアカウント未接続";
+  const ritualConfig = settings.ritual || {};
+
+  function confirmSignOut() {
+    Alert.alert("ログアウトしますか？", "このデバイスのログイン状態を解除します。記録データは端末内に残ります。", [
+      { text: "キャンセル", style: "cancel" },
+      { text: "ログアウト", style: "destructive", onPress: onSignOut }
+    ]);
+  }
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.modal}>
@@ -2361,7 +2657,7 @@ function SettingsModal({
             <Text style={styles.modalTitle}>設定</Text>
             <Text style={styles.modalSub}>Arc settings</Text>
           </View>
-          <Pressable onPress={onClose} style={styles.modalCompass}>
+          <Pressable onPress={onClose} style={({ pressed }) => [styles.modalCompass, pressed && styles.touchPressedTight]}>
             <Text style={styles.modalCompassText}>×</Text>
           </Pressable>
         </View>
@@ -2373,12 +2669,15 @@ function SettingsModal({
                 profile={profile}
                 session={session}
                 authLoading={authLoading}
+                authBusy={authBusy}
                 settings={settings}
                 activeBgmTrack={activeBgmTrack}
                 journal={journal}
                 quests={quests}
                 memories={memories}
                 onPickProfileImage={onPickProfileImage}
+                updateSettings={updateSettings}
+                updatePrivacy={updatePrivacy}
                 onSelect={(tab) => {
                   onUiSound?.();
                   setActiveSettingsTab(tab);
@@ -2400,20 +2699,15 @@ function SettingsModal({
 
             {activeSettingsTab === "bgm" && (
               <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="sound" title="音楽" body="日々のBGMを選んで、心地よい時間を。" />
+                <SettingsPageTitle icon="sound" title="サウンド" body="流す曲と音量を選びます。オン・オフは設定トップから。" />
                 <SettingToggleRow
                   title="BGM"
                   body="夜のサウンドトラックを流します。"
                   value={settings.bgmEnabled}
                   onPress={() => updateSettings({ bgmEnabled: !settings.bgmEnabled })}
                 />
-                <SettingToggleRow
-                  title="操作音"
-                  body="ボタンや記録の小さな音を鳴らします。"
-                  value={settings.soundEffectsEnabled}
-                  onPress={() => updateSettings({ soundEffectsEnabled: !settings.soundEffectsEnabled })}
-                />
                 <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
                   <Text style={styles.settingLabel}>現在のBGM</Text>
                   <Text style={styles.settingValue}>{activeBgmTrack.title}</Text>
                   <Text style={styles.mutedText}>{activeBgmTrack.subtitle}</Text>
@@ -2424,24 +2718,25 @@ function SettingsModal({
                     <Text style={styles.soundStatusText}>{Math.round(settings.bgmVolume * 100)}%</Text>
                   </View>
                   <View style={styles.soundVolumeRow}>
-                    <Pressable onPress={() => updateBgmVolume(-0.1)} style={styles.soundStepButton}>
+                    <Pressable onPress={() => updateBgmVolume(-0.1)} style={({ pressed }) => [styles.soundStepButton, pressed && styles.touchPressedTight]}>
                       <Text style={styles.soundStepText}>−</Text>
                     </Pressable>
                     <View style={styles.soundVolumeTrack}>
                       <View style={[styles.soundVolumeFill, { width: `${Math.round(settings.bgmVolume * 100)}%` }]} />
                     </View>
-                    <Pressable onPress={() => updateBgmVolume(0.1)} style={styles.soundStepButton}>
+                    <Pressable onPress={() => updateBgmVolume(0.1)} style={({ pressed }) => [styles.soundStepButton, pressed && styles.touchPressedTight]}>
                       <Text style={styles.soundStepText}>＋</Text>
                     </Pressable>
                   </View>
                 </View>
                 <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
                   <Text style={styles.settingLabel}>サウンドトラック</Text>
                   {bgmTracks.map((track) => (
                     <Pressable
                       key={track.id}
                       onPress={() => updateSettings({ bgmTrackId: track.id, bgmEnabled: true })}
-                      style={[styles.soundTrackRow, settings.bgmTrackId === track.id && styles.soundTrackRowActive]}
+                      style={({ pressed }) => [styles.soundTrackRow, settings.bgmTrackId === track.id && styles.soundTrackRowActive, pressed && styles.touchPressedSubtle]}
                     >
                       <View>
                         <Text style={styles.settingValue}>{track.title}</Text>
@@ -2456,44 +2751,110 @@ function SettingsModal({
 
             {activeSettingsTab === "profile" && (
               <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="profile" title="冒険者" body="名前と生年月日を保存します。" />
+                <SettingsPageTitle icon="profile" title="プロフィール" body="Arcに表示するあなたの情報を整えます。" />
+                <View style={styles.profileEditCard}>
+                  <GlassBackdrop intensity={24} />
+                  <View style={styles.profileEditTop}>
+                    <Pressable onPress={onPickProfileImage} style={({ pressed }) => [styles.profileEditAvatar, pressed && styles.touchPressedTight]}>
+                      {profile.imageUri ? (
+                        <Image source={{ uri: profile.imageUri }} style={styles.baseAvatarImage} />
+                      ) : (
+                        <Text style={styles.profileEditAvatarText}>{profileInitial}</Text>
+                      )}
+                    </Pressable>
+                    <View style={styles.profileEditCopy}>
+                      <Text style={styles.settingLabel}>表示プロフィール</Text>
+                      <Text style={styles.profileEditName}>{displayName}</Text>
+                      <Text style={styles.mutedText}>{profileDay}日目の記録者</Text>
+                    </View>
+                  </View>
+                  <Pressable onPress={onPickProfileImage} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
+                    <Text style={styles.secondaryButtonText}>プロフィール画像を変更</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>基本情報</Text>
+                  <TextInput value={name} onChangeText={setName} placeholder="名前" placeholderTextColor="#777" style={styles.settingInput} />
+                  <TextInput value={birthdate} onChangeText={setBirthdate} placeholder="YYYY-MM-DD" placeholderTextColor="#777" style={styles.settingInput} />
+                  <Text style={styles.mutedText}>生年月日または開始日から、Journey Dayを表示します。</Text>
+                  <View style={styles.profileSaveRow}>
+                    <Pressable
+                      onPress={() => {
+                        onUiSound?.();
+                        setProfile((current) => ({ ...current, name, birthdate }));
+                        onClose();
+                      }}
+                      style={({ pressed }) => [styles.profileSaveButton, pressed && styles.touchPressedSoft]}
+                    >
+                      <Text style={styles.profileSaveButtonText}>プロフィールを保存</Text>
+                    </Pressable>
+                  </View>
+                </View>
+                <View style={styles.profileDataGrid}>
+                  <BaseStat label="日記" value={`${journal.length}`} />
+                  <BaseStat label="完了" value={`${completedQuestCount}`} />
+                  <BaseStat label="記憶" value={`${memories.length}`} />
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "sync" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="sync" title="データ同期" body="アカウント接続と保存状態を確認します。" />
                 <View style={styles.authCard}>
+                  <GlassBackdrop intensity={24} />
                   <View style={styles.authCopy}>
-                    <Text style={styles.settingLabel}>アカウント</Text>
-                    <Text style={styles.settingValue}>
-                      {authLoading ? "確認中..." : session?.user?.email || "未ログイン"}
-                    </Text>
+                    <Text style={styles.settingLabel}>Googleアカウント</Text>
+                    <Text style={styles.settingValue}>{accountLabel}</Text>
                     <Text style={styles.mutedText}>
-                      Googleログインで記録をあなたのアカウントに結びます。
+                      接続すると、この端末の記録をあなたのアカウントに紐づける準備ができます。
                     </Text>
                   </View>
                   {session ? (
-                    <Pressable disabled={authBusy} onPress={onSignOut} style={[styles.secondaryButton, authBusy && styles.disabledButton]}>
-                      <Text style={styles.secondaryButtonText}>{authBusy ? "処理中..." : "ログアウト"}</Text>
-                    </Pressable>
+                    <View style={styles.syncStatusPill}>
+                      <Text style={styles.syncStatusText}>{syncStatus}</Text>
+                    </View>
                   ) : (
-                    <Pressable disabled={authBusy} onPress={onGoogleSignIn} style={[styles.primaryButton, authBusy && styles.disabledButton]}>
+                    <Pressable disabled={authBusy} onPress={onGoogleSignIn} style={({ pressed }) => [styles.primaryButton, authBusy && styles.disabledButton, pressed && !authBusy && styles.touchPressedSoft]}>
                       <Text style={styles.primaryButtonText}>{authBusy ? "接続中..." : "Googleでログイン"}</Text>
                     </Pressable>
                   )}
                   {!!authError && <Text style={styles.errorText}>{authError}</Text>}
-                  <View style={styles.redirectBox}>
-                    <Text style={styles.settingLabel}>Redirect URI</Text>
-                    <Text style={styles.redirectText}>{redirectUri}</Text>
-                  </View>
                 </View>
-                <TextInput value={name} onChangeText={setName} placeholder="名前" placeholderTextColor="#777" style={styles.settingInput} />
-                <TextInput value={birthdate} onChangeText={setBirthdate} placeholder="YYYY-MM-DD" placeholderTextColor="#777" style={styles.settingInput} />
-                {!!daysSince(birthdate) && <Text style={styles.mutedText}>{daysSince(birthdate)}日目</Text>}
-                <Pressable
-                  onPress={() => {
-                    setProfile((current) => ({ ...current, name, birthdate }));
-                    onClose();
-                  }}
-                  style={styles.primaryButton}
-                >
-                  <Text style={styles.primaryButtonText}>保存</Text>
-                </Pressable>
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>同期対象</Text>
+                  <View style={styles.syncSummaryRow}>
+                    <BaseStat label="日記" value={`${journal.length}`} />
+                    <BaseStat label="クエスト" value={`${quests.length}`} />
+                    <BaseStat label="記憶" value={`${memories.length}`} />
+                  </View>
+                  <Text style={styles.mutedText}>現在は端末内保存をベースに、アカウント接続状態を先に整えています。</Text>
+                </View>
+                <View style={styles.redirectBox}>
+                  <Text style={styles.settingLabel}>Redirect URI</Text>
+                  <Text style={styles.redirectText}>{redirectUri}</Text>
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "logout" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="logout" title="ログアウト" body="このデバイスのログイン状態を解除します。" />
+                <View style={styles.dangerCard}>
+                  <GlassBackdrop intensity={20} />
+                  <Text style={styles.settingLabel}>現在のアカウント</Text>
+                  <Text style={styles.settingValue}>{accountLabel}</Text>
+                  <Text style={styles.mutedText}>ログアウトしても、端末内に保存された記録は削除されません。</Text>
+                  <Pressable
+                    disabled={!session || authBusy}
+                    onPress={confirmSignOut}
+                    style={({ pressed }) => [styles.dangerButton, (!session || authBusy) && styles.disabledButton, pressed && session && !authBusy && styles.touchPressedSoft]}
+                  >
+                    <Text style={styles.dangerButtonText}>{authBusy ? "処理中..." : "ログアウト"}</Text>
+                  </Pressable>
+                </View>
               </View>
             )}
 
@@ -2510,12 +2871,13 @@ function SettingsModal({
                     <Pressable
                       key={value}
                       onPress={() => updateSettings({ language: value })}
-                      style={[styles.segmentButton, settings.language === value && styles.segmentButtonActive]}
+                      style={({ pressed }) => [styles.segmentButton, settings.language === value && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
                     >
                       <Text style={[styles.segmentText, settings.language === value && styles.segmentTextActive]}>{label}</Text>
                     </Pressable>
                   ))}
                 </View>
+                <Text style={styles.mutedText}>選んだ言語はこれから順次、表示に反映されます。</Text>
               </View>
             )}
 
@@ -2528,6 +2890,18 @@ function SettingsModal({
                   value={settings.notificationsEnabled}
                   onPress={() => updateSettings({ notificationsEnabled: !settings.notificationsEnabled })}
                 />
+                <Text style={styles.settingLabel}>合図の時刻</Text>
+                <View style={styles.segmentedRow}>
+                  {["21:00", "22:00", "23:00"].map((time) => (
+                    <Pressable
+                      key={time}
+                      onPress={() => updateSettings({ notificationTime: time })}
+                      style={({ pressed }) => [styles.segmentButton, settings.notificationTime === time && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
+                    >
+                      <Text style={[styles.segmentText, settings.notificationTime === time && styles.segmentTextActive]}>{time}</Text>
+                    </Pressable>
+                  ))}
+                </View>
                 <TextInput
                   value={settings.notificationTime}
                   onChangeText={(notificationTime) => updateSettings({ notificationTime })}
@@ -2535,31 +2909,103 @@ function SettingsModal({
                   placeholderTextColor="#777"
                   style={styles.settingInput}
                 />
-                <Text style={styles.mutedText}>Expo Goでは通知許可のUIだけ先に用意しています。</Text>
+                <Text style={styles.mutedText}>実機での通知スケジュールはこの後の実装で繋ぎます（時刻はいま保存されます）。</Text>
               </View>
             )}
 
-            {activeSettingsTab === "privacy" && (
+            {activeSettingsTab === "ritual" && (
               <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="privacy" title="プライバシー" body="Arcが記録をどう扱うかを選びます。" />
+                <SettingsPageTitle icon="ritual" title="Night Ritual" body="夜の記録の深さと保存方法を調整します。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>質問数</Text>
+                  <View style={styles.segmentedRow}>
+                    {[3, 4, 5].map((count) => (
+                      <Pressable
+                        key={count}
+                        onPress={() => updateRitualSettings({ questionCount: count })}
+                        style={({ pressed }) => [styles.segmentButton, (ritualConfig.questionCount || 5) === count && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
+                      >
+                        <Text style={[styles.segmentText, (ritualConfig.questionCount || 5) === count && styles.segmentTextActive]}>{count}問</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <Text style={styles.mutedText}>短く終えたい日は3問、深く残したい日は5問にできます。</Text>
+                </View>
                 <SettingToggleRow
-                  title="日記からクエストを作る"
-                  body="夜の会話の内容をクエスト生成に使います。"
-                  value={settings.privacy.questLink}
-                  onPress={() => updatePrivacy("questLink")}
+                  title="終了後に日記へ保存"
+                  body="OFFにすると、会話を閉じても日記・記憶・クエストを作りません。"
+                  value={ritualConfig.autoSaveJournal !== false}
+                  onPress={() => updateRitualSettings({ autoSaveJournal: ritualConfig.autoSaveJournal === false })}
                 />
                 <SettingToggleRow
-                  title="Niloの記憶に保存する"
-                  body="大事な場面として残す候補に使います。"
-                  value={settings.privacy.memoryLink}
-                  onPress={() => updatePrivacy("memoryLink")}
+                  title="途中退出の確認"
+                  body="Night Ritual中に×を押したとき、確認を表示します。"
+                  value={ritualConfig.confirmExit !== false}
+                  onPress={() => updateRitualSettings({ confirmExit: ritualConfig.confirmExit === false })}
                 />
-                <SettingToggleRow
-                  title="プロフィールを反映する"
-                  body="名前や日数を表示に使います。"
-                  value={settings.privacy.profileUse}
-                  onPress={() => updatePrivacy("profileUse")}
-                />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>開始できる時間帯</Text>
+                  <View style={styles.segmentedRow}>
+                    {["20:00", "21:00", "22:00"].map((time) => (
+                      <Pressable
+                        key={time}
+                        onPress={() => updateRitualSettings({ windowStart: time })}
+                        style={({ pressed }) => [styles.segmentButton, (ritualConfig.windowStart || "20:00") === time && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
+                      >
+                        <Text style={[styles.segmentText, (ritualConfig.windowStart || "20:00") === time && styles.segmentTextActive]}>{time}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <Text style={styles.mutedText}>終了時刻は翌3:00固定です。開発中はDEV_MODEで時間外でも開始できます。</Text>
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "data" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="data" title="データ管理" body="端末内に残る記録を確認・整理します。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>端末内データ</Text>
+                  <View style={styles.syncSummaryRow}>
+                    <BaseStat label="日記" value={`${journal.length}`} />
+                    <BaseStat label="クエスト" value={`${quests.length}`} />
+                    <BaseStat label="記憶" value={`${memories.length}`} />
+                    <BaseStat label="章" value={`${chapters.length}`} />
+                  </View>
+                  <Pressable
+                    onPress={() => Alert.alert("エクスポート準備中", "日記・記憶・クエストを書き出す導線です。ファイル保存は次の実装で接続します。")}
+                    style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}
+                  >
+                    <Text style={styles.secondaryButtonText}>エクスポート</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>個別に整理</Text>
+                  <Pressable onPress={() => confirmClearData("journal")} style={({ pressed }) => [styles.soundTrackRow, pressed && styles.touchPressedSubtle]}>
+                    <Text style={styles.settingValue}>日記を削除</Text>
+                    <Text style={styles.baseChevron}>›</Text>
+                  </Pressable>
+                  <Pressable onPress={() => confirmClearData("memories")} style={({ pressed }) => [styles.soundTrackRow, pressed && styles.touchPressedSubtle]}>
+                    <Text style={styles.settingValue}>記憶と章を削除</Text>
+                    <Text style={styles.baseChevron}>›</Text>
+                  </Pressable>
+                  <Pressable onPress={() => confirmClearData("quests")} style={({ pressed }) => [styles.soundTrackRow, pressed && styles.touchPressedSubtle]}>
+                    <Text style={styles.settingValue}>クエストをリセット</Text>
+                    <Text style={styles.baseChevron}>›</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.dangerCard}>
+                  <GlassBackdrop intensity={20} />
+                  <Text style={styles.settingLabel}>危険な操作</Text>
+                  <Text style={styles.mutedText}>Arcの端末内記録をまとめて削除します。アカウント接続は解除されません。</Text>
+                  <Pressable onPress={() => confirmClearData("all")} style={({ pressed }) => [styles.dangerButton, pressed && styles.touchPressedSoft]}>
+                    <Text style={styles.dangerButtonText}>すべての記録を削除</Text>
+                  </Pressable>
+                </View>
               </View>
             )}
 
@@ -2606,6 +3052,7 @@ function LegalPage({ icon, title, body, updatedAt, sections }) {
     <View style={styles.settingsPage}>
       <SettingsPageTitle icon={icon} title={title} body={body} />
       <View style={styles.legalNoticeCard}>
+        <GlassBackdrop intensity={22} />
         <Text style={styles.settingLabel}>最終更新</Text>
         <Text style={styles.settingValue}>{updatedAt}</Text>
         <Text style={styles.mutedText}>
@@ -2614,6 +3061,7 @@ function LegalPage({ icon, title, body, updatedAt, sections }) {
       </View>
       {sections.map((section) => (
         <View key={section.title} style={styles.legalSectionCard}>
+          <GlassBackdrop intensity={20} />
           <Text style={styles.legalSectionTitle}>{section.title}</Text>
           <Text style={styles.legalBody}>{section.body}</Text>
         </View>
@@ -2622,7 +3070,7 @@ function LegalPage({ icon, title, body, updatedAt, sections }) {
   );
 }
 
-function SettingsBase({ profile, session, authLoading, settings, activeBgmTrack, journal, quests, memories, onPickProfileImage, onSelect }) {
+function SettingsBase({ profile, session, authLoading, authBusy, settings, activeBgmTrack, journal, quests, memories, onPickProfileImage, onSelect, updateSettings, updatePrivacy }) {
   const displayName = profile.name || session?.user?.user_metadata?.name || session?.user?.email?.split("@")[0] || "あなた";
   const journeyDay = daysSince(profile.birthdate) || daysSince(arcStartDate) + 1;
   const journalCount = journal.length;
@@ -2638,6 +3086,9 @@ function SettingsBase({ profile, session, authLoading, settings, activeBgmTrack,
   return (
     <View style={styles.basePage}>
       <View style={styles.baseProfileCard}>
+        <GlassBackdrop intensity={22} />
+        <View pointerEvents="none" style={styles.baseProfileSheen} />
+        <View pointerEvents="none" style={styles.baseProfileGlow} />
         <View style={styles.baseProfileTop}>
           <Pressable onPress={onPickProfileImage} style={styles.baseAvatar}>
             {profile.imageUri ? (
@@ -2680,22 +3131,42 @@ function SettingsBase({ profile, session, authLoading, settings, activeBgmTrack,
         </View>
       </View>
 
-      <SettingsSection title="アプリ">
-        <BaseSettingRow icon="notifications" title="通知" body={settings.notificationsEnabled ? `${settings.notificationTime} に夜の記録を知らせます` : "通知はオフです"} value={settings.notificationsEnabled ? "ON" : "OFF"} onPress={() => onSelect("notifications")} />
-        <BaseSettingRow icon="sound" title="サウンド" body={settings.bgmEnabled ? `${activeBgmTrack.title} / ${Math.round(settings.bgmVolume * 100)}%` : "BGMはオフです"} value={settings.bgmEnabled ? "ON" : "OFF"} onPress={() => onSelect("bgm")} />
-        <BaseSettingRow icon="language" title="表示設定" body={`表示言語 ${languageLabel(settings.language)}`} value={settings.language.toUpperCase()} onPress={() => onSelect("language")} />
+      <SettingsSection title="アカウント">
+        <BaseSettingRow icon="profile" title="プロフィール" body={`${displayName} / ${journeyDay}日目`} value="編集" onPress={() => onSelect("profile")} />
+        <BaseSettingRow icon="sync" title="データ同期" body={syncText} value={session ? "接続済み" : "未接続"} onPress={() => onSelect("sync")} />
+        {!!session && (
+          <BaseSettingRow icon="logout" title="ログアウト" body="このデバイスからサインアウト" value={authBusy ? "処理中" : "開く"} onPress={() => onSelect("logout")} />
+        )}
       </SettingsSection>
 
-      <SettingsSection title="ARC">
-        <BaseSettingRow icon="profile" title="冒険データ" body={`日記 ${journalCount} / クエスト完了 ${completedQuestCount} / 記憶 ${memoryCount}`} value="記録" onPress={() => onSelect("profile")} />
-        <BaseSettingRow icon="sync" title="データ同期" body={syncText} value={session ? "接続済み" : "未接続"} onPress={() => onSelect("profile")} />
-        <BaseSettingRow icon="privacy" title="プライバシー" body={privacySummary(settings.privacy)} value="管理" onPress={() => onSelect("privacy")} />
+      <SettingsSection title="リチュアル">
+        <BaseSettingRow icon="ritual" title="Night Ritual" body={`${settings.ritual?.questionCount || 5}問 / ${settings.ritual?.autoSaveJournal === false ? "保存しない" : "日記へ保存"}`} value="詳細" onPress={() => onSelect("ritual")} />
+        <BaseSettingRow icon="notifications" title="夜の合図" body="記録の時間にそっと知らせます" toggle={!!settings.notificationsEnabled} onPress={() => updateSettings({ notificationsEnabled: !settings.notificationsEnabled })} />
+        <BaseSettingRow icon="notifications" title="合図の時刻" body={settings.notificationsEnabled ? "Niloが呼びかける時間" : "通知をオンにすると設定できます"} value={settings.notificationTime || "22:00"} onPress={() => onSelect("notifications")} />
       </SettingsSection>
 
-      <SettingsSection title="サポート">
-        <BaseSettingRow icon="feedback" title="フィードバック" body="ご意見・ご要望をお聞かせください" value="準備中" disabled />
+      <SettingsSection title="見た目">
+        <BaseSettingRow icon="language" title="言語" body={`表示言語 ${languageLabel(settings.language)}`} value={settings.language.toUpperCase()} onPress={() => onSelect("language")} />
+      </SettingsSection>
+
+      <SettingsSection title="音と触覚">
+        <BaseSettingRow icon="sound" title="BGM" body={settings.bgmEnabled ? `${activeBgmTrack.title} / ${Math.round(settings.bgmVolume * 100)}%` : "夜のサウンドトラック"} toggle={!!settings.bgmEnabled} onPress={() => updateSettings({ bgmEnabled: !settings.bgmEnabled })} />
+        <BaseSettingRow icon="sound" title="操作音" body="ボタンや記録の小さな音" toggle={!!settings.soundEffectsEnabled} onPress={() => updateSettings({ soundEffectsEnabled: !settings.soundEffectsEnabled })} />
+        <BaseSettingRow icon="sound" title="触覚" body="人生の節目で、そっと手に残す" toggle={!!settings.hapticsEnabled} onPress={() => updateSettings({ hapticsEnabled: !settings.hapticsEnabled })} />
+        <BaseSettingRow icon="sound" title="サウンド詳細" body="曲の選択と音量" value="開く" onPress={() => onSelect("bgm")} />
+      </SettingsSection>
+
+      <SettingsSection title="データとプライバシー">
+        <BaseSettingRow icon="data" title="データ管理" body={`日記 ${journalCount} / 記憶 ${memoryCount} / クエスト ${quests.length}`} value="整理" onPress={() => onSelect("data")} />
+        <BaseSettingRow icon="privacy" title="日記からクエストを作る" body="夜の会話をクエスト生成に使う" toggle={!!settings.privacy.questLink} onPress={() => updatePrivacy("questLink")} />
+        <BaseSettingRow icon="privacy" title="Niloの記憶に保存する" body="大事な場面の候補に使う" toggle={!!settings.privacy.memoryLink} onPress={() => updatePrivacy("memoryLink")} />
+        <BaseSettingRow icon="profile" title="プロフィールを反映する" body="名前や日数を表示に使う" toggle={!!settings.privacy.profileUse} onPress={() => updatePrivacy("profileUse")} />
+      </SettingsSection>
+
+      <SettingsSection title="アプリについて">
         <BaseSettingRow icon="terms" title="利用規約" body="ARCの利用条件" value="表示" onPress={() => onSelect("terms")} />
         <BaseSettingRow icon="policy" title="プライバシーポリシー" body="データの取り扱いについて" value="表示" onPress={() => onSelect("privacyPolicy")} />
+        <BaseSettingRow icon="feedback" title="フィードバック" body="ご意見・ご要望をお聞かせください" value="準備中" disabled />
         <BaseSettingRow icon="contact" title="お問い合わせ" body="サポートへ連絡する" value="準備中" disabled />
       </SettingsSection>
     </View>
@@ -2715,14 +3186,22 @@ function SettingsSection({ title, children }) {
   return (
     <View style={styles.baseSection}>
       <Text style={styles.baseSectionTitle}>{title}</Text>
-      <View style={styles.baseList}>{children}</View>
+      <View style={styles.baseList}>
+        <GlassBackdrop intensity={18} />
+        {children}
+      </View>
     </View>
   );
 }
 
-function BaseSettingRow({ icon, title, body, badge, value, disabled = false, onPress }) {
+function BaseSettingRow({ icon, title, body, badge, value, toggle, disabled = false, onPress }) {
+  const isToggle = typeof toggle === "boolean";
   return (
-    <Pressable disabled={disabled} onPress={onPress} style={[styles.baseRow, disabled && styles.baseRowDisabled]}>
+    <Pressable
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [styles.baseRow, disabled && styles.baseRowDisabled, pressed && !disabled && styles.touchPressedSubtle]}
+    >
       <View style={[styles.baseRowIcon, disabled && styles.baseRowIconDisabled]}>
         <SettingsIcon id={icon} locked={disabled} />
       </View>
@@ -2735,8 +3214,16 @@ function BaseSettingRow({ icon, title, body, badge, value, disabled = false, onP
           <Text style={styles.baseBadgeText}>{badge}</Text>
         </View>
       )}
-      {!!value && !badge && <Text style={[styles.baseRowValue, disabled && styles.baseTextDisabled]}>{value}</Text>}
-      {!disabled && <Text style={styles.baseChevron}>›</Text>}
+      {isToggle ? (
+        <View style={[styles.togglePill, toggle && styles.togglePillOn]}>
+          <Text style={[styles.toggleText, toggle && styles.toggleTextOn]}>{toggle ? "ON" : "OFF"}</Text>
+        </View>
+      ) : (
+        <>
+          {!!value && !badge && <Text style={[styles.baseRowValue, disabled && styles.baseTextDisabled]}>{value}</Text>}
+          {!disabled && <Text style={styles.baseChevron}>›</Text>}
+        </>
+      )}
     </Pressable>
   );
 }
@@ -2807,11 +3294,41 @@ function SettingsIcon({ id, active = false, locked = false }) {
     );
   }
 
+  if (id === "ritual") {
+    return (
+      <View style={styles.settingsIconCanvas}>
+        <View style={[lineStyle, styles.settingsIconRitualA]} />
+        <View style={[lineStyle, styles.settingsIconRitualB]} />
+        <View style={[dotStyle, styles.settingsIconRitualDot]} />
+      </View>
+    );
+  }
+
+  if (id === "data") {
+    return (
+      <View style={styles.settingsIconCanvas}>
+        <View style={[boxStyle, styles.settingsIconDataTop]} />
+        <View style={[lineStyle, styles.settingsIconDataMid]} />
+        <View style={[lineStyle, styles.settingsIconDataBase]} />
+      </View>
+    );
+  }
+
   if (id === "privacy") {
     return (
       <View style={styles.settingsIconCanvas}>
         <View style={[boxStyle, styles.settingsIconShield]} />
         <View style={[lineStyle, styles.settingsIconShieldLine]} />
+      </View>
+    );
+  }
+
+  if (id === "logout") {
+    return (
+      <View style={styles.settingsIconCanvas}>
+        <View style={[boxStyle, styles.settingsIconLogoutDoor]} />
+        <View style={[lineStyle, styles.settingsIconLogoutArrow]} />
+        <View style={[dotStyle, styles.settingsIconLogoutDot]} />
       </View>
     );
   }
@@ -2837,12 +3354,13 @@ function SettingsIcon({ id, active = false, locked = false }) {
 function SettingToggleRow({ title, body, value, onPress }) {
   return (
     <View style={styles.settingsCard}>
+      <GlassBackdrop intensity={24} />
       <View style={styles.toggleRow}>
         <View style={styles.toggleCopy}>
           <Text style={styles.settingValue}>{title}</Text>
           <Text style={styles.mutedText}>{body}</Text>
         </View>
-        <Pressable onPress={onPress} style={[styles.togglePill, value && styles.togglePillOn]}>
+        <Pressable onPress={onPress} style={({ pressed }) => [styles.togglePill, value && styles.togglePillOn, pressed && styles.touchPressedTight]}>
           <Text style={[styles.toggleText, value && styles.toggleTextOn]}>{value ? "ON" : "OFF"}</Text>
         </Pressable>
       </View>
@@ -2855,6 +3373,35 @@ function createDailyQuests() {
     .sort(() => Math.random() - 0.5)
     .slice(0, 4)
     .map((title) => ({ id: createId("daily"), title, source: "daily", completed: false }));
+}
+
+// Offline fallback: bind memories into one chapter per month, newest first.
+function buildLocalChapters(memories) {
+  const byMonth = new Map();
+  (memories || []).forEach((memory) => {
+    const month = String(memory.dateKey || "").slice(0, 7) || "unknown";
+    if (!byMonth.has(month)) byMonth.set(month, []);
+    byMonth.get(month).push(memory);
+  });
+
+  return [...byMonth.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .map(([month, items]) => {
+      const essences = items.map((memory) => memory.essence).filter(Boolean);
+      return {
+        id: createId("chapter"),
+        title: formatMonthLabel(month),
+        period: month === "unknown" ? "" : month.replace("-", "."),
+        summary: essences.slice(0, 2).join(" / ") || "この時期の記憶を、静かに束ねました。",
+        memoryIds: items.map((memory) => memory.id)
+      };
+    });
+}
+
+function formatMonthLabel(month) {
+  const [year, mon] = String(month).split("-");
+  if (!year || !mon) return "いつかの章";
+  return `${year}年${Number(mon)}月`;
 }
 
 function createId(prefix) {
@@ -2891,9 +3438,24 @@ function getJournalStreakDays(entries, date = new Date()) {
   return streak;
 }
 
-function isRitualWindow(date = new Date()) {
-  const hour = date.getHours();
-  return hour >= 20 || hour < 3;
+function isRitualWindow(date = new Date(), ritualSettings = {}) {
+  const startMinutes = parseClockMinutes(ritualSettings.windowStart || "20:00", 20 * 60);
+  const endMinutes = parseClockMinutes(ritualSettings.windowEnd || "03:00", 3 * 60);
+  const nowMinutes = date.getHours() * 60 + date.getMinutes();
+  if (startMinutes === endMinutes) return true;
+  if (startMinutes < endMinutes) return nowMinutes >= startMinutes && nowMinutes < endMinutes;
+  return nowMinutes >= startMinutes || nowMinutes < endMinutes;
+}
+
+function parseClockMinutes(value, fallback) {
+  const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return fallback;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return fallback;
+  }
+  return hour * 60 + minute;
 }
 
 function getJournalCalendarDays(date = new Date()) {
@@ -2961,6 +3523,18 @@ const styles = StyleSheet.create({
   },
   app: {
     flex: 1
+  },
+  touchPressedSubtle: {
+    opacity: 0.92,
+    transform: [{ scale: 0.985 }]
+  },
+  touchPressedSoft: {
+    opacity: 0.9,
+    transform: [{ scale: 0.97 }]
+  },
+  touchPressedTight: {
+    opacity: 0.88,
+    transform: [{ scale: 0.94 }]
   },
   keyboardArea: {
     flex: 1
@@ -3367,22 +3941,35 @@ const styles = StyleSheet.create({
   },
   ritualStartButton: {
     alignItems: "center",
-    backgroundColor: "rgba(255,254,244,0.14)",
-    borderColor: "rgba(255,254,244,0.3)",
+    backgroundColor: "rgba(255,254,244,0.15)",
+    borderColor: "rgba(255,254,244,0.28)",
+    borderTopColor: "rgba(255,254,244,0.5)",
     borderRadius: 999,
     borderWidth: 1,
     flexDirection: "row",
     justifyContent: "center",
-    minHeight: 50,
-    paddingHorizontal: 17,
-    paddingVertical: 7,
-    shadowColor: "#fff7df",
-    shadowOffset: { width: -8, height: -10 },
-    shadowOpacity: 0.16,
-    shadowRadius: 34
+    minHeight: 54,
+    overflow: "hidden",
+    paddingHorizontal: 19,
+    paddingVertical: 8,
+    position: "relative",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.34,
+    shadowRadius: 22
+  },
+  ritualButtonSheen: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderTopLeftRadius: 999,
+    borderTopRightRadius: 999,
+    height: "50%",
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0
   },
   ritualStartButtonPressed: {
-    transform: [{ scale: 0.98 }]
+    transform: [{ scale: 0.97 }]
   },
   ritualStartButtonDisabled: {
     backgroundColor: "rgba(255,254,244,0.04)",
@@ -3583,6 +4170,107 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     lineHeight: 20
   },
+  chapterButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(217,179,106,0.16)",
+    borderColor: "rgba(217,179,106,0.4)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    marginBottom: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 13
+  },
+  chapterButtonPressed: {
+    backgroundColor: "rgba(217,179,106,0.26)"
+  },
+  chapterButtonIcon: {
+    color: "#d9b36a",
+    fontSize: 14
+  },
+  chapterButtonText: {
+    color: "#f6efe4",
+    fontSize: 14,
+    fontWeight: "700",
+    letterSpacing: 0.5
+  },
+  chapterCard: {
+    backgroundColor: "rgba(255,254,244,0.06)",
+    borderColor: "rgba(255,254,244,0.16)",
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: 11,
+    marginBottom: 12,
+    overflow: "hidden",
+    paddingBottom: 20,
+    paddingLeft: 26,
+    paddingRight: 20,
+    paddingTop: 18
+  },
+  chapterAccent: {
+    backgroundColor: "rgba(217,179,106,0.5)",
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    top: 0,
+    width: 3
+  },
+  chapterEyebrowRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8
+  },
+  chapterOrdinal: {
+    color: "#d9b36a",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.5
+  },
+  chapterDot: {
+    color: "rgba(217,179,106,0.55)",
+    fontSize: 11
+  },
+  chapterPeriod: {
+    color: "#d9b36a",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.5
+  },
+  chapterCardTitle: {
+    color: "#f6efe4",
+    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    fontSize: 24,
+    fontWeight: "600",
+    lineHeight: 32
+  },
+  chapterSummary: {
+    color: "#c2bbb0",
+    fontSize: 14,
+    lineHeight: 22
+  },
+  chapterFooter: {
+    alignItems: "center",
+    borderTopColor: "rgba(255,254,244,0.1)",
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: 7,
+    marginTop: 2,
+    paddingTop: 13
+  },
+  chapterCountDot: {
+    backgroundColor: "#d9b36a",
+    borderRadius: 2,
+    height: 4,
+    width: 4
+  },
+  chapterCount: {
+    color: "rgba(246,239,228,0.5)",
+    fontSize: 11,
+    letterSpacing: 0.5
+  },
   panelTitle: {
     color: "#f6efe4",
     fontSize: 17,
@@ -3735,6 +4423,11 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(217,179,106,0.22)",
     borderColor: "rgba(239,212,154,0.72)"
   },
+  checkButtonPressed: {
+    backgroundColor: "rgba(217,179,106,0.3)",
+    borderColor: "rgba(239,212,154,0.85)",
+    transform: [{ scale: 0.88 }]
+  },
   checkButtonText: {
     color: "#f6efe4",
     fontSize: 16,
@@ -3757,10 +4450,74 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginTop: 5
   },
+  calendarSectionLabel: {
+    color: "#d9b36a",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.5,
+    marginBottom: 8,
+    textTransform: "uppercase"
+  },
   calendarStrip: {
     flexDirection: "row",
     gap: 8,
     marginBottom: 14
+  },
+  pastSection: {
+    marginTop: 8
+  },
+  pastToggle: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,254,244,0.05)",
+    borderColor: "rgba(255,254,244,0.14)",
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 14
+  },
+  pastToggleLabel: {
+    color: "#f6efe4",
+    fontSize: 15,
+    fontWeight: "700"
+  },
+  pastToggleMeta: {
+    color: "rgba(246,239,228,0.5)",
+    fontSize: 12,
+    marginTop: 2
+  },
+  pastToggleChevron: {
+    color: "#d9b36a",
+    fontSize: 12
+  },
+  pastRow: {
+    alignItems: "center",
+    borderColor: "rgba(255,254,244,0.08)",
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12
+  },
+  pastRowActive: {
+    backgroundColor: "rgba(217,179,106,0.12)",
+    borderColor: "rgba(217,179,106,0.32)"
+  },
+  pastRowDate: {
+    color: "#d9b36a",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    width: 84
+  },
+  pastRowTitle: {
+    color: "#f6efe4",
+    flex: 1,
+    fontSize: 14
   },
   calendarDay: {
     alignItems: "center",
@@ -4156,16 +4913,38 @@ const styles = StyleSheet.create({
     gap: 22
   },
   baseProfileCard: {
-    backgroundColor: "rgba(255,255,255,0.055)",
+    backgroundColor: "rgba(255,255,255,0.06)",
     borderColor: "rgba(255,255,255,0.16)",
-    borderRadius: 24,
+    borderTopColor: "rgba(255,255,255,0.34)",
+    borderRadius: 28,
     borderWidth: 1,
     minHeight: 260,
-    padding: 20,
-    shadowColor: "#ffffff",
-    shadowOffset: { width: -10, height: -12 },
-    shadowOpacity: 0.055,
-    shadowRadius: 34
+    overflow: "hidden",
+    padding: 22,
+    position: "relative",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.32,
+    shadowRadius: 30
+  },
+  baseProfileSheen: {
+    backgroundColor: "rgba(255,255,255,0.07)",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    height: "46%",
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0
+  },
+  baseProfileGlow: {
+    backgroundColor: "rgba(236,193,112,0.16)",
+    borderRadius: 999,
+    height: 150,
+    position: "absolute",
+    right: -46,
+    top: -52,
+    width: 150
   },
   baseProfileTop: {
     alignItems: "center",
@@ -4175,12 +4954,17 @@ const styles = StyleSheet.create({
   },
   baseAvatar: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.065)",
-    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.22)",
+    borderTopColor: "rgba(255,255,255,0.5)",
     borderRadius: 999,
     borderWidth: 2,
     height: 104,
     justifyContent: "center",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 14,
     overflow: "hidden",
     width: 104
   },
@@ -4218,9 +5002,13 @@ const styles = StyleSheet.create({
     width: "84%"
   },
   baseLevelFill: {
-    backgroundColor: "rgba(236,193,112,0.82)",
+    backgroundColor: "rgba(236,193,112,0.9)",
     borderRadius: 999,
     height: "100%",
+    shadowColor: "#ecc170",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7,
+    shadowRadius: 6,
     width: "36%"
   },
   baseXpText: {
@@ -4503,6 +5291,43 @@ const styles = StyleSheet.create({
     top: 15,
     width: 4
   },
+  settingsIconRitualA: {
+    height: 1.5,
+    left: 5,
+    top: 11,
+    width: 14
+  },
+  settingsIconRitualB: {
+    height: 14,
+    left: 11,
+    top: 5,
+    width: 1.5
+  },
+  settingsIconRitualDot: {
+    height: 4,
+    left: 10,
+    top: 10,
+    width: 4
+  },
+  settingsIconDataTop: {
+    borderRadius: 4,
+    height: 8,
+    left: 5,
+    top: 4,
+    width: 14
+  },
+  settingsIconDataMid: {
+    height: 1.5,
+    left: 6,
+    top: 14,
+    width: 12
+  },
+  settingsIconDataBase: {
+    height: 1.5,
+    left: 7,
+    top: 19,
+    width: 10
+  },
   settingsIconShield: {
     borderRadius: 7,
     height: 17,
@@ -4515,6 +5340,25 @@ const styles = StyleSheet.create({
     left: 11,
     top: 8,
     width: 1.5
+  },
+  settingsIconLogoutDoor: {
+    borderRadius: 4,
+    height: 16,
+    left: 4,
+    top: 4,
+    width: 10
+  },
+  settingsIconLogoutArrow: {
+    height: 1.5,
+    left: 10,
+    top: 11,
+    width: 10
+  },
+  settingsIconLogoutDot: {
+    height: 4,
+    left: 17,
+    top: 9.5,
+    width: 4
   },
   settingsIconMessage: {
     borderRadius: 5,
@@ -4620,6 +5464,72 @@ const styles = StyleSheet.create({
     gap: 7,
     padding: 14
   },
+  profileEditCard: {
+    backgroundColor: "rgba(255,255,255,0.052)",
+    borderColor: "rgba(255,255,255,0.15)",
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: 14,
+    padding: 16
+  },
+  profileEditTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 16
+  },
+  profileEditAvatar: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderColor: "rgba(255,255,255,0.18)",
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 78,
+    justifyContent: "center",
+    overflow: "hidden",
+    width: 78
+  },
+  profileEditAvatarText: {
+    color: "#fbfbfb",
+    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    fontSize: 28,
+    fontWeight: "700"
+  },
+  profileEditCopy: {
+    flex: 1,
+    gap: 4
+  },
+  profileEditName: {
+    color: "#f8f8f8",
+    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    fontSize: 24,
+    fontWeight: "700"
+  },
+  profileDataGrid: {
+    flexDirection: "row",
+    gap: 8
+  },
+  profileSaveRow: {
+    alignItems: "flex-end",
+    borderColor: "rgba(255,255,255,0.075)",
+    borderTopWidth: 1,
+    marginTop: 4,
+    paddingTop: 12
+  },
+  profileSaveButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(236,193,112,0.14)",
+    borderColor: "rgba(236,193,112,0.28)",
+    borderRadius: 999,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 38,
+    paddingHorizontal: 16
+  },
+  profileSaveButtonText: {
+    color: "#f8e4b8",
+    fontSize: 13,
+    fontWeight: "800"
+  },
   authCard: {
     backgroundColor: "rgba(255,255,255,0.048)",
     borderColor: "rgba(255,255,255,0.14)",
@@ -4630,6 +5540,46 @@ const styles = StyleSheet.create({
   },
   authCopy: {
     gap: 5
+  },
+  syncStatusPill: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(236,193,112,0.14)",
+    borderColor: "rgba(236,193,112,0.28)",
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 7
+  },
+  syncStatusText: {
+    color: "#f8e4b8",
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  syncSummaryRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginVertical: 6
+  },
+  dangerCard: {
+    backgroundColor: "rgba(255,255,255,0.042)",
+    borderColor: "rgba(255,91,91,0.22)",
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: 12,
+    padding: 16
+  },
+  dangerButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,74,74,0.86)",
+    borderRadius: 999,
+    justifyContent: "center",
+    minHeight: 42,
+    paddingHorizontal: 18
+  },
+  dangerButtonText: {
+    color: "#fff7f7",
+    fontSize: 14,
+    fontWeight: "800"
   },
   errorText: {
     color: "#ffb4a7",
