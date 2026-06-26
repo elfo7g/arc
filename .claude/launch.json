@@ -7,6 +7,14 @@
       "runtimeArgs": [],
       "port": 8090,
       "autoPort": false
+    },
+    {
+      "name": "web-api",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.js"],
+      "cwd": "Web",
+      "port": 4173,
+      "autoPort": false
     }
   ]
 }
