@@ -7,7 +7,6 @@ import {
   Animated,
   Easing,
   Image,
-  ImageBackground,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -27,37 +26,48 @@ import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 import * as WebBrowser from "expo-web-browser";
 import { BlurView } from "expo-blur";
+import { LinearGradient } from "expo-linear-gradient";
+import * as Clipboard from "expo-clipboard";
+import * as Sharing from "expo-sharing";
+import * as FileSystem from "expo-file-system";
+import * as Crypto from "expo-crypto";
+import CryptoJS from "crypto-js";
+import {
+  useFonts,
+  CormorantGaramond_300Light,
+  CormorantGaramond_400Regular,
+  CormorantGaramond_500Medium
+} from "@expo-google-fonts/cormorant-garamond";
 import { supabase } from "./src/supabase";
 
 WebBrowser.maybeCompleteAuthSession();
 
+// Typography of "time": old serifs for the Latin, Hiragino Mincho for the
+// Japanese — never tightened, given room to breathe.
+const fontSerifEn = "CormorantGaramond_400Regular";
+const fontSerifEnLight = "CormorantGaramond_300Light";
+const fontSerifEnMedium = "CormorantGaramond_500Medium";
+const fontSerifJa = Platform.select({ ios: "HiraMinProN-W3", android: "serif", default: "serif" });
+const fontUi = Platform.select({ ios: "Avenir Next", android: "sans-serif", default: "sans-serif" });
+const fontUiMedium = Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" });
+
+const backgroundTexture = require("./assets/textures/arc-night-texture.png");
+const grainTexture = require("./assets/textures/grain.png");
+const deepGrainTexture = require("./assets/textures/grain-deep.png");
+
 const tabs = [
+  { id: "home", label: "ホーム" },
   { id: "quests", label: "クエスト" },
   { id: "journal", label: "日記" },
-  { id: "home", label: "ホーム" },
-  { id: "story", label: "章" },
-  { id: "memory", label: "記憶" }
+  { id: "story", label: "章" }
 ];
 
-const settingsTabs = [
-  { id: "bgm", label: "音楽", sub: "BGMの設定", icon: "♪" },
-  { id: "profile", label: "冒険者", sub: "あなたの情報", icon: "♁" },
-  { id: "language", label: "言語", sub: "Language", icon: "◁" },
-  { id: "notifications", label: "夜の呼びかけ", sub: "Niloからのリマインド", icon: "♢" },
-  { id: "privacy", label: "プライバシー", sub: "データとプライバシー", icon: "▤" }
+const accountRootTabs = [
+  { id: "account", label: "アカウント", sub: "データと所有権" },
+  { id: "settings", label: "設定", sub: "アプリの操作" }
 ];
 
-const mobileBackgrounds = [
-  { id: "navy-check", label: "ネイビーチェック", source: require("./assets/backgrounds/bg-navy-check.png") },
-  { id: "serenity", label: "静かな夜", source: require("./assets/backgrounds/bg-serenity.png") },
-  { id: "joy", label: "灯る朝", source: require("./assets/backgrounds/bg-joy.png") },
-  { id: "trust", label: "澄んだ湖", source: require("./assets/backgrounds/bg-trust.png") },
-  { id: "acceptance", label: "深い森", source: require("./assets/backgrounds/bg-acceptance.png") },
-  { id: "fear", label: "遠い霧", source: require("./assets/backgrounds/bg-fear.png") },
-  { id: "sadness", label: "青い静寂", source: require("./assets/backgrounds/bg-sadness.png") },
-  { id: "disgust", label: "紫の岸辺", source: require("./assets/backgrounds/bg-disgust.png") },
-  { id: "anger", label: "赤い地平", source: require("./assets/backgrounds/bg-anger.png") }
-];
+const appSettingsDetailTabIds = new Set(["bgm", "language", "notifications", "ritual"]);
 
 const bgmTracks = [
   {
@@ -133,6 +143,14 @@ const dailyBank = [
 const apiBaseUrl = Constants.expoConfig?.extra?.arcApiBaseUrl || "http://localhost:4173";
 const arcStartDate = "2026-06-01";
 const STORAGE_KEY = "arc.state.v1";
+// Chapters only form in the past: the most recent stretch stays "in progress"
+// and is never offered as a chapter (the present can't see its own chapters).
+const CHAPTER_DELAY_DAYS = 60;
+function chapterCutoffKey(days = CHAPTER_DELAY_DAYS) {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  return cutoff.toISOString().slice(0, 10);
+}
 const DEV_MODE = true;
 const DEV_USER = {
   id: "dev-user-001",
@@ -173,6 +191,104 @@ const questDust = [
   { x: -18, y: -98, delay: 210, size: 2 }
 ];
 
+const dailyQuestPrompts = [
+  { title: "三年前の春を、ひとつ思い出して。", category: "記憶" },
+  { title: "今日、言えなかった「ありがとう」は？", category: "感謝", nilo: true },
+  { title: "いま、いちばん手放したい荷物は？", category: "手放す" }
+];
+
+const demoJournalEntries = [
+  {
+    id: "demo-journal-tonight",
+    dateKey: "2026-06-28",
+    dateLabel: "6月28日",
+    tag: "TONIGHT",
+    title: "夕方、ひとりで長い散歩をした。川沿いの道を、ただ歩いていた。",
+    lines: []
+  },
+  {
+    id: "demo-journal-quest",
+    dateKey: "2026-06-27",
+    dateLabel: "6月27日",
+    tag: "QUEST",
+    title: "実家の台所の隅。母が料理していた音がする場所。",
+    lines: []
+  },
+  {
+    id: "demo-journal-rain",
+    dateKey: "2026-06-25",
+    dateLabel: "6月25日",
+    title: "雨の音で目が覚めた。久しぶりに、何も予定のない朝。",
+    lines: []
+  },
+  {
+    id: "demo-journal-call",
+    dateKey: "2026-06-21",
+    dateLabel: "6月21日",
+    title: "母に電話した。短い会話だったけど、声が聞けてよかった。",
+    lines: []
+  },
+  {
+    id: "demo-journal-old",
+    dateKey: "2026-06-14",
+    dateLabel: "6月14日",
+    tag: "QUEST",
+    title: "完璧じゃない自分を、責めてしまう癖。",
+    lines: []
+  }
+];
+
+const demoChapters = [
+  {
+    id: "demo-chapter-recovery",
+    title: "静かな回復",
+    ordinal: "第二章",
+    period: "2023 — いま",
+    summary: "波が引くように、痛みが遠ざかる。",
+    current: true
+  },
+  {
+    id: "demo-chapter-detour",
+    title: "遠回りの年",
+    ordinal: "第一章",
+    period: "2021 — 2023",
+    summary: "迷いながら、それでも歩いていた。"
+  },
+  {
+    id: "demo-chapter-origin",
+    title: "はじまりの場所",
+    ordinal: "序章",
+    period: "2019 — 2021",
+    summary: "何も知らずに、ただ眩しかった。"
+  }
+];
+
+const demoLifeQuest = {
+  title: "航空大学校に合格する",
+  start: "2024年4月 から",
+  recordCount: 12,
+  latestLine: "落ちても、この時間は無駄じゃない。",
+  records: [
+    { date: "6月20日", text: "数学の過去問、ようやく7割。少しだけ、光が見えた。" },
+    { date: "6月8日", text: "模試の結果に落ち込んだ。でも、やめる気はない。" },
+    { date: "5月22日", text: "身体検査の不安を、Niloに話した。" },
+    { date: "4月2日", text: "この夢を、はじめてちゃんと言葉にした日。" }
+  ]
+};
+
+const questLitQuestions = [
+  {
+    date: "JUNE 27",
+    question: "いちばん安心する場所は、どこ？",
+    excerpt: "実家の台所の隅。母が料理していた音がする場所。"
+  },
+  {
+    date: "JUNE 14",
+    question: "そっと手放したいものは？",
+    excerpt: "完璧じゃない自分を、責めてしまう癖。"
+  }
+];
+
 function getEmailOtpErrorMessage(error) {
   const message = String(error?.message || "");
   const status = error?.status;
@@ -184,6 +300,11 @@ function getEmailOtpErrorMessage(error) {
 
 function AppContent() {
   const { width, height } = useWindowDimensions();
+  const [fontsLoaded] = useFonts({
+    CormorantGaramond_300Light,
+    CormorantGaramond_400Regular,
+    CormorantGaramond_500Medium
+  });
   const [activeTab, setActiveTab] = useState("home");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState("base");
@@ -212,6 +333,7 @@ function AppContent() {
   const [memories, setMemories] = useState([]);
   const [chapters, setChapters] = useState([]);
   const [chaptersBusy, setChaptersBusy] = useState(false);
+  const [chapterProposals, setChapterProposals] = useState([]);
   const [hydrated, setHydrated] = useState(false);
   const [profile, setProfile] = useState(() => DEV_MODE ? DEV_PROFILE : { name: "", birthdate: "" });
   const [settings, setSettings] = useState({
@@ -231,6 +353,13 @@ function AppContent() {
       windowStart: "20:00",
       windowEnd: "03:00"
     },
+    reflection: {
+      frequency: "daily",
+      summaryStyle: "narrative",
+      compareLastYear: true,
+      tone: "quiet"
+    },
+    niloStyle: "empathetic",
     privacy: {
       questLink: true,
       memoryLink: true,
@@ -240,12 +369,15 @@ function AppContent() {
 
   const activeQuests = useMemo(() => quests.filter((quest) => !quest.completed), [quests]);
   const journalDateKey = getJournalDateKey();
-  const journalRecordedToday = journal.some((entry) => entry.dateKey === journalDateKey);
+  const reflectionFrequency = normalizeReflectionFrequency(settings.reflection?.frequency);
+  // Night Ritual no longer fixed to daily / a nightly time window — the user's
+  // chosen cadence decides whether the current period still has a reflection open.
+  const journalRecordedThisPeriod = isReflectionRecordedForPeriod(journal, reflectionFrequency);
   const ritualSettings = settings.ritual || {};
   const ritualQuestionTarget = Math.max(1, Math.min(maxReflectionQuestions, Number(ritualSettings.questionCount) || maxReflectionQuestions));
-  const ritualAvailable = isRitualWindow(new Date(), ritualSettings) && !journalRecordedToday;
-  const reflectionInputEnabled = ritualLocked || (!journalRecordedToday && (ritualAvailable || DEV_MODE));
-  const composerPrompt = journalRecordedToday ? "今日は記録済みです" : "短く答える";
+  const ritualAvailable = !journalRecordedThisPeriod;
+  const reflectionInputEnabled = ritualLocked || ritualAvailable || DEV_MODE;
+  const composerPrompt = journalRecordedThisPeriod ? REFLECTION_DONE_PROMPTS[reflectionFrequency] || "記録済みです" : "短く答える";
   const journalRecordDays = new Set(journal.map((entry) => entry.dateKey || getJournalDateKey())).size;
   const journalStreakDays = useMemo(() => getJournalStreakDays(journal), [journal]);
   const memoryRecordDays = new Set(memories.map((memory) => memory.dateKey || memory.id)).size;
@@ -257,7 +389,6 @@ function AppContent() {
     memory: DEV_MODE || memoryRecordDays >= 10
   }), [journalRecordDays, memoryRecordDays]);
   const profileComplete = Boolean(profile.name?.trim() && profile.birthdate?.trim());
-  const activeBackground = mobileBackgrounds.find((background) => background.id === settings.backgroundId) || mobileBackgrounds[0];
   const activeBgmTrack = bgmTracks.find((track) => track.id === settings.bgmTrackId) || bgmTracks[0];
   const [bgmStatus, setBgmStatus] = useState({ playing: false, isLoaded: false });
   const bgmPlayerRef = useRef(null);
@@ -277,8 +408,8 @@ function AppContent() {
   const didShowInitialHomePrompt = useRef(false);
   const currentPageIndex = useRef(0);
   const pagePosition = useRef(0);
-  const viewportFraction = 0.92;
-  const pageGap = 10;
+  const viewportFraction = 1;
+  const pageGap = 0;
   const pageWidth = width * viewportFraction;
   const pageStep = pageWidth + pageGap;
   const sidePeek = Math.max(0, (width - pageWidth) / 2);
@@ -854,14 +985,6 @@ function AppContent() {
 
   const pageViews = [
     {
-      id: "quests",
-      node: <QuestScreen quests={activeQuests} completeQuest={completeQuest} onUiSound={playUiSound} />
-    },
-    {
-      id: "journal",
-      node: <JournalScreen journal={journal} />
-    },
-    {
       id: "home",
       node: (
         <HomeScreen
@@ -887,12 +1010,30 @@ function AppContent() {
       )
     },
     {
-      id: "story",
-      node: <StoryScreen memories={memories} chapters={chapters} onGenerate={generateChapters} busy={chaptersBusy} />
+      id: "quests",
+      node: <QuestScreen quests={quests} completeQuest={completeQuest} onUiSound={playUiSound} active={activeTab === "quests"} />
     },
     {
-      id: "memory",
-      node: <MemoryScreen memories={memories} />
+      id: "journal",
+      node: <JournalScreen journal={journal} active={activeTab === "journal"} />
+    },
+    {
+      id: "story",
+      node: (
+        <StoryScreen
+          active={activeTab === "story"}
+          memories={memories}
+          chapters={chapters}
+          proposals={chapterProposals}
+          eligibleCount={eligibleChapterMemories().length}
+          busy={chaptersBusy}
+          onPropose={proposeChapters}
+          onConfirm={confirmChapterProposal}
+          onDefer={deferChapterProposal}
+          onSplit={splitChapterProposal}
+          onRename={renameChapter}
+        />
+      )
     }
   ];
 
@@ -921,6 +1062,8 @@ function AppContent() {
           messages: nextMessages,
           questionCount,
           forceFinish: questionCount >= ritualQuestionTarget,
+          niloStyle: settings.niloStyle || "empathetic",
+          frequency: reflectionFrequency,
           activeQuests: activeQuests.map((quest) => ({
             id: quest.id,
             title: quest.title,
@@ -1114,7 +1257,7 @@ function AppContent() {
       keptPhrase,
       moodLabel: result?.moodLabel || "",
       moodScore: Number.isFinite(Number(result?.moodScore)) ? Number(result.moodScore) : null,
-      tag: result?.tag || "Night Ritual",
+      tag: result?.tag || "振り返り",
       journalId
     };
 
@@ -1133,16 +1276,33 @@ function AppContent() {
     setQuests((items) => items.map((quest) => quest.id === id ? { ...quest, completed: true } : quest));
   }
 
-  async function generateChapters() {
-    if (chaptersBusy || !memories.length) return;
-    setChaptersBusy(true);
+  // Eligible = far enough in the past (not the in-progress window) and not
+  // already inside a confirmed chapter.
+  function eligibleChapterMemories() {
+    const cutoff = chapterCutoffKey();
+    const chaptered = new Set(chapters.flatMap((chapter) => chapter.memoryIds || []));
+    return memories.filter((memory) => memory.dateKey && memory.dateKey < cutoff && !chaptered.has(memory.id));
+  }
 
+  // Nilo proposes candidates; it never declares chapters. splitFrom re-asks
+  // Nilo to divide one proposal's memories more finely.
+  async function proposeChapters(splitFrom) {
+    if (chaptersBusy) return;
+    const source = splitFrom
+      ? memories.filter((memory) => splitFrom.memoryIds?.includes(memory.id))
+      : eligibleChapterMemories();
+    if (!source.length) {
+      if (!splitFrom) setChapterProposals([]);
+      return;
+    }
+    setChaptersBusy(true);
     try {
       const response = await fetch(`${apiBaseUrl}/api/nilo/chapters`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          memories: memories.map((memory) => ({
+          split: Boolean(splitFrom),
+          memories: source.map((memory) => ({
             id: memory.id,
             dateKey: memory.dateKey,
             essence: memory.essence,
@@ -1151,37 +1311,114 @@ function AppContent() {
           }))
         })
       });
-
       if (!response.ok) throw new Error("request failed");
       const result = await response.json();
-      const generated = (result.chapters || [])
-        .filter((chapter) => chapter?.title)
-        .map((chapter) => ({ id: createId("chapter"), ...chapter }));
-      setChapters(generated.length ? generated : buildLocalChapters(memories));
+      const next = (result.proposals || [])
+        .filter((proposal) => proposal.memoryIds?.length)
+        .map((proposal) => ({ id: createId("proposal"), status: "proposed", ...proposal }));
+      setChapterProposals((current) => splitFrom
+        ? [...current.filter((item) => item.id !== splitFrom.id), ...next]
+        : next);
     } catch {
-      // Offline or no API key: still bind the days into months locally.
-      setChapters(buildLocalChapters(memories));
+      // Offline: without the model Nilo can't sense inflection points, and we
+      // never declare chapters locally — so no proposal is offered.
+      if (!splitFrom) setChapterProposals([]);
     } finally {
       setChaptersBusy(false);
     }
   }
 
+  function confirmChapterProposal(id, title) {
+    const proposal = chapterProposals.find((item) => item.id === id);
+    if (!proposal) return;
+    const clean = (title || "").trim();
+    const chapter = {
+      ...proposal,
+      id: createId("chapter"),
+      status: "confirmed",
+      title: clean,
+      titleHistory: clean ? [{ title: clean, at: Date.now() }] : [],
+      confirmedAt: Date.now()
+    };
+    setChapters((current) => [...current, chapter].sort((a, b) => (b.period || "").localeCompare(a.period || "")));
+    setChapterProposals((current) => current.filter((item) => item.id !== id));
+  }
+
+  function deferChapterProposal(id) {
+    // "Still in progress" — withdraw the offer; those days stay un-chaptered.
+    setChapterProposals((current) => current.filter((item) => item.id !== id));
+  }
+
+  function splitChapterProposal(id) {
+    const proposal = chapterProposals.find((item) => item.id === id);
+    if (!proposal) return;
+    const episodes = proposal.episodes || [];
+    if (episodes.length >= 2) {
+      // The AI's episode breakdown is the pre-computed split — promote each
+      // episode into its own era-proposal the user can approve and name.
+      const promoted = episodes.map((episode) => ({
+        id: createId("proposal"),
+        status: "proposed",
+        period: episode.period,
+        observation: episode.observation,
+        memoryIds: episode.memoryIds || [],
+        emotions: episode.emotions || [],
+        people: [],
+        questions: [],
+        meaningFrom: "",
+        meaningTo: "",
+        episodes: []
+      }));
+      setChapterProposals((current) => [...current.filter((item) => item.id !== id), ...promoted]);
+    } else {
+      proposeChapters(proposal);
+    }
+  }
+
+  function renameChapter(id, nextTitle) {
+    const clean = (nextTitle || "").trim();
+    if (!clean) return;
+    setChapters((current) => current.map((chapter) => {
+      if (chapter.id !== id || chapter.title === clean) return chapter;
+      return { ...chapter, title: clean, titleHistory: [...(chapter.titleHistory || []), { title: clean, at: Date.now() }] };
+    }));
+  }
+
+  if (!fontsLoaded) {
+    // Hold on a quiet, textless night until the serifs are ready, so the
+    // first thing the eye meets is already in the right voice.
+    return (
+      <View style={styles.background}>
+        <BackgroundTexture />
+        <OuterGradient />
+        <View style={styles.scrim} />
+        <NightGrain />
+      </View>
+    );
+  }
+
   if (authLoading) {
     return (
-      <ImageBackground source={activeBackground.source} style={styles.background} resizeMode="cover">
+      <View style={styles.background}>
+        <BackgroundTexture />
+        <OuterGradient />
         <View style={styles.scrim} />
+        <NightGrain />
         <SafeAreaView style={styles.safe}>
           <AuthGate loading />
           <StatusBar barStyle="light-content" />
         </SafeAreaView>
-      </ImageBackground>
+      </View>
     );
   }
 
   if (!session) {
     return (
-      <ImageBackground source={activeBackground.source} style={styles.background} resizeMode="cover">
+      <View style={styles.background}>
+        <BackgroundTexture />
+        <OuterGradient />
         <View style={styles.scrim} />
+        <NightGrain />
         <SafeAreaView style={styles.safe}>
           <AuthGate
             authBusy={authBusy}
@@ -1193,14 +1430,17 @@ function AppContent() {
           />
           <StatusBar barStyle="light-content" />
         </SafeAreaView>
-      </ImageBackground>
+      </View>
     );
   }
 
   if (!profileComplete) {
     return (
-      <ImageBackground source={activeBackground.source} style={styles.background} resizeMode="cover">
+      <View style={styles.background}>
+        <BackgroundTexture />
+        <OuterGradient />
         <View style={styles.scrim} />
+        <NightGrain />
         <SafeAreaView style={styles.safe}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.app}>
             <ProfileGate
@@ -1213,18 +1453,25 @@ function AppContent() {
           </KeyboardAvoidingView>
           <StatusBar barStyle="light-content" />
         </SafeAreaView>
-      </ImageBackground>
+      </View>
     );
   }
 
   return (
-    <ImageBackground source={activeBackground.source} style={styles.background} resizeMode="cover">
+    <View style={styles.background}>
+      <BackgroundTexture />
+      <OuterGradient />
       <View style={styles.scrim} />
+      <NightGrain />
       <SafeAreaView style={styles.safe}>
-        <Header onSettings={() => {
-          playUiSound();
-          setSettingsOpen(true);
-        }} />
+        <Header
+          profile={profile}
+          session={session}
+          onAccount={() => {
+            playUiSound();
+            setSettingsOpen(true);
+          }}
+        />
 
         <Animated.ScrollView
           ref={pageScrollRef}
@@ -1382,9 +1629,9 @@ function AppContent() {
             setSettingsInitialTab("base");
           }}
         />
-        <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="light-content" />
       </SafeAreaView>
-    </ImageBackground>
+    </View>
   );
 }
 
@@ -1396,16 +1643,184 @@ export default function App() {
   );
 }
 
-function Header({ onSettings }) {
+function Header({ onAccount }) {
+  const [clock, setClock] = useState(() => formatClock(new Date()));
+
+  useEffect(() => {
+    const timer = setInterval(() => setClock(formatClock(new Date())), 30000);
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <View style={styles.header}>
-      <View>
-        <Text style={styles.brand}>Arc</Text>
-        <Text style={styles.brandSub}>夜に帰ってくる人生アプリ</Text>
-      </View>
-      <Pressable onPress={onSettings} style={({ pressed }) => [styles.settingsButton, pressed && styles.touchPressedTight]}>
-        <SettingsIcon id="settings" active />
+      <View style={styles.headerSide} />
+      <Text style={styles.headerClock}>{clock}</Text>
+      <Pressable
+        accessibilityLabel="設定を開く"
+        onPress={onAccount}
+        focusable={false}
+        style={({ pressed }) => [styles.settingsSunButton, pressed && styles.touchPressedTight]}
+      >
+        <SettingsSunGlyph />
       </Pressable>
+    </View>
+  );
+}
+
+function SettingsSunGlyph() {
+  return (
+    <View pointerEvents="none" style={styles.settingsSunGlyph}>
+      <View style={styles.settingsSunCore} />
+      <View style={[styles.settingsSunRay, styles.settingsSunRayTop]} />
+      <View style={[styles.settingsSunRay, styles.settingsSunRayBottom]} />
+      <View style={[styles.settingsSunRay, styles.settingsSunRayLeft]} />
+      <View style={[styles.settingsSunRay, styles.settingsSunRayRight]} />
+      <View style={[styles.settingsSunRay, styles.settingsSunRaySlashA]} />
+      <View style={[styles.settingsSunRay, styles.settingsSunRaySlashB]} />
+      <View style={[styles.settingsSunRay, styles.settingsSunRaySlashC]} />
+      <View style={[styles.settingsSunRay, styles.settingsSunRaySlashD]} />
+    </View>
+  );
+}
+
+function BackgroundTexture() {
+  return (
+    <Image
+      pointerEvents="none"
+      source={backgroundTexture}
+      resizeMode="cover"
+      style={styles.backgroundTexture}
+    />
+  );
+}
+
+function NightGrain() {
+  // A near-invisible warm grain tiled over the navy so the screen reads as a
+  // material, a night sky — never as a flat fill.
+  return (
+    <>
+      <Image
+        pointerEvents="none"
+        source={grainTexture}
+        resizeMode="repeat"
+        style={styles.nightGrain}
+      />
+      <Image
+        pointerEvents="none"
+        source={deepGrainTexture}
+        resizeMode="repeat"
+        style={styles.deepNightGrain}
+      />
+    </>
+  );
+}
+
+function OuterGradient() {
+  return (
+    <View pointerEvents="none" style={styles.outerGradient}>
+      <LinearGradient
+        colors={["rgba(32,26,20,0.96)", "rgba(22,18,15,0.68)", "rgba(14,11,9,0.92)"]}
+        locations={[0, 0.54, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+      <LinearGradient
+        colors={["rgba(0,0,0,0)", "rgba(0,0,0,0)", "rgba(0,0,0,0.52)"]}
+        locations={[0, 0.5, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+      <LinearGradient
+        colors={["rgba(255,194,96,0)", "rgba(217,168,108,0.06)", "rgba(217,168,108,0.15)"]}
+        locations={[0, 0.62, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={styles.lowerGlowBase}
+      />
+      <LinearGradient
+        colors={["rgba(217,168,108,0.15)", "rgba(217,168,108,0.045)", "rgba(217,168,108,0)"]}
+        locations={[0, 0.52, 1]}
+        start={{ x: 0.5, y: 1 }}
+        end={{ x: 0.5, y: 0 }}
+        style={styles.lowerGlowPool}
+      />
+    </View>
+  );
+}
+
+function NiloLight({ style }) {
+  // The one light source on the screen: Nilo's still flame. It does not move;
+  // it only breathes, the way a candle holds its place yet stays alive.
+  const breath = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(breath, {
+          toValue: 1,
+          duration: 4200,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true
+        }),
+        Animated.timing(breath, {
+          toValue: 0,
+          duration: 4200,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true
+        })
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [breath]);
+
+  const coreOpacity = breath.interpolate({ inputRange: [0, 1], outputRange: [0.74, 1] });
+  const haloOpacity = breath.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0.8] });
+
+  return (
+    <View pointerEvents="none" style={[styles.niloLightWrap, style]}>
+      <Animated.View style={[styles.niloLightHalo, { opacity: haloOpacity }]}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={["rgba(255,213,140,0)", "rgba(232,176,96,0.14)", "rgba(255,213,140,0)"]}
+          locations={[0, 0.52, 1]}
+          start={{ x: 0.15, y: 0.1 }}
+          end={{ x: 0.85, y: 0.9 }}
+          style={styles.niloLightFill}
+        />
+      </Animated.View>
+      <View style={styles.niloLightGlowMid}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={["rgba(255,213,140,0)", "rgba(232,176,96,0.26)", "rgba(255,213,140,0.04)"]}
+          locations={[0, 0.48, 1]}
+          start={{ x: 0.12, y: 0.12 }}
+          end={{ x: 0.88, y: 0.88 }}
+          style={styles.niloLightFill}
+        />
+      </View>
+      <View style={styles.niloLightGlowInner}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={["rgba(255,213,140,0.06)", "rgba(255,203,128,0.42)", "rgba(232,176,96,0.12)"]}
+          locations={[0, 0.5, 1]}
+          start={{ x: 0.12, y: 0.08 }}
+          end={{ x: 0.88, y: 0.92 }}
+          style={styles.niloLightFill}
+        />
+      </View>
+      <Animated.View style={[styles.niloLightCore, { opacity: coreOpacity }]}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={["#ffe1aa", "#f2bd76", "#9b6735"]}
+          locations={[0, 0.58, 1]}
+          start={{ x: 0.18, y: 0 }}
+          end={{ x: 0.82, y: 1 }}
+          style={styles.niloLightFill}
+        />
+      </Animated.View>
     </View>
   );
 }
@@ -1431,7 +1846,11 @@ function GlassView({ children, style, intensity = 24 }) {
 
 function NiloHomeStage({ question, dimmed, thinking, hideQuestion, compact, sealed }) {
   const opacity = useRef(new Animated.Value(1)).current;
+  const caret = useRef(new Animated.Value(0.9)).current;
+  const [typed, setTyped] = useState(question);
+  const typeTimers = useRef([]);
 
+  // The question fades as it changes (kept from before).
   useEffect(() => {
     opacity.setValue(0);
     Animated.timing(opacity, {
@@ -1442,6 +1861,44 @@ function NiloHomeStage({ question, dimmed, thinking, hideQuestion, compact, seal
     }).start();
   }, [dimmed, opacity, question]);
 
+  // Nilo writes the question, glyph by glyph — the prototype's writeQuestion:
+  // a 340ms breath, then a character every 52ms. While the old line fades out
+  // (dimmed) we hold it, so the erase reads as a fade rather than a flicker.
+  useEffect(() => {
+    typeTimers.current.forEach(clearTimeout);
+    typeTimers.current = [];
+    if (hideQuestion || dimmed) return undefined;
+    const chars = Array.from(question || "");
+    setTyped("");
+    const begin = setTimeout(() => {
+      chars.forEach((_, index) => {
+        const timer = setTimeout(() => setTyped(chars.slice(0, index + 1).join("")), index * 52);
+        typeTimers.current.push(timer);
+      });
+    }, 340);
+    typeTimers.current.push(begin);
+    return () => {
+      typeTimers.current.forEach(clearTimeout);
+      typeTimers.current = [];
+    };
+  }, [question, dimmed, hideQuestion]);
+
+  // The caret holds bright, then winks out — a hard ~1.15s blink (caretBlink).
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(caret, { toValue: 0.9, duration: 0, useNativeDriver: true }),
+        Animated.delay(560),
+        Animated.timing(caret, { toValue: 0, duration: 0, useNativeDriver: true }),
+        Animated.delay(590)
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [caret]);
+
+  const showCaret = !hideQuestion && !sealed && !thinking;
+
   return (
     <View style={[styles.niloStage, compact && styles.niloStageCompact]}>
       <View style={[styles.niloStageCopy, compact && styles.niloStageCopyCompact]}>
@@ -1449,7 +1906,12 @@ function NiloHomeStage({ question, dimmed, thinking, hideQuestion, compact, seal
         {!hideQuestion && (
           <>
             {sealed && <Animated.Text style={[styles.niloSealMark, { opacity }]}>✦ 今夜を綴じました</Animated.Text>}
-            <Animated.Text style={[styles.niloStageQuestion, compact && styles.niloStageQuestionCompact, { opacity }]}>{question}</Animated.Text>
+            <Animated.Text style={[styles.niloStageQuestion, compact && styles.niloStageQuestionCompact, { opacity }]}>
+              {typed}
+              {showCaret && (
+                <Animated.Text style={[styles.niloStageCaret, compact && styles.niloStageCaretCompact, { opacity: caret }]}>▏</Animated.Text>
+              )}
+            </Animated.Text>
           </>
         )}
       </View>
@@ -1538,6 +2000,50 @@ function AnswerPreview({ answer, fading, compact }) {
     <Animated.View style={[styles.answerPreview, compact && styles.answerPreviewCompact, { opacity: fade }]}>
       <Text style={styles.answerPreviewMark}>あなたの言葉</Text>
       <Text style={styles.answerPreviewText}>{typedText}</Text>
+    </Animated.View>
+  );
+}
+
+// The prototype's screens breathe in: each row fades up from 16px below on a
+// soft cubic curve, staggered so a list unfurls rather than snapping in. This
+// is the `riseIn` keyframe (delay 0.05 + i*0.07s) made native.
+const riseEasing = Easing.bezier(0.2, 0.72, 0.28, 1);
+
+// A token that ticks every time `active` flips true, so a screen replays its
+// entrance each time the user lands on it — not only on first mount.
+function useEntrancePlay(active) {
+  const [token, setToken] = useState(active ? 1 : 0);
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (active && !wasActive.current) setToken((value) => value + 1);
+    wasActive.current = active;
+  }, [active]);
+  return token;
+}
+
+function RiseIn({ index = 0, playToken = 0, duration = 550, distance = 16, delayBase = 50, style, children }) {
+  // Start shown when the screen was already on-screen at mount (playToken 0),
+  // hidden when it has an entrance to play — so we never flash a blank screen.
+  const progress = useRef(new Animated.Value(playToken ? 0 : 1)).current;
+
+  useEffect(() => {
+    if (!playToken) return undefined;
+    progress.setValue(0);
+    const timer = setTimeout(() => {
+      Animated.timing(progress, {
+        toValue: 1,
+        duration,
+        easing: riseEasing,
+        useNativeDriver: true
+      }).start();
+    }, delayBase + index * 70);
+    return () => clearTimeout(timer);
+  }, [playToken, index, duration, delayBase, progress]);
+
+  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [distance, 0] });
+  return (
+    <Animated.View style={[style, { opacity: progress, transform: [{ translateY }] }]}>
+      {children}
     </Animated.View>
   );
 }
@@ -1711,6 +2217,9 @@ function HomeScreen({
   const showFirstRun = !authLoading && (!session || needsProfile);
   const compact = keyboardVisible;
   const liftedY = inputLocked ? 0 : screenHeight < 720 ? -118 : screenHeight < 820 ? -140 : -164;
+  const displayQuestion = reflectionQuestion === reflectionQuestions[0]
+    ? "今日はどんな日\nだった？"
+    : reflectionQuestion;
 
   useEffect(() => {
     Animated.timing(questionLift, {
@@ -1721,13 +2230,22 @@ function HomeScreen({
     }).start();
   }, [keyboardVisible, liftedY, questionLift]);
 
+  // Keep the question a touch above center, then leave a wide silence below it
+  // for the light to sit in.
+  const questionTopInset = compact ? 28 : Math.round(Math.max(210, (screenHeight - 90 - 192) / 2));
+
   return (
     <View
-      style={styles.homeReflectionScreen}
+      style={[styles.homeReflectionScreen, { paddingTop: questionTopInset }]}
     >
       <Animated.View style={[styles.reflectionTapArea, { transform: [{ translateY: questionLift }] }]}>
+        {!answerPreview && (
+          <Animated.Text style={[styles.homeLeadText, questionTransitioning && styles.homeLeadTextDimmed]}>
+            今日もおつかれさま。
+          </Animated.Text>
+        )}
         <NiloHomeStage
-          question={reflectionQuestion}
+          question={displayQuestion}
           dimmed={questionTransitioning}
           thinking={questionTransitioning || isSending}
           hideQuestion={Boolean(answerPreview)}
@@ -1736,6 +2254,10 @@ function HomeScreen({
         />
         <AnswerPreview answer={answerPreview} fading={questionTransitioning} compact={compact} />
       </Animated.View>
+
+      {!compact && !inputLocked && (
+        <NiloLight style={{ position: "absolute", alignSelf: "center", bottom: Math.round(screenHeight * 0.2) }} />
+      )}
 
       {showFirstRun && (
         <FirstRunCard
@@ -1906,15 +2428,10 @@ function NightRitualButton({ enabled, visible, streakDays, onPress, animatedStyl
           !enabled && styles.ritualStartButtonDisabled
         ]}
       >
-        <GlassBackdrop intensity={30} />
-        <View pointerEvents="none" style={styles.ritualButtonSheen} />
-        <Animated.Text style={[styles.ritualStartIcon, !enabled && styles.ritualStartTextDisabled, enabled && { opacity: markOpacity, transform: [{ scale: markScale }] }]}>✦</Animated.Text>
-        <View style={styles.ritualStartCopy}>
-          <Text style={[styles.ritualStartText, !enabled && styles.ritualStartTextDisabled]}>Night Ritual</Text>
-          <Text style={[styles.ritualStreakText, !enabled && styles.ritualStartTextDisabled]}>
-            {`現在 ${streakDays}日連続`}
-          </Text>
-        </View>
+        <Animated.Text style={[styles.ritualStartIcon, !enabled && styles.ritualStartTextDisabled, enabled && { opacity: markOpacity, transform: [{ scale: markScale }] }]}>·</Animated.Text>
+        <Text style={[styles.ritualStartText, !enabled && styles.ritualStartTextDisabled]}>
+          {enabled ? "ふれて、今日を書く" : "今夜は記録済み"}
+        </Text>
       </Pressable>
     </Animated.View>
   );
@@ -1950,113 +2467,93 @@ function FirstRunCard({ session, needsProfile, authBusy, onGoogleSignIn, onOpenP
   );
 }
 
-function QuestScreen({ quests, completeQuest, onUiSound }) {
-  const [questView, setQuestView] = useState("daily");
-  const [renderedQuestView, setRenderedQuestView] = useState("daily");
-  const [questSwitchWidth, setQuestSwitchWidth] = useState(0);
-  const questContentFade = useRef(new Animated.Value(1)).current;
-  const questSwitchMotion = useRef(new Animated.Value(0)).current;
-  const habitQuests = quests.filter((quest) => quest.source === "daily");
-  const nrQuests = quests.filter((quest) => quest.source === "journal-daily");
-  const lifeQuests = quests.filter((quest) => quest.source !== "daily" && quest.source !== "journal-daily");
-  const dailyQuestCount = habitQuests.length + nrQuests.length;
-  const questSwitchGap = 8;
-  const questSwitchPadding = 5;
-  const questSwitchSlot = questSwitchWidth ? (questSwitchWidth - questSwitchPadding * 2 - questSwitchGap) / 2 : 0;
-  const questSwitchHighlightX = questSwitchMotion.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, questSwitchSlot + questSwitchGap]
-  });
-  const questContentLift = questContentFade.interpolate({
-    inputRange: [0, 1],
-    outputRange: [10, 0]
-  });
+function QuestScreen({ quests, completeQuest, onUiSound, active }) {
+  const token = useEntrancePlay(active);
+  const sourceQuests = quests.length ? quests : dailyQuestPrompts.map((quest, index) => ({
+    id: `preview-quest-${index}`,
+    source: "daily",
+    completed: false,
+    ...quest
+  }));
+  const visibleQuests = sourceQuests.filter((quest) => !quest.completed);
+  const totalCount = Math.max(dailyQuestPrompts.length, sourceQuests.length || dailyQuestPrompts.length);
+  const doneCount = Math.max(0, sourceQuests.filter((quest) => quest.completed).length);
+  const progressWidth = `${Math.min(100, Math.round((doneCount / totalCount) * 100))}%`;
+  const shownQuests = (visibleQuests.length ? visibleQuests : dailyQuestPrompts).slice(0, 3);
 
-  function switchQuestView(nextView) {
-    if (nextView === questView) return;
-    setQuestView(nextView);
-    Animated.timing(questSwitchMotion, {
-      toValue: nextView === "daily" ? 0 : 1,
-      duration: 260,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true
-    }).start();
-    Animated.timing(questContentFade, {
-      toValue: 0,
-      duration: 120,
-      easing: Easing.inOut(Easing.cubic),
-      useNativeDriver: true
-    }).start(() => {
-      setRenderedQuestView(nextView);
-      questContentFade.setValue(0);
-      Animated.timing(questContentFade, {
-        toValue: 1,
-        duration: 240,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true
-      }).start();
-    });
+  return (
+    <ScrollView contentContainerStyle={styles.questScrollContent} showsVerticalScrollIndicator={false}>
+      <RiseIn index={0} playToken={token} style={styles.questHeader}>
+        <Text style={styles.questScreenTitle}>今日のクエスト</Text>
+        <Text style={styles.questEyebrow}>QUEST ・ 与えられた問いに答える</Text>
+        <Text style={styles.questProgress}>今夜　{doneCount} / {totalCount} 完了</Text>
+        <View style={styles.questHeaderRule}>
+          <View style={[styles.questHeaderRuleFill, { width: progressWidth }]} />
+        </View>
+      </RiseIn>
+      <View style={styles.questList}>
+        {shownQuests.map((quest, index) => (
+          <RiseIn key={quest.id || `daily-${index}`} index={index + 1} playToken={token} duration={500}>
+            <QuestCard
+              quest={{ ...dailyQuestPrompts[index % dailyQuestPrompts.length], ...quest }}
+              onComplete={completeQuest}
+              onUiSound={onUiSound}
+              preview={!quests.length}
+            />
+          </RiseIn>
+        ))}
+      </View>
+      <RiseIn index={shownQuests.length + 1} playToken={token} style={styles.litQuestionsHeader}>
+        <Text style={styles.litQuestionsTitle}>灯 し た 問 い</Text>
+        <View style={styles.litQuestionsRule} />
+      </RiseIn>
+      <View style={styles.litQuestionsTimeline}>
+        <View pointerEvents="none" style={styles.litQuestionsLine} />
+        {questLitQuestions.map((item, index) => (
+          <RiseIn key={item.question} index={shownQuests.length + 2 + index} playToken={token} duration={500} style={styles.litQuestionItem}>
+            <View style={styles.litQuestionDot} />
+            <View style={styles.litQuestionMetaRow}>
+              <Text style={styles.litQuestionDate}>{item.date}</Text>
+              <Text style={styles.litQuestionTag}>QUEST</Text>
+            </View>
+            <Text style={styles.litQuestionText}>{item.question}</Text>
+            <Text numberOfLines={1} style={styles.litQuestionExcerpt}>{item.excerpt}</Text>
+          </RiseIn>
+        ))}
+      </View>
+    </ScrollView>
+  );
+}
+
+function QuestCard({ quest, onComplete, onUiSound, preview }) {
+  function handleComplete() {
+    if (preview) return;
+    onUiSound?.();
+    onComplete(quest.id);
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-      <PageTitle eyebrow="Quiet quests" title="クエスト" subtitle="明日の自分が少し続きを見たくなる約束。" />
-      <View style={styles.questSwitch} onLayout={(event) => setQuestSwitchWidth(event.nativeEvent.layout.width)}>
-        {!!questSwitchSlot && (
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.questSwitchHighlight,
-              {
-                width: questSwitchSlot,
-                transform: [{ translateX: questSwitchHighlightX }]
-              }
-            ]}
-          />
-        )}
-        {[
-          ["daily", "デイリー", dailyQuestCount],
-          ["life", "ライフ", lifeQuests.length]
-        ].map(([value, label, count]) => (
-          <Pressable
-            key={value}
-            onPress={() => switchQuestView(value)}
-            style={styles.questSwitchButton}
-          >
-            <Text style={[styles.questSwitchText, questView === value && styles.questSwitchTextActive]}>{label}</Text>
-            <Text style={[styles.questSwitchCount, questView === value && styles.questSwitchTextActive]}>{count}</Text>
-          </Pressable>
-        ))}
+    <View style={styles.mobileQuestCard}>
+      <LinearGradient
+        pointerEvents="none"
+        colors={["rgba(46,36,26,0.64)", "rgba(22,17,14,0.55)"]}
+        locations={[0, 1]}
+        start={{ x: 0.08, y: 0 }}
+        end={{ x: 0.92, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+      <Text style={styles.mobileQuestCategory}>{quest.category || getQuestCategory(quest)}</Text>
+      {!!quest.nilo && <Text style={styles.mobileQuestNilo}>NILO</Text>}
+      <Text style={styles.mobileQuestTitle}>{quest.title}</Text>
+      <View style={styles.mobileQuestActions}>
+        <Pressable onPress={handleComplete} style={({ pressed }) => [styles.mobileQuestAction, styles.mobileQuestActionPrimary, pressed && !preview && styles.touchPressedTight]}>
+          <Text style={styles.mobileQuestActionPrimaryText}>完了にする</Text>
+        </Pressable>
+        <Pressable onPress={onUiSound} style={({ pressed }) => [styles.mobileQuestAction, styles.mobileQuestActionSecondary, pressed && styles.touchPressedTight]}>
+          <Text style={styles.mobileQuestActionSecondaryText}>Niloに記録</Text>
+        </Pressable>
       </View>
-      <Animated.View style={{ opacity: questContentFade, transform: [{ translateY: questContentLift }] }}>
-        {renderedQuestView === "daily" ? (
-          <>
-            <QuestSection title="習慣クエスト" quests={habitQuests} completeQuest={completeQuest} onUiSound={onUiSound} />
-            <QuestSection title="NRクエスト" quests={nrQuests} completeQuest={completeQuest} onUiSound={onUiSound} />
-            {!dailyQuestCount && (
-              <EmptyState
-                title="今日のデイリークエストはありません"
-                body="習慣やNight Ritualから生まれる明日の一歩が、ここに並びます。"
-              />
-            )}
-          </>
-        ) : (
-          <>
-            <View style={styles.questGrid}>
-              {lifeQuests.map((quest) => (
-                <QuestTile key={quest.id} quest={quest} onComplete={completeQuest} onUiSound={onUiSound} />
-              ))}
-            </View>
-            {!lifeQuests.length && (
-              <EmptyState
-                title="ライフクエストはまだありません"
-                body="Niloとの会話から、中期・長期の約束が見つかるとここに残ります。"
-              />
-            )}
-          </>
-        )}
-      </Animated.View>
-    </ScrollView>
+    </View>
   );
 }
 
@@ -2214,133 +2711,336 @@ function QuestTile({ quest, onComplete, onUiSound }) {
   );
 }
 
-function JournalScreen({ journal }) {
-  const calendarDays = getJournalCalendarDays();
-  const [selectedDate, setSelectedDate] = useState(getJournalDateKey());
-  const [pastOpen, setPastOpen] = useState(false);
-  const selectedEntries = journal.filter((entry) => (entry.dateKey || getJournalDateKey()) === selectedDate);
-
-  // The weekly strip covers "this week"; everything before it lives in the
-  // past-records list so the whole history stays reachable.
-  const weekStartKey = calendarDays[0]?.key || getJournalDateKey();
-  const pastEntries = journal
-    .filter((entry) => (entry.dateKey || "") < weekStartKey)
-    .sort((a, b) => (a.dateKey < b.dateKey ? 1 : -1));
+function JournalScreen({ journal, active }) {
+  const token = useEntrancePlay(active);
+  const entries = getJournalTimelineEntries(journal);
 
   return (
-    <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-      <PageTitle eyebrow="One reflection a day" title="日記" subtitle="今日の自分に戻る場所。" />
-      <Text style={styles.calendarSectionLabel}>今週</Text>
-      <View style={styles.calendarStrip}>
-        {calendarDays.map((day) => {
-          const hasEntry = journal.some((entry) => entry.dateKey === day.key);
-          const selected = selectedDate === day.key;
-          return (
-            <Pressable
-              key={day.key}
-              onPress={() => setSelectedDate(day.key)}
-              style={[styles.calendarDay, selected && styles.calendarDayActive]}
-            >
-              <Text style={[styles.calendarWeek, selected && styles.calendarTextActive]}>{day.weekday}</Text>
-              <Text style={[styles.calendarDate, selected && styles.calendarTextActive]}>{day.day}</Text>
-              <View style={[styles.calendarDot, hasEntry && styles.calendarDotActive]} />
-            </Pressable>
-          );
-        })}
-      </View>
-      {selectedEntries.length === 0 ? (
-        <EmptyState title="この日の記録はありません" body="今夜の会話を終えると、ここに記録が残ります。" />
-      ) : selectedEntries.map((entry) => (
-        <View key={entry.id} style={styles.panel}>
-          <Text style={styles.entryDate}>{entry.dateLabel || formatDotDate(entry.dateKey)}</Text>
-          <Text style={styles.entryTitle}>{entry.title}</Text>
-          {entry.lines.map((line, index) => <Text key={index} style={styles.mutedText}>{line}</Text>)}
-        </View>
-      ))}
-
-      {pastEntries.length > 0 && (
-        <View style={styles.pastSection}>
-          <Pressable onPress={() => setPastOpen((open) => !open)} style={styles.pastToggle}>
-            <View>
-              <Text style={styles.pastToggleLabel}>過去の記録</Text>
-              <Text style={styles.pastToggleMeta}>これまでの {pastEntries.length} 件</Text>
+    <ScrollView contentContainerStyle={styles.journalScrollContent} showsVerticalScrollIndicator={false}>
+      <RiseIn index={0} playToken={token} style={styles.journalHeader}>
+        <Text style={styles.mobileScreenTitle}>日記</Text>
+        <Text style={styles.mobileGoldLabel}>二つの川が、合流する場所</Text>
+        <Text style={styles.journalMonth}>JUNE 2026</Text>
+        <Text style={styles.journalWatermark}>水無月</Text>
+      </RiseIn>
+      <View style={styles.timeline}>
+        <View pointerEvents="none" style={styles.timelineLine} />
+        {entries.map((entry, index) => (
+          <RiseIn key={entry.id} index={index + 1} playToken={token} duration={550} style={styles.timelineItem}>
+            <View style={[styles.timelineDot, index === 0 && styles.timelineDotActive]} />
+            <View style={styles.timelineCopy}>
+              <View style={styles.timelineMetaRow}>
+                <Text style={[styles.timelineDate, index === 0 && styles.timelineDateActive]}>{entry.dateLabel}</Text>
+                {!!entry.tag && <Text style={styles.timelineTag}>{entry.tag}</Text>}
+              </View>
+              <Text style={[styles.timelineText, index > 0 && styles.timelineTextMuted]}>{entry.title}</Text>
+              {(entry.lines || []).map((line, lineIndex) => (
+                <Text key={lineIndex} style={styles.timelineTextMuted}>{line}</Text>
+              ))}
             </View>
-            <Text style={styles.pastToggleChevron}>{pastOpen ? "▲" : "▼"}</Text>
-          </Pressable>
-          {pastOpen && pastEntries.map((entry) => {
-            const active = selectedDate === entry.dateKey;
-            return (
-              <Pressable
-                key={entry.id}
-                onPress={() => setSelectedDate(entry.dateKey)}
-                style={[styles.pastRow, active && styles.pastRowActive]}
-              >
-                <Text style={styles.pastRowDate}>{entry.dateLabel || formatDotDate(entry.dateKey)}</Text>
-                <Text style={styles.pastRowTitle} numberOfLines={1}>{entry.title}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
+          </RiseIn>
+        ))}
+      </View>
     </ScrollView>
   );
 }
 
-function StoryScreen({ memories, chapters, onGenerate, busy }) {
-  const hasMemories = (memories?.length || 0) > 0;
-  const hasChapters = (chapters?.length || 0) > 0;
+function StoryScreen({ memories, chapters, proposals, eligibleCount, busy, onPropose, onConfirm, onDefer, onSplit, onRename, active }) {
+  const [lifeQuestOpen, setLifeQuestOpen] = useState(false);
+  const token = useEntrancePlay(active);
+  const chapterTimeline = getChapterTimelineEntries(chapters);
+  const hasProposals = (proposals?.length || 0) > 0;
 
   return (
-    <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-      <PageTitle eyebrow="Life chapters" title="人生の章" subtitle="あなたのストーリーを章として残します。" />
-      {!hasMemories ? (
-        <EmptyState title="まだ章はありません" body="夜の振り返りで記憶が増えると、ここに章として束ねられます。" />
-      ) : (
-        <>
+    <>
+      <ScrollView contentContainerStyle={styles.storyScrollContent} showsVerticalScrollIndicator={false}>
+        <RiseIn index={0} playToken={token} style={styles.storyHeader}>
+          <Text style={styles.mobileScreenTitle}>章</Text>
+          <Text style={styles.mobileGoldLabel}>YOUR STORY ・ 全三章</Text>
+        </RiseIn>
+        <View style={styles.chapterTimeline}>
+          <View pointerEvents="none" style={styles.chapterTimelineLine} />
+          {chapterTimeline.map((chapter, index) => (
+            <RiseIn key={chapter.id} index={index + 1} playToken={token} duration={550} style={styles.chapterTimelineItem}>
+              <View style={[styles.chapterTimelineDot, index === 0 && styles.chapterTimelineDotActive]} />
+              <View style={styles.chapterTimelineCopy}>
+                <View style={styles.chapterMetaRow}>
+                  <Text style={styles.chapterOrdinalText}>{chapter.ordinal}</Text>
+                  <Text style={styles.chapterPeriodText}>{chapter.period}</Text>
+                </View>
+                <Text style={[styles.chapterTimelineTitle, index > 0 && styles.chapterPastTitle]}>{chapter.title}</Text>
+                <Text style={[styles.chapterTimelineSummary, index > 0 && styles.chapterPastSummary]}>{chapter.summary}</Text>
+                {index === 0 && (
+                  <>
+                    <Text style={styles.chapterNowNote}>-- いま、この章の中に</Text>
+                    <Pressable onPress={() => setLifeQuestOpen(true)} style={({ pressed }) => [styles.lifeQuestCard, pressed && styles.touchPressedSubtle]}>
+                      <Text style={styles.lifeQuestLabel}>LIFE QUEST</Text>
+                      <Text style={styles.lifeQuestTitle}>{demoLifeQuest.title}</Text>
+                      <View style={styles.lifeQuestMetaRow}>
+                        <Text style={styles.lifeQuestMeta}>記録 {demoLifeQuest.recordCount}回</Text>
+                        <Text style={styles.lifeQuestMeta}>・</Text>
+                        <Text style={styles.lifeQuestMeta}>最終 6月20日</Text>
+                        <Text style={styles.lifeQuestChevron}>›</Text>
+                      </View>
+                    </Pressable>
+                  </>
+                )}
+              </View>
+            </RiseIn>
+          ))}
+          <RiseIn index={chapterTimeline.length + 1} playToken={token} style={styles.chapterNewItem}>
+            <View style={styles.chapterNewDot} />
+            <View style={styles.chapterNewCard}>
+              <Text style={styles.chapterNewText}>＋　新しい章を始める</Text>
+            </View>
+          </RiseIn>
+        </View>
+
+        {eligibleCount > 0 && (
           <Pressable
             disabled={busy}
-            onPress={onGenerate}
-            style={({ pressed }) => [styles.chapterButton, pressed && !busy && styles.chapterButtonPressed, busy && styles.disabledButton]}
+            onPress={() => onPropose()}
+            style={({ pressed }) => [styles.chapterFindButton, pressed && !busy && styles.touchPressedTight, busy && styles.disabledButton]}
           >
-            <Text style={styles.chapterButtonIcon}>✦</Text>
-            <Text style={styles.chapterButtonText}>{busy ? "編んでいます…" : hasChapters ? "章を編みなおす" : "記憶を章に編む"}</Text>
+            <Text style={styles.chapterFindButtonText}>{busy ? "見つめています…" : hasProposals ? "もう一度、章を探す" : "章を探す"}</Text>
           </Pressable>
-          {hasChapters ? (
-            chapters.map((chapter, index) => (
-              <ChapterCard key={chapter.id} chapter={chapter} index={index} total={chapters.length} />
-            ))
-          ) : (
-            <EmptyState
-              title="まだ章になっていません"
-              body={`${memories.length}個の記憶があります。「記憶を章に編む」で、時期ごとの章にまとめます。`}
-            />
-          )}
-        </>
-      )}
-    </ScrollView>
+        )}
+
+        {hasProposals && proposals.map((proposal) => (
+          <ProposalCard
+            key={proposal.id}
+            proposal={proposal}
+            busy={busy}
+            onConfirm={onConfirm}
+            onDefer={onDefer}
+            onSplit={onSplit}
+          />
+        ))}
+      </ScrollView>
+      <LifeQuestDetailModal visible={lifeQuestOpen} onClose={() => setLifeQuestOpen(false)} quest={demoLifeQuest} />
+    </>
   );
 }
 
-function ChapterCard({ chapter, index, total }) {
+function LifeQuestDetailModal({ visible, onClose, quest }) {
+  const token = useEntrancePlay(visible);
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <View style={styles.background}>
+        <BackgroundTexture />
+        <OuterGradient />
+        <View style={styles.scrim} />
+        <NightGrain />
+        <SafeAreaView style={styles.safe}>
+          <Pressable focusable={false} onPress={onClose} style={({ pressed }) => [styles.lifeQuestBack, pressed && styles.touchPressedTight]}>
+            <Text style={styles.lifeQuestBackText}>‹</Text>
+          </Pressable>
+          <ScrollView contentContainerStyle={styles.lifeQuestDetailScroll} showsVerticalScrollIndicator={false}>
+            <RiseIn index={0} playToken={token}>
+              <Text style={styles.lifeQuestDetailLabel}>LIFE QUEST</Text>
+              <Text style={styles.lifeQuestDetailTitle}>{quest.title}</Text>
+              <Text style={styles.lifeQuestDetailMeta}>{quest.start}　・　記録 {quest.recordCount} 回</Text>
+            </RiseIn>
+
+            <RiseIn index={1} playToken={token} style={styles.latestWordCard}>
+              <Text style={styles.latestWordLabel}>最新の言葉</Text>
+              <Text style={styles.latestWordText}>「{quest.latestLine}」</Text>
+            </RiseIn>
+
+            <RiseIn index={2} playToken={token} style={styles.recordTrailHeader}>
+              <Text style={styles.recordTrailLabel}>記録の軌跡</Text>
+              <View style={styles.recordTrailRule} />
+            </RiseIn>
+            <View style={styles.lifeQuestRecordTimeline}>
+              <View pointerEvents="none" style={styles.lifeQuestRecordLine} />
+              {quest.records.map((record, index) => (
+                <RiseIn key={`${record.date}-${index}`} index={index + 3} playToken={token} duration={500} style={styles.lifeQuestRecordItem}>
+                  <View style={styles.lifeQuestRecordDot} />
+                  <View style={styles.lifeQuestRecordCopy}>
+                    <Text style={styles.lifeQuestRecordDate}>{record.date}</Text>
+                    <Text style={styles.lifeQuestRecordText}>{record.text}</Text>
+                  </View>
+                </RiseIn>
+              ))}
+            </View>
+
+            <View style={styles.lifeQuestActions}>
+              <Pressable onPress={onClose} style={({ pressed }) => [styles.lifeQuestTalkButton, pressed && styles.touchPressedTight]}>
+                <Text style={styles.lifeQuestTalkText}>Niloと今日の進捗を話す</Text>
+              </Pressable>
+              <View style={styles.lifeQuestGhostRow}>
+                <Pressable onPress={onClose} style={({ pressed }) => [styles.lifeQuestGhostButton, pressed && styles.touchPressedSubtle]}>
+                  <Text style={styles.lifeQuestGhostText}>この章を完了する</Text>
+                </Pressable>
+                <Pressable onPress={onClose} style={({ pressed }) => [styles.lifeQuestGhostButton, pressed && styles.touchPressedSubtle]}>
+                  <Text style={styles.lifeQuestGhostText}>この章を閉じる</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.lifeQuestPhilosophy}>達成より、道のりを残す。{"\n"}どちらも同じ重さで、章になる。</Text>
+            </View>
+          </ScrollView>
+          <StatusBar barStyle="light-content" />
+        </SafeAreaView>
+      </View>
+    </Modal>
+  );
+}
+
+function ThroughlineRow({ label, items }) {
+  return (
+    <View style={styles.throughlineRow}>
+      <Text style={styles.throughlineLabel}>{label}</Text>
+      <Text style={styles.throughlineValue}>{items.join("　·　")}</Text>
+    </View>
+  );
+}
+
+// The throughline of a period — not a summary, but what ran through it.
+function ThroughlineBlock({ data }) {
+  const emotions = data.emotions || [];
+  const people = data.people || [];
+  const questions = data.questions || [];
+  const hasShift = !!data.meaningFrom || !!data.meaningTo;
+  if (!emotions.length && !people.length && !questions.length && !hasShift) return null;
+  return (
+    <View style={styles.throughline}>
+      <View style={styles.ruleGold} />
+      {emotions.length > 0 && <ThroughlineRow label="感情" items={emotions} />}
+      {people.length > 0 && <ThroughlineRow label="人" items={people} />}
+      {questions.length > 0 && <ThroughlineRow label="問い" items={questions} />}
+      {hasShift && (
+        <View style={styles.meaningShift}>
+          {!!data.meaningFrom && <Text style={styles.meaningText}>{data.meaningFrom}</Text>}
+          <View style={styles.meaningRule} />
+          {!!data.meaningTo && <Text style={styles.meaningTextTo}>{data.meaningTo}</Text>}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// First date of an episode period, as a slim MM.DD marker for the list.
+function episodeShortPeriod(period) {
+  const match = String(period || "").match(/(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})/);
+  if (match) return `${match[2].padStart(2, "0")}.${match[3].padStart(2, "0")}`;
+  return String(period || "").replace(/^\d{4}[.\-/]/, "").slice(0, 8);
+}
+
+// A chapter (era) folds its episodes away; the toggle reveals the texture
+// inside. Episodes are Nilo's, surfaced — never named or approved on their own.
+function EpisodeList({ episodes }) {
+  const [open, setOpen] = useState(false);
+  if (!episodes || episodes.length === 0) return null;
+  return (
+    <View style={styles.episodeBlock}>
+      <Pressable onPress={() => setOpen((value) => !value)} style={styles.episodeToggle}>
+        <Text style={styles.episodeToggleText}>{`${episodes.length}つの場面　${open ? "▾" : "▸"}`}</Text>
+      </Pressable>
+      {open && (
+        <View style={styles.episodeList}>
+          {episodes.map((episode, index) => (
+            <View key={index} style={[styles.episodeItem, index > 0 && styles.episodeItemDivided]}>
+              <Text style={styles.episodeDate}>{episodeShortPeriod(episode.period)}</Text>
+              <Text style={styles.episodeText}>{episode.observation}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function ProposalCard({ proposal, busy, onConfirm, onDefer, onSplit }) {
+  const [naming, setNaming] = useState(false);
+  const [title, setTitle] = useState("");
+
+  return (
+    <View style={styles.proposalCard}>
+      <Text style={styles.proposalEyebrow}>NILO が感じた変化点</Text>
+      {!!proposal.period && <Text style={styles.proposalPeriod}>{proposal.period}</Text>}
+      {!!proposal.observation && <Text style={styles.proposalObservation}>{proposal.observation}</Text>}
+      <ThroughlineBlock data={proposal} />
+      <EpisodeList episodes={proposal.episodes} />
+      {naming ? (
+        <View style={styles.proposalNameRow}>
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            placeholder="この章に名前をつける（後で変えられます）"
+            placeholderTextColor="#777"
+            style={styles.settingInput}
+          />
+          <Pressable onPress={() => onConfirm(proposal.id, title)} style={styles.primaryButton}>
+            <Text style={styles.primaryButtonText}>この章を残す</Text>
+          </Pressable>
+          <Pressable onPress={() => onConfirm(proposal.id, "")}>
+            <Text style={styles.proposalSkipName}>名前は後で</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <View style={styles.proposalActions}>
+          <Pressable disabled={busy} onPress={() => setNaming(true)} style={styles.proposalAccept}>
+            <Text style={styles.proposalAcceptText}>認める</Text>
+          </Pressable>
+          <Pressable disabled={busy} onPress={() => onDefer(proposal.id)} style={styles.proposalGhost}>
+            <Text style={styles.proposalGhostText}>まだ進行中</Text>
+          </Pressable>
+          <Pressable disabled={busy} onPress={() => onSplit(proposal.id)} style={styles.proposalGhost}>
+            <Text style={styles.proposalGhostText}>分ける</Text>
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function ChapterCard({ chapter, index, total, onRename }) {
   // Chapters render newest-first, but the story reads oldest-first — so the
   // earliest memory becomes Chapter I.
   const chapterNo = total - index;
-  const count = chapter.memoryIds?.length || 0;
+  const history = chapter.titleHistory || [];
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(chapter.title || "");
+
+  const past = history.slice(0, -1).map((entry) => entry.title).filter(Boolean);
+
   return (
     <View style={styles.chapterCard}>
-      <View style={styles.chapterAccent} />
-      <View style={styles.chapterEyebrowRow}>
-        <Text style={styles.chapterOrdinal}>{`CHAPTER ${toRoman(chapterNo)}`}</Text>
-        {!!chapter.period && <Text style={styles.chapterDot}>·</Text>}
-        {!!chapter.period && <Text style={styles.chapterPeriod}>{chapter.period}</Text>}
-      </View>
-      <Text style={styles.chapterCardTitle}>{chapter.title}</Text>
-      {!!chapter.summary && <Text style={styles.chapterSummary}>{chapter.summary}</Text>}
-      {count > 0 && (
-        <View style={styles.chapterFooter}>
-          <View style={styles.chapterCountDot} />
-          <Text style={styles.chapterCount}>{`${count}つの記憶`}</Text>
+      <View style={styles.chapterMark}>
+        <Text style={styles.chapterRoman}>{toRoman(chapterNo)}</Text>
+        <View style={styles.chapterMarkCol}>
+          <Text style={styles.chapterEyebrowLabel}>CHAPTER</Text>
+          {!!chapter.period && <Text style={styles.chapterPeriodRefined}>{chapter.period}</Text>}
         </View>
+      </View>
+      {editing ? (
+        <View style={styles.chapterNameActions}>
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            placeholder="章に名前をつける"
+            placeholderTextColor="#777"
+            style={styles.settingInput}
+          />
+          <Pressable onPress={() => { onRename(chapter.id, title); setEditing(false); }} style={styles.primaryButton}>
+            <Text style={styles.primaryButtonText}>名前を残す</Text>
+          </Pressable>
+          <Pressable onPress={() => setEditing(false)}>
+            <Text style={styles.proposalSkipName}>やめる</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <Pressable onPress={() => { setTitle(chapter.title || ""); setEditing(true); }}>
+          <Text style={chapter.title ? styles.chapterCardTitle : styles.chapterCardTitleEmpty}>
+            {chapter.title || "名前のない章 — 触れて名づける"}
+          </Text>
+        </Pressable>
+      )}
+      {!!chapter.observation && <Text style={styles.chapterEpigraph}>{chapter.observation}</Text>}
+      <ThroughlineBlock data={chapter} />
+      <EpisodeList episodes={chapter.episodes} />
+      {past.length > 0 && (
+        <Text style={styles.renameTrail}>かつて — {past.join(" → ")}</Text>
       )}
     </View>
   );
@@ -2399,7 +3099,6 @@ function PageTitle({ eyebrow, title, subtitle }) {
 function EmptyState({ title, body }) {
   return (
     <View style={styles.panel}>
-      <GlassBackdrop intensity={20} />
       <Text style={styles.panelTitle}>{title}</Text>
       <Text style={styles.mutedText}>{body}</Text>
     </View>
@@ -2407,40 +3106,54 @@ function EmptyState({ title, body }) {
 }
 
 function TabBar({ activeTab, setActiveTab, scrollX, pageStep, hidden, opacity, unlocks }) {
-  const [barWidth, setBarWidth] = useState(0);
-  const tabSlot = barWidth ? barWidth / tabs.length : 0;
-  const indicatorTranslate = scrollX.interpolate({
-    inputRange: tabs.map((_, index) => index * pageStep),
-    outputRange: tabs.map((_, index) => index * tabSlot + 2),
-    extrapolate: "clamp"
-  });
+  const tabInputRange = tabs.map((_, index) => index * pageStep);
+  // tabIn: the bar settles up into place once, as the night opens (prototype).
+  const entrance = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(entrance, {
+      toValue: 1,
+      duration: 520,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true
+    }).start();
+  }, [entrance]);
+  const entranceTranslate = entrance.interpolate({ inputRange: [0, 1], outputRange: [12, 0] });
+  const composedOpacity = Animated.multiply(opacity, entrance);
 
   return (
     <Animated.View
       pointerEvents={hidden ? "none" : "auto"}
-      style={[styles.tabBar, { opacity }]}
-      onLayout={(event) => setBarWidth(event.nativeEvent.layout.width)}
+      style={[styles.tabBar, { opacity: composedOpacity, transform: [{ translateY: entranceTranslate }] }]}
     >
-      <GlassBackdrop intensity={34} />
-      {!!barWidth && (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.tabHighlight,
-            {
-              width: tabSlot - 4,
-              transform: [{ translateX: indicatorTranslate }]
-            }
-          ]}
-        />
-      )}
-      {tabs.map((tab) => {
+      <LinearGradient
+        pointerEvents="none"
+        colors={["rgba(8,6,4,0)", "rgba(8,6,4,0.62)", "rgba(6,4,3,0.86)"]}
+        locations={[0, 0.45, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+      {tabs.map((tab, index) => {
         const isActive = activeTab === tab.id;
         const isUnlocked = unlocks?.[tab.id] !== false;
+        const tabPresence = scrollX.interpolate({
+          inputRange: tabInputRange,
+          outputRange: tabs.map((_, activeIndex) => activeIndex === index ? 1 : 0),
+          extrapolate: "clamp"
+        });
+        const tabLift = tabPresence.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0, -2]
+        });
+        const tabScale = tabPresence.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0.98, 1.015]
+        });
         return (
           <Pressable
             key={tab.id}
             onPress={() => setActiveTab(tab.id)}
+            focusable={false}
             style={({ pressed }) => [
               styles.tabItem,
               tab.id === "home" && styles.tabItemHome,
@@ -2449,8 +3162,18 @@ function TabBar({ activeTab, setActiveTab, scrollX, pageStep, hidden, opacity, u
               pressed && isUnlocked && styles.touchPressedSoft
             ]}
           >
-            <TabIcon id={tab.id} active={isActive} locked={!isUnlocked} />
-            <Text style={[styles.tabText, isActive && styles.tabTextActive, !isUnlocked && styles.tabTextLocked]}>{tab.label}</Text>
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.tabItemMotion,
+                {
+                  transform: [{ translateY: tabLift }, { scale: tabScale }]
+                }
+              ]}
+            >
+              <View style={[styles.tabActiveLamp, isActive && styles.tabActiveLampOn]} />
+              <Text style={[styles.tabText, isActive && styles.tabTextActive, !isUnlocked && styles.tabTextLocked]}>{tab.label}</Text>
+            </Animated.View>
           </Pressable>
         );
       })}
@@ -2548,11 +3271,16 @@ function SettingsModal({
   onClose
 }) {
   const [activeSettingsTab, setActiveSettingsTab] = useState("base");
+  const [activeRootTab, setActiveRootTab] = useState("account");
   const [name, setName] = useState(profile.name);
   const [birthdate, setBirthdate] = useState(profile.birthdate);
 
   useEffect(() => {
-    if (visible) setActiveSettingsTab(initialTab || "base");
+    if (visible) {
+      const nextTab = initialTab || "base";
+      setActiveSettingsTab(nextTab);
+      setActiveRootTab(appSettingsDetailTabIds.has(nextTab) ? "settings" : "account");
+    }
   }, [visible, initialTab]);
 
   useEffect(() => {
@@ -2641,6 +3369,163 @@ function SettingsModal({
   const syncStatus = authLoading ? "確認中" : session ? "接続済み" : "未接続";
   const accountLabel = authLoading ? "確認中..." : session?.user?.email || "Googleアカウント未接続";
   const ritualConfig = settings.ritual || {};
+  const reflectionConfig = settings.reflection || {};
+
+  function updateReflectionSettings(patch) {
+    onUiSound?.();
+    setSettings((current) => ({
+      ...current,
+      reflection: { ...(current.reflection || {}), ...patch }
+    }));
+  }
+
+  // ---- 01 人生の所有権 ----
+  const securityConfig = settings.security || {};
+  const inheritanceConfig = settings.inheritance || {};
+  const [exportFormat, setExportFormat] = useState("json");
+  const [exportPassphrase, setExportPassphrase] = useState("");
+  const [exportStatus, setExportStatus] = useState("");
+  const [recoveryKey, setRecoveryKey] = useState("");
+  const [recoveryStatus, setRecoveryStatus] = useState("");
+  const [emergencyEmail, setEmergencyEmail] = useState("");
+  const [heirEmail, setHeirEmail] = useState("");
+  const [disclosureTarget, setDisclosureTarget] = useState("");
+  const [disclosureDate, setDisclosureDate] = useState("");
+  const [disclosureRecipient, setDisclosureRecipient] = useState("");
+  const [inheritanceStatus, setInheritanceStatus] = useState("");
+
+  function updateSecurity(patch) {
+    setSettings((current) => ({ ...current, security: { ...(current.security || {}), ...patch } }));
+  }
+  function updateInheritance(patch) {
+    setSettings((current) => ({ ...current, inheritance: { ...(current.inheritance || {}), ...patch } }));
+  }
+
+  async function runExport() {
+    onUiSound?.();
+    setExportStatus("書き出しています…");
+    try {
+      const isMarkdown = exportFormat === "markdown";
+      const content = isMarkdown
+        ? buildExportMarkdown({ journal, memories, chapters })
+        : buildExportJson({ journal, memories, quests, chapters, profile, settings });
+      const passphrase = exportPassphrase.trim();
+      const dateKey = toDateKey(new Date());
+      if (passphrase) {
+        const encrypted = encryptExportPayload(content, passphrase);
+        await saveTextFile(encrypted, `arc-archive-${dateKey}.encrypted.json`, "application/json");
+        setExportStatus("暗号化して書き出しました。パスフレーズは大切に保管してください。");
+      } else {
+        await saveTextFile(
+          content,
+          `arc-archive-${dateKey}.${isMarkdown ? "md" : "json"}`,
+          isMarkdown ? "text/markdown" : "application/json"
+        );
+        setExportStatus("記録を書き出しました。");
+      }
+      setExportPassphrase("");
+    } catch {
+      setExportStatus("うまく書き出せませんでした。もう一度お試しください。");
+    }
+  }
+
+  function confirmDeleteAll() {
+    onUiSound?.();
+    Alert.alert(
+      "アーカイブを削除しますか？",
+      "この端末のすべての記録が消去されます。取り消せません。続ける前に書き出しをおすすめします。",
+      [
+        { text: "やめておく", style: "cancel" },
+        {
+          text: "削除する",
+          style: "destructive",
+          onPress: () => Alert.alert("最終確認", "本当に削除しますか？", [
+            { text: "やめておく", style: "cancel" },
+            { text: "削除する", style: "destructive", onPress: () => { setJournal([]); setMemories([]); setQuests([]); setChapters([]); } }
+          ])
+        }
+      ]
+    );
+  }
+
+  // ---- 03 聖域のセキュリティ ----
+  async function issueRecoveryKey() {
+    onUiSound?.();
+    try {
+      const key = await generateRecoveryKey();
+      setRecoveryKey(key);
+      updateSecurity({ recoveryKeyIssued: true, recoveryKeyIssuedAt: new Date().toISOString() });
+      setRecoveryStatus("このキーを安全な場所に。画面を離れると、もう一度は表示できません。");
+    } catch {
+      setRecoveryStatus("キーを発行できませんでした。もう一度お試しください。");
+    }
+  }
+  async function copyRecoveryKey() {
+    if (!recoveryKey) return;
+    try {
+      await Clipboard.setStringAsync(recoveryKey);
+      setRecoveryStatus("コピーしました。安全な場所に貼り付けてください。");
+    } catch {
+      setRecoveryStatus("コピーできませんでした。手で書き写してください。");
+    }
+  }
+  function addEmergencyContact() {
+    if (!isEmailLike(emergencyEmail)) { setRecoveryStatus("メールアドレスをご確認ください。"); return; }
+    updateSecurity({ emergencyContacts: [...(securityConfig.emergencyContacts || []), { id: createId("witness"), email: emergencyEmail.trim() }] });
+    setEmergencyEmail("");
+    setRecoveryStatus("緊急連絡先を追加しました。");
+  }
+  function removeEmergencyContact(id) {
+    updateSecurity({ emergencyContacts: (securityConfig.emergencyContacts || []).filter((c) => c.id !== id) });
+  }
+
+  // ---- 02 未来への継承 ----
+  function addHeir() {
+    if (!isEmailLike(heirEmail)) { setInheritanceStatus("メールアドレスをご確認ください。"); return; }
+    updateInheritance({ contacts: [...(inheritanceConfig.contacts || []), { id: createId("heir"), email: heirEmail.trim() }] });
+    setHeirEmail("");
+    setInheritanceStatus("継承先を追加しました。");
+  }
+  function removeHeir(id) {
+    updateInheritance({ contacts: (inheritanceConfig.contacts || []).filter((c) => c.id !== id) });
+  }
+  function setDefaultAction(next) {
+    if ((inheritanceConfig.defaultAction || "delete") === next) return;
+    onUiSound?.();
+    Alert.alert(
+      "継承設定を変更しますか？",
+      next === "delete" ? "未設定のまま「その日」を迎えた場合、アーカイブは完全に削除されます。" : "未設定のまま「その日」を迎えた場合、アーカイブは継承先へ移管されます。",
+      [
+        { text: "やめておく", style: "cancel" },
+        { text: "変更する", onPress: () => { updateInheritance({ defaultAction: next }); setInheritanceStatus("継承設定を変更しました。いつでも変えられます。"); } }
+      ]
+    );
+  }
+  function addDisclosure() {
+    if (!disclosureTarget.trim()) { setInheritanceStatus("公開する対象を入力してください。"); return; }
+    if (!isEmailLike(disclosureRecipient)) { setInheritanceStatus("受取人のメールアドレスをご確認ください。"); return; }
+    updateInheritance({
+      reservedDisclosures: [...(inheritanceConfig.reservedDisclosures || []), {
+        id: createId("disclosure"), target: disclosureTarget.trim(), recipient: disclosureRecipient.trim(), date: disclosureDate.trim()
+      }]
+    });
+    setDisclosureTarget(""); setDisclosureDate(""); setDisclosureRecipient("");
+    setInheritanceStatus("予約公開を追加しました。いつでも取り消せます。");
+  }
+  function removeDisclosure(id) {
+    updateInheritance({ reservedDisclosures: (inheritanceConfig.reservedDisclosures || []).filter((d) => d.id !== id) });
+  }
+
+  function renderEntryRow(id, label, onRemove) {
+    return (
+      <View key={id} style={styles.entryRow}>
+        <Text style={styles.entryRowText}>{label}</Text>
+        <Pressable onPress={onRemove} style={({ pressed }) => [styles.entryRemove, pressed && styles.touchPressedTight]}>
+          <Text style={styles.entryRemoveText}>×</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   function confirmSignOut() {
     Alert.alert("ログアウトしますか？", "このデバイスのログイン状態を解除します。記録データは端末内に残ります。", [
@@ -2650,22 +3535,28 @@ function SettingsModal({
   }
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <SafeAreaView style={styles.modal}>
+        <BackgroundTexture />
+        <OuterGradient />
+        <View style={styles.scrim} />
+        <NightGrain />
         <View style={styles.modalHeader}>
-          <View style={styles.modalTitleWrap}>
-            <Text style={styles.modalTitle}>設定</Text>
-            <Text style={styles.modalSub}>Arc settings</Text>
-          </View>
-          <Pressable onPress={onClose} style={({ pressed }) => [styles.modalCompass, pressed && styles.touchPressedTight]}>
-            <Text style={styles.modalCompassText}>×</Text>
+          <Pressable focusable={false} onPress={onClose} style={({ pressed }) => [styles.modalBackButton, pressed && styles.touchPressedTight]}>
+            <Text style={styles.modalBackText}>‹</Text>
           </Pressable>
+          <View style={styles.modalTitleWrap}>
+            <Text style={styles.modalSub}>SETTINGS</Text>
+            <Text style={styles.modalTitle}>設定</Text>
+          </View>
+          <View style={styles.modalHeaderSpacer} />
         </View>
 
         <View style={styles.settingsBody}>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.settingSection}>
             {activeSettingsTab === "base" && (
               <SettingsBase
+                rootTab={activeRootTab}
                 profile={profile}
                 session={session}
                 authLoading={authLoading}
@@ -2678,6 +3569,10 @@ function SettingsModal({
                 onPickProfileImage={onPickProfileImage}
                 updateSettings={updateSettings}
                 updatePrivacy={updatePrivacy}
+                onRootTabChange={(tab) => {
+                  onUiSound?.();
+                  setActiveRootTab(tab);
+                }}
                 onSelect={(tab) => {
                   onUiSound?.();
                   setActiveSettingsTab(tab);
@@ -2693,7 +3588,7 @@ function SettingsModal({
                 }}
                 style={styles.backToBase}
               >
-                <Text style={styles.backToBaseText}>‹ 拠点へ戻る</Text>
+                <Text style={styles.backToBaseText}>{activeRootTab === "settings" ? "‹ 設定へ戻る" : "‹ アカウントへ戻る"}</Text>
               </Pressable>
             )}
 
@@ -2915,7 +3810,23 @@ function SettingsModal({
 
             {activeSettingsTab === "ritual" && (
               <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="ritual" title="Night Ritual" body="夜の記録の深さと保存方法を調整します。" />
+                <SettingsPageTitle icon="ritual" title="振り返り" body="あなたのリズムで、記録の深さと頻度を整えます。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>振り返り頻度</Text>
+                  <View style={styles.segmentedRow}>
+                    {["daily", "weekly", "monthly", "seasonal", "off"].map((freq) => (
+                      <Pressable
+                        key={freq}
+                        onPress={() => updateReflectionSettings({ frequency: freq })}
+                        style={({ pressed }) => [styles.segmentButton, (reflectionConfig.frequency || "daily") === freq && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
+                      >
+                        <Text style={[styles.segmentText, (reflectionConfig.frequency || "daily") === freq && styles.segmentTextActive]}>{REFLECTION_FREQUENCY_LABELS[freq]}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <Text style={styles.mutedText}>毎日に縛られず、あなたのペースで。時間帯の制限はありません。オフにすると、いつでも書けます。</Text>
+                </View>
                 <View style={styles.settingsCard}>
                   <GlassBackdrop intensity={24} />
                   <Text style={styles.settingLabel}>質問数</Text>
@@ -2930,7 +3841,7 @@ function SettingsModal({
                       </Pressable>
                     ))}
                   </View>
-                  <Text style={styles.mutedText}>短く終えたい日は3問、深く残したい日は5問にできます。</Text>
+                  <Text style={styles.mutedText}>短く終えたい時は3問、深く残したい時は5問にできます。</Text>
                 </View>
                 <SettingToggleRow
                   title="終了後に日記へ保存"
@@ -2940,25 +3851,79 @@ function SettingsModal({
                 />
                 <SettingToggleRow
                   title="途中退出の確認"
-                  body="Night Ritual中に×を押したとき、確認を表示します。"
+                  body="振り返り中に×を押したとき、確認を表示します。"
                   value={ritualConfig.confirmExit !== false}
                   onPress={() => updateRitualSettings({ confirmExit: ritualConfig.confirmExit === false })}
                 />
+
                 <View style={styles.settingsCard}>
                   <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>開始できる時間帯</Text>
+                  <Text style={styles.settingLabel}>Niloの対話スタイル</Text>
                   <View style={styles.segmentedRow}>
-                    {["20:00", "21:00", "22:00"].map((time) => (
+                    {[
+                      ["empathetic", "共感型"],
+                      ["questioning", "問いかけ型"],
+                      ["organizing", "整理型"],
+                      ["silent", "沈黙型"]
+                    ].map(([value, label]) => (
                       <Pressable
-                        key={time}
-                        onPress={() => updateRitualSettings({ windowStart: time })}
-                        style={({ pressed }) => [styles.segmentButton, (ritualConfig.windowStart || "20:00") === time && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
+                        key={value}
+                        onPress={() => updateSettings({ niloStyle: value })}
+                        style={({ pressed }) => [styles.segmentButton, (settings.niloStyle || "empathetic") === value && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
                       >
-                        <Text style={[styles.segmentText, (ritualConfig.windowStart || "20:00") === time && styles.segmentTextActive]}>{time}</Text>
+                        <Text style={[styles.segmentText, (settings.niloStyle || "empathetic") === value && styles.segmentTextActive]}>{label}</Text>
                       </Pressable>
                     ))}
                   </View>
-                  <Text style={styles.mutedText}>終了時刻は翌3:00固定です。開発中はDEV_MODEで時間外でも開始できます。</Text>
+                  <Text style={styles.mutedText}>{NILO_STYLE_HINTS[settings.niloStyle || "empathetic"]}</Text>
+                </View>
+
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>要約スタイル</Text>
+                  <View style={styles.segmentedRow}>
+                    {[
+                      ["narrative", "物語形式"],
+                      ["keyword", "キーワード形式"],
+                      ["timeline", "年表形式"]
+                    ].map(([value, label]) => (
+                      <Pressable
+                        key={value}
+                        onPress={() => updateReflectionSettings({ summaryStyle: value })}
+                        style={({ pressed }) => [styles.segmentButton, (reflectionConfig.summaryStyle || "narrative") === value && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
+                      >
+                        <Text style={[styles.segmentText, (reflectionConfig.summaryStyle || "narrative") === value && styles.segmentTextActive]}>{label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <Text style={styles.mutedText}>振り返りで過去の自分と出会うときの、まとめ方です。</Text>
+                </View>
+
+                <SettingToggleRow
+                  title="1年前と比べる"
+                  body="価値観・感情・キーワードの変化を、そっと並べて見せます。"
+                  value={reflectionConfig.compareLastYear !== false}
+                  onPress={() => updateReflectionSettings({ compareLastYear: reflectionConfig.compareLastYear === false })}
+                />
+
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>通知のトーン</Text>
+                  <View style={styles.segmentedRow}>
+                    {[
+                      ["quiet", "静かな促し"],
+                      ["active", "積極的なリマインド"]
+                    ].map(([value, label]) => (
+                      <Pressable
+                        key={value}
+                        onPress={() => updateReflectionSettings({ tone: value })}
+                        style={({ pressed }) => [styles.segmentButton, (reflectionConfig.tone || "quiet") === value && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
+                      >
+                        <Text style={[styles.segmentText, (reflectionConfig.tone || "quiet") === value && styles.segmentTextActive]}>{label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <Text style={styles.mutedText}>「いつでも来てください」か「待っています」か。促しの温度です。</Text>
                 </View>
               </View>
             )}
@@ -3009,6 +3974,156 @@ function SettingsModal({
               </View>
             )}
 
+            {activeSettingsTab === "ownership" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="data" title="人生の所有権" body="データはあなたのものです。ARCはそれを証明し、守ります。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.ownershipStatement}>このデータは、あなたのものです。</Text>
+                  <Text style={styles.mutedText}>ARCはあなたの記録を販売・学習・広告に利用しません。あなたの記録は、あなただけのものです。このポリシーは設定のどこからでも確認できます。</Text>
+                </View>
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>データエクスポート</Text>
+                  <Text style={styles.mutedText}>すべての記録を、意味が損なわれない構造化フォーマットで書き出せます。</Text>
+                  <View style={styles.segmentedRow}>
+                    {[["json", "JSON"], ["markdown", "Markdown"]].map(([value, label]) => (
+                      <Pressable
+                        key={value}
+                        onPress={() => setExportFormat(value)}
+                        style={({ pressed }) => [styles.segmentButton, exportFormat === value && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
+                      >
+                        <Text style={[styles.segmentText, exportFormat === value && styles.segmentTextActive]}>{label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <Text style={styles.settingLabel}>暗号化（任意）</Text>
+                  <TextInput
+                    value={exportPassphrase}
+                    onChangeText={setExportPassphrase}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    placeholder="パスフレーズを設定するとAES-256で保護"
+                    placeholderTextColor="#777"
+                    style={styles.settingInput}
+                  />
+                  <Pressable onPress={runExport} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
+                    <Text style={styles.secondaryButtonText}>記録を書き出す</Text>
+                  </Pressable>
+                  {!!exportStatus && <Text style={styles.mutedText}>{exportStatus}</Text>}
+                </View>
+                <View style={styles.dangerCard}>
+                  <GlassBackdrop intensity={20} />
+                  <Text style={styles.settingLabel}>アーカイブの削除</Text>
+                  <Text style={styles.mutedText}>この端末のすべての記録を消去します。取り消せません。</Text>
+                  <Pressable onPress={confirmDeleteAll} style={({ pressed }) => [styles.dangerButton, pressed && styles.touchPressedSoft]}>
+                    <Text style={styles.dangerButtonText}>アーカイブを削除する</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "inheritance" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="policy" title="未来への継承" body="いつか訪れる「その日」のために、静かに準備する場所。" />
+                <Text style={styles.mutedText}>重要な設定です。落ち着いて操作できる時に行ってください。</Text>
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>継承先（信頼できる連絡先）</Text>
+                  <TextInput
+                    value={heirEmail}
+                    onChangeText={setHeirEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    placeholder="example@mail.com"
+                    placeholderTextColor="#777"
+                    style={styles.settingInput}
+                  />
+                  <Pressable onPress={addHeir} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
+                    <Text style={styles.secondaryButtonText}>継承先を追加</Text>
+                  </Pressable>
+                  {(inheritanceConfig.contacts || []).length
+                    ? (inheritanceConfig.contacts || []).map((c) => renderEntryRow(c.id, c.email, () => removeHeir(c.id)))
+                    : <Text style={styles.mutedText}>継承先はまだ登録されていません。</Text>}
+                  <Text style={styles.settingLabel}>未設定時のデフォルト処理</Text>
+                  <View style={styles.segmentedRow}>
+                    {[["delete", "完全削除"], ["transfer", "継承先へ移管"]].map(([value, label]) => (
+                      <Pressable
+                        key={value}
+                        onPress={() => setDefaultAction(value)}
+                        style={({ pressed }) => [styles.segmentButton, (inheritanceConfig.defaultAction || "delete") === value && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
+                      >
+                        <Text style={[styles.segmentText, (inheritanceConfig.defaultAction || "delete") === value && styles.segmentTextActive]}>{label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <Text style={styles.mutedText}>継承先が本人確認（公証人証明）を提出し、サービス側の審査を経て移管されます。</Text>
+                </View>
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>アクセス権の予約公開</Text>
+                  <Text style={styles.mutedText}>時間と相手を指定して、特定の章を段階的に公開します。いつでも取り消せます。</Text>
+                  <TextInput value={disclosureTarget} onChangeText={setDisclosureTarget} placeholder="公開対象（例：2024年の章 / 旅行タグ）" placeholderTextColor="#777" style={styles.settingInput} />
+                  <TextInput value={disclosureDate} onChangeText={setDisclosureDate} placeholder="公開日（例：2030-05-01）" placeholderTextColor="#777" style={styles.settingInput} />
+                  <TextInput value={disclosureRecipient} onChangeText={setDisclosureRecipient} autoCapitalize="none" keyboardType="email-address" placeholder="受取人のメール" placeholderTextColor="#777" style={styles.settingInput} />
+                  <Pressable onPress={addDisclosure} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
+                    <Text style={styles.secondaryButtonText}>予約公開を追加</Text>
+                  </Pressable>
+                  {(inheritanceConfig.reservedDisclosures || []).length
+                    ? (inheritanceConfig.reservedDisclosures || []).map((d) => renderEntryRow(d.id, `${d.target} → ${d.recipient}（${d.date || "日付未定"}）`, () => removeDisclosure(d.id)))
+                    : <Text style={styles.mutedText}>予約公開はまだありません。</Text>}
+                  {!!inheritanceStatus && <Text style={styles.mutedText}>{inheritanceStatus}</Text>}
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "security" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="privacy" title="聖域のセキュリティ" body="技術的な安全を、人間の言葉で届けます。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>🔒 あなた以外には読めない構造</Text>
+                  <Text style={styles.mutedText}>記録の鍵はこの端末で生成・管理されます。ARCのサーバーでも、記録の内容は見えません。あなた以外には読めない形で守られています。</Text>
+                </View>
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>緊急時のリカバリー</Text>
+                  <Text style={styles.mutedText}>リカバリーキー（24語）は、オフラインの安全な場所に保管してください。これを失うと記録を取り戻せません。</Text>
+                  <Pressable onPress={issueRecoveryKey} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
+                    <Text style={styles.secondaryButtonText}>リカバリーキーを発行</Text>
+                  </Pressable>
+                  {!!recoveryKey && <Text style={styles.recoveryKeyText}>{recoveryKey}</Text>}
+                  {!!recoveryKey && (
+                    <Pressable onPress={copyRecoveryKey} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
+                      <Text style={styles.secondaryButtonText}>コピー</Text>
+                    </Pressable>
+                  )}
+                  {!!recoveryStatus && <Text style={styles.mutedText}>{recoveryStatus}</Text>}
+                </View>
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>緊急連絡先（証人）</Text>
+                  <Text style={styles.mutedText}>復旧の際、事前登録した連絡先が証人になります。</Text>
+                  <TextInput
+                    value={emergencyEmail}
+                    onChangeText={setEmergencyEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    placeholder="trusted@mail.com"
+                    placeholderTextColor="#777"
+                    style={styles.settingInput}
+                  />
+                  <Pressable onPress={addEmergencyContact} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
+                    <Text style={styles.secondaryButtonText}>緊急連絡先を追加</Text>
+                  </Pressable>
+                  {(securityConfig.emergencyContacts || []).length
+                    ? (securityConfig.emergencyContacts || []).map((c) => renderEntryRow(c.id, c.email, () => removeEmergencyContact(c.id)))
+                    : <Text style={styles.mutedText}>緊急連絡先はまだ登録されていません。</Text>}
+                  <Text style={styles.mutedText}>リカバリーには72時間の審査期間があります。「あなたが本当にあなたである」ことを確かめるための時間です。</Text>
+                </View>
+              </View>
+            )}
+
             {activeSettingsTab === "terms" && (
               <LegalPage
                 icon="terms"
@@ -3040,7 +4155,7 @@ function SettingsPageTitle({ icon, title, body }) {
     <View style={styles.settingsPageTitle}>
       <SettingsIcon id={icon} active />
       <View style={styles.settingsPageCopy}>
-        <Text style={styles.panelTitle}>{title}</Text>
+        <Text style={styles.settingsPageHeading}>{title}</Text>
         <Text style={styles.mutedText}>{body}</Text>
       </View>
     </View>
@@ -3070,7 +4185,23 @@ function LegalPage({ icon, title, body, updatedAt, sections }) {
   );
 }
 
-function SettingsBase({ profile, session, authLoading, authBusy, settings, activeBgmTrack, journal, quests, memories, onPickProfileImage, onSelect, updateSettings, updatePrivacy }) {
+function SettingsBase({
+  rootTab,
+  profile,
+  session,
+  authLoading,
+  authBusy,
+  settings,
+  activeBgmTrack,
+  journal,
+  quests,
+  memories,
+  onPickProfileImage,
+  onSelect,
+  updateSettings,
+  updatePrivacy,
+  onRootTabChange
+}) {
   const displayName = profile.name || session?.user?.user_metadata?.name || session?.user?.email?.split("@")[0] || "あなた";
   const journeyDay = daysSince(profile.birthdate) || daysSince(arcStartDate) + 1;
   const journalCount = journal.length;
@@ -3082,93 +4213,205 @@ function SettingsBase({ profile, session, authLoading, authBusy, settings, activ
   const levelProgress = Math.min(100, (recordScore % 5) * 20 || (recordScore > 0 ? 100 : 8));
   const profileInitial = displayName.slice(0, 1).toUpperCase();
   const syncText = authLoading ? "同期状態を確認中" : session ? "Googleで同期中" : "未接続";
+  const privacy = settings.privacy || {};
+  const reflection = settings.reflection || {};
+  const ritual = settings.ritual || {};
+  const summaryStyleLabels = { narrative: "物語形式", keyword: "キーワード形式", timeline: "年表形式" };
+  const toneLabels = { quiet: "静かな促し", active: "積極的な促し" };
+
+  return (
+    <View style={styles.simpleSettingsPage}>
+      <ArcSettingRow
+        title="ニロの灯り"
+        body="そばにいる、ひとつの光"
+        toggle={!!settings.bgmEnabled}
+        onPress={() => updateSettings({ bgmEnabled: !settings.bgmEnabled })}
+      />
+      <ArcSettingRow
+        title="夜のささやき"
+        body="そっと問いが灯る時刻"
+        value={settings.notificationTime || "23:00"}
+        onPress={() => onSelect("notifications")}
+      />
+      <ArcSettingRow
+        title="この場所を守る"
+        body="Face IDでロックする"
+        toggle={settings.security?.lockEnabled !== false}
+        onPress={() => updateSettings({ security: { ...(settings.security || {}), lockEnabled: settings.security?.lockEnabled === false } })}
+      />
+      <ArcSettingRow
+        title="書体の大きさ"
+        value="標準"
+        onPress={() => onSelect("language")}
+      />
+      <ArcSettingRow
+        title="記録を書き出す"
+        onPress={() => onSelect("data")}
+      />
+      <ArcSettingRow
+        title="ARC について"
+        onPress={() => onSelect("terms")}
+      />
+      <View style={styles.settingsWordmark}>
+        <Text style={styles.settingsWordmarkText}>A R C</Text>
+        <Text style={styles.settingsVersion}>VERSION 1.0 ・ あなたと、夜と</Text>
+      </View>
+    </View>
+  );
 
   return (
     <View style={styles.basePage}>
-      <View style={styles.baseProfileCard}>
-        <GlassBackdrop intensity={22} />
-        <View pointerEvents="none" style={styles.baseProfileSheen} />
-        <View pointerEvents="none" style={styles.baseProfileGlow} />
-        <View style={styles.baseProfileTop}>
-          <Pressable onPress={onPickProfileImage} style={styles.baseAvatar}>
-            {profile.imageUri ? (
-              <Image source={{ uri: profile.imageUri }} style={styles.baseAvatarImage} />
-            ) : (
-              <Text style={styles.baseAvatarText}>{profileInitial}</Text>
+      <AccountRootTabs activeTab={rootTab} onChange={onRootTabChange} />
+
+      {rootTab === "account" ? (
+        <>
+          <View style={styles.baseProfileCard}>
+            <GlassBackdrop intensity={22} />
+            <View pointerEvents="none" style={styles.baseProfileSheen} />
+            <View pointerEvents="none" style={styles.baseProfileGlow} />
+            <View style={styles.baseProfileTop}>
+              <Pressable onPress={onPickProfileImage} style={styles.baseAvatar}>
+                {profile.imageUri ? (
+                  <Image source={{ uri: profile.imageUri }} style={styles.baseAvatarImage} />
+                ) : (
+                  <Text style={styles.baseAvatarText}>{profileInitial}</Text>
+                )}
+              </Pressable>
+              <View style={styles.baseProfileInfo}>
+                <Text style={styles.baseName}>{displayName}</Text>
+                <Text style={styles.baseLevel}>Lv.{visibleLevel} 記録者</Text>
+                <View style={styles.baseLevelBar}>
+                  <View style={[styles.baseLevelFill, { width: `${levelProgress}%` }]} />
+                </View>
+                <Text style={styles.baseXpText}>夜の記録から少しずつ育っています</Text>
+              </View>
+            </View>
+            <View style={styles.baseMetaRow}>
+              <View style={[styles.baseMetaItem, styles.baseMetaItemStart]}>
+                <Text style={styles.baseMetaIcon}>✺</Text>
+                <View>
+                  <Text style={styles.baseMetaLabel}>ARC開始日</Text>
+                  <Text style={styles.baseMetaValue}>{formatDotDate(arcStartDate)}</Text>
+                </View>
+              </View>
+              <View style={styles.baseMetaDivider} />
+              <View style={styles.baseMetaItem}>
+                <Text style={styles.baseMetaIcon}>♨</Text>
+                <View>
+                  <Text style={styles.baseMetaLabel}>Journey Day</Text>
+                  <Text style={styles.baseMetaValue}>{journeyDay}日目</Text>
+                </View>
+              </View>
+            </View>
+            <View style={styles.baseStatGrid}>
+              <BaseStat label="日記" value={`${journalCount}`} />
+              <BaseStat label="進行中" value={`${activeQuestCount}`} />
+              <BaseStat label="完了" value={`${completedQuestCount}`} />
+              <BaseStat label="記憶" value={`${memoryCount}`} />
+            </View>
+          </View>
+
+          <SettingsSection title="アカウント情報">
+            <BaseSettingRow icon="profile" title="プロフィール" body={`${displayName} / ${journeyDay}日目`} value="編集" onPress={() => onSelect("profile")} />
+            <BaseSettingRow icon="sync" title="データ同期" body={syncText} value={session ? "接続済み" : "未接続"} onPress={() => onSelect("sync")} />
+            {!!session && (
+              <BaseSettingRow icon="logout" title="ログアウト" body="このデバイスからサインアウト" value={authBusy ? "処理中" : "開く"} onPress={() => onSelect("logout")} />
             )}
-          </Pressable>
-          <View style={styles.baseProfileInfo}>
-            <Text style={styles.baseName}>{displayName}</Text>
-            <Text style={styles.baseLevel}>Lv.{visibleLevel} 記録者</Text>
-            <View style={styles.baseLevelBar}>
-              <View style={[styles.baseLevelFill, { width: `${levelProgress}%` }]} />
-            </View>
-            <Text style={styles.baseXpText}>夜の記録から少しずつ育っています</Text>
-          </View>
-        </View>
-        <View style={styles.baseMetaRow}>
-          <View style={[styles.baseMetaItem, styles.baseMetaItemStart]}>
-            <Text style={styles.baseMetaIcon}>✺</Text>
-            <View>
-              <Text style={styles.baseMetaLabel}>ARC開始日</Text>
-              <Text style={styles.baseMetaValue}>{formatDotDate(arcStartDate)}</Text>
-            </View>
-          </View>
-          <View style={styles.baseMetaDivider} />
-          <View style={styles.baseMetaItem}>
-            <Text style={styles.baseMetaIcon}>♨</Text>
-            <View>
-              <Text style={styles.baseMetaLabel}>Journey Day</Text>
-              <Text style={styles.baseMetaValue}>{journeyDay}日目</Text>
-            </View>
-          </View>
-        </View>
-        <View style={styles.baseStatGrid}>
-          <BaseStat label="日記" value={`${journalCount}`} />
-          <BaseStat label="進行中" value={`${activeQuestCount}`} />
-          <BaseStat label="完了" value={`${completedQuestCount}`} />
-          <BaseStat label="記憶" value={`${memoryCount}`} />
-        </View>
+          </SettingsSection>
+
+          <SettingsSection title="データ操作">
+            <BaseSettingRow icon="data" title="人生の所有権" body="構造化エクスポート・所有権の確認" value="開く" onPress={() => onSelect("ownership")} />
+            <BaseSettingRow icon="data" title="データ管理" body={`日記 ${journalCount} / 記憶 ${memoryCount} / クエスト ${quests.length}`} value="整理" onPress={() => onSelect("data")} />
+          </SettingsSection>
+
+          <SettingsSection title="未来と安全">
+            <BaseSettingRow icon="policy" title="未来への継承" body="デジタル遺言・アクセス権の予約公開" value="設定" onPress={() => onSelect("inheritance")} />
+            <BaseSettingRow icon="privacy" title="聖域のセキュリティ" body="暗号化・リカバリーキー" value="開く" onPress={() => onSelect("security")} />
+          </SettingsSection>
+
+          <SettingsSection title="データ利用">
+            <BaseSettingRow icon="privacy" title="日記からクエストを作る" body="夜の会話をクエスト生成に使う" toggle={!!privacy.questLink} onPress={() => updatePrivacy("questLink")} />
+            <BaseSettingRow icon="privacy" title="Niloの記憶に保存する" body="大事な場面の候補に使う" toggle={!!privacy.memoryLink} onPress={() => updatePrivacy("memoryLink")} />
+            <BaseSettingRow icon="profile" title="プロフィールを反映する" body="名前や日数を表示に使う" toggle={!!privacy.profileUse} onPress={() => updatePrivacy("profileUse")} />
+          </SettingsSection>
+
+          <SettingsSection title="規約とポリシー">
+            <BaseSettingRow icon="terms" title="利用規約" body="ARCの利用条件" value="表示" onPress={() => onSelect("terms")} />
+            <BaseSettingRow icon="policy" title="プライバシーポリシー" body="データの取り扱いについて" value="表示" onPress={() => onSelect("privacyPolicy")} />
+          </SettingsSection>
+        </>
+      ) : (
+        <>
+          <SettingsSection title="リチュアル">
+            <BaseSettingRow icon="ritual" title="Night Ritual" body={`${REFLECTION_FREQUENCY_LABELS[reflection.frequency || "daily"]} / ${ritual.questionCount || 5}問`} value="詳細" onPress={() => onSelect("ritual")} />
+            <BaseSettingRow icon="notifications" title="夜の合図" body="記録の時間にそっと知らせます" toggle={!!settings.notificationsEnabled} onPress={() => updateSettings({ notificationsEnabled: !settings.notificationsEnabled })} />
+            <BaseSettingRow icon="notifications" title="合図の時刻" body={settings.notificationsEnabled ? "Niloが呼びかける時間" : "通知をオンにすると設定できます"} value={settings.notificationTime || "22:00"} onPress={() => onSelect("notifications")} />
+          </SettingsSection>
+
+          <SettingsSection title="アーカイブ品質">
+            <BaseSettingRow icon="ritual" title="Niloの対話スタイル" body={NILO_STYLE_HINTS[settings.niloStyle || "empathetic"]} value="調整" onPress={() => onSelect("ritual")} />
+            <BaseSettingRow icon="ritual" title="振り返り要約" body={`${summaryStyleLabels[reflection.summaryStyle || "narrative"]} / ${toneLabels[reflection.tone || "quiet"]}`} value="調整" onPress={() => onSelect("ritual")} />
+          </SettingsSection>
+
+          <SettingsSection title="見た目">
+            <BaseSettingRow icon="language" title="言語" body={`表示言語 ${languageLabel(settings.language)}`} value={(settings.language || "ja").toUpperCase()} onPress={() => onSelect("language")} />
+          </SettingsSection>
+
+          <SettingsSection title="音と触覚">
+            <BaseSettingRow icon="sound" title="BGM" body={settings.bgmEnabled ? `${activeBgmTrack.title} / ${Math.round(settings.bgmVolume * 100)}%` : "夜のサウンドトラック"} toggle={!!settings.bgmEnabled} onPress={() => updateSettings({ bgmEnabled: !settings.bgmEnabled })} />
+            <BaseSettingRow icon="sound" title="操作音" body="ボタンや記録の小さな音" toggle={!!settings.soundEffectsEnabled} onPress={() => updateSettings({ soundEffectsEnabled: !settings.soundEffectsEnabled })} />
+            <BaseSettingRow icon="sound" title="触覚" body="人生の節目で、そっと手に残す" toggle={!!settings.hapticsEnabled} onPress={() => updateSettings({ hapticsEnabled: !settings.hapticsEnabled })} />
+            <BaseSettingRow icon="sound" title="サウンド詳細" body="曲の選択と音量" value="開く" onPress={() => onSelect("bgm")} />
+          </SettingsSection>
+
+          <SettingsSection title="アプリについて">
+            <BaseSettingRow icon="feedback" title="フィードバック" body="ご意見・ご要望をお聞かせください" value="準備中" disabled />
+            <BaseSettingRow icon="contact" title="お問い合わせ" body="サポートへ連絡する" value="準備中" disabled />
+          </SettingsSection>
+        </>
+      )}
+    </View>
+  );
+}
+
+function ArcSettingRow({ title, body, value, toggle, onPress }) {
+  const hasToggle = typeof toggle === "boolean";
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.arcSettingRow, pressed && styles.touchPressedSubtle]}>
+      <View style={styles.arcSettingCopy}>
+        <Text style={styles.arcSettingTitle}>{title}</Text>
+        {!!body && <Text style={styles.arcSettingBody}>{body}</Text>}
       </View>
+      {hasToggle ? (
+        <View style={[styles.arcSwitch, toggle && styles.arcSwitchOn]}>
+          <View style={[styles.arcSwitchKnob, toggle && styles.arcSwitchKnobOn]} />
+        </View>
+      ) : (
+        <View style={styles.arcSettingValueWrap}>
+          {!!value && <Text style={styles.arcSettingValue}>{value}</Text>}
+          <Text style={styles.arcSettingChevron}>›</Text>
+        </View>
+      )}
+    </Pressable>
+  );
+}
 
-      <SettingsSection title="アカウント">
-        <BaseSettingRow icon="profile" title="プロフィール" body={`${displayName} / ${journeyDay}日目`} value="編集" onPress={() => onSelect("profile")} />
-        <BaseSettingRow icon="sync" title="データ同期" body={syncText} value={session ? "接続済み" : "未接続"} onPress={() => onSelect("sync")} />
-        {!!session && (
-          <BaseSettingRow icon="logout" title="ログアウト" body="このデバイスからサインアウト" value={authBusy ? "処理中" : "開く"} onPress={() => onSelect("logout")} />
-        )}
-      </SettingsSection>
-
-      <SettingsSection title="リチュアル">
-        <BaseSettingRow icon="ritual" title="Night Ritual" body={`${settings.ritual?.questionCount || 5}問 / ${settings.ritual?.autoSaveJournal === false ? "保存しない" : "日記へ保存"}`} value="詳細" onPress={() => onSelect("ritual")} />
-        <BaseSettingRow icon="notifications" title="夜の合図" body="記録の時間にそっと知らせます" toggle={!!settings.notificationsEnabled} onPress={() => updateSettings({ notificationsEnabled: !settings.notificationsEnabled })} />
-        <BaseSettingRow icon="notifications" title="合図の時刻" body={settings.notificationsEnabled ? "Niloが呼びかける時間" : "通知をオンにすると設定できます"} value={settings.notificationTime || "22:00"} onPress={() => onSelect("notifications")} />
-      </SettingsSection>
-
-      <SettingsSection title="見た目">
-        <BaseSettingRow icon="language" title="言語" body={`表示言語 ${languageLabel(settings.language)}`} value={settings.language.toUpperCase()} onPress={() => onSelect("language")} />
-      </SettingsSection>
-
-      <SettingsSection title="音と触覚">
-        <BaseSettingRow icon="sound" title="BGM" body={settings.bgmEnabled ? `${activeBgmTrack.title} / ${Math.round(settings.bgmVolume * 100)}%` : "夜のサウンドトラック"} toggle={!!settings.bgmEnabled} onPress={() => updateSettings({ bgmEnabled: !settings.bgmEnabled })} />
-        <BaseSettingRow icon="sound" title="操作音" body="ボタンや記録の小さな音" toggle={!!settings.soundEffectsEnabled} onPress={() => updateSettings({ soundEffectsEnabled: !settings.soundEffectsEnabled })} />
-        <BaseSettingRow icon="sound" title="触覚" body="人生の節目で、そっと手に残す" toggle={!!settings.hapticsEnabled} onPress={() => updateSettings({ hapticsEnabled: !settings.hapticsEnabled })} />
-        <BaseSettingRow icon="sound" title="サウンド詳細" body="曲の選択と音量" value="開く" onPress={() => onSelect("bgm")} />
-      </SettingsSection>
-
-      <SettingsSection title="データとプライバシー">
-        <BaseSettingRow icon="data" title="データ管理" body={`日記 ${journalCount} / 記憶 ${memoryCount} / クエスト ${quests.length}`} value="整理" onPress={() => onSelect("data")} />
-        <BaseSettingRow icon="privacy" title="日記からクエストを作る" body="夜の会話をクエスト生成に使う" toggle={!!settings.privacy.questLink} onPress={() => updatePrivacy("questLink")} />
-        <BaseSettingRow icon="privacy" title="Niloの記憶に保存する" body="大事な場面の候補に使う" toggle={!!settings.privacy.memoryLink} onPress={() => updatePrivacy("memoryLink")} />
-        <BaseSettingRow icon="profile" title="プロフィールを反映する" body="名前や日数を表示に使う" toggle={!!settings.privacy.profileUse} onPress={() => updatePrivacy("profileUse")} />
-      </SettingsSection>
-
-      <SettingsSection title="アプリについて">
-        <BaseSettingRow icon="terms" title="利用規約" body="ARCの利用条件" value="表示" onPress={() => onSelect("terms")} />
-        <BaseSettingRow icon="policy" title="プライバシーポリシー" body="データの取り扱いについて" value="表示" onPress={() => onSelect("privacyPolicy")} />
-        <BaseSettingRow icon="feedback" title="フィードバック" body="ご意見・ご要望をお聞かせください" value="準備中" disabled />
-        <BaseSettingRow icon="contact" title="お問い合わせ" body="サポートへ連絡する" value="準備中" disabled />
-      </SettingsSection>
+function AccountRootTabs({ activeTab, onChange }) {
+  return (
+    <View style={styles.accountRootTabs}>
+      {accountRootTabs.map((tab) => {
+        const active = activeTab === tab.id;
+        return (
+          <Pressable
+            key={tab.id}
+            onPress={() => onChange(tab.id)}
+            style={({ pressed }) => [styles.accountRootTab, active && styles.accountRootTabActive, pressed && styles.touchPressedTight]}
+          >
+            <Text style={[styles.accountRootTabLabel, active && styles.accountRootTabLabelActive]}>{tab.label}</Text>
+            <Text numberOfLines={1} style={[styles.accountRootTabSub, active && styles.accountRootTabSubActive]}>{tab.sub}</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -3368,34 +4611,64 @@ function SettingToggleRow({ title, body, value, onPress }) {
   );
 }
 
-function createDailyQuests() {
-  return [...dailyBank]
-    .sort(() => Math.random() - 0.5)
-    .slice(0, 4)
-    .map((title) => ({ id: createId("daily"), title, source: "daily", completed: false }));
+function formatClock(date) {
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`.split("").join(" ");
 }
 
-// Offline fallback: bind memories into one chapter per month, newest first.
-function buildLocalChapters(memories) {
-  const byMonth = new Map();
-  (memories || []).forEach((memory) => {
-    const month = String(memory.dateKey || "").slice(0, 7) || "unknown";
-    if (!byMonth.has(month)) byMonth.set(month, []);
-    byMonth.get(month).push(memory);
-  });
+function getQuestCategory(quest) {
+  if (quest.category) return quest.category;
+  if (quest.source === "journal-daily") return "記憶";
+  if (quest.source === "daily") return "手放す";
+  return "LIFE";
+}
 
-  return [...byMonth.entries()]
-    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-    .map(([month, items]) => {
-      const essences = items.map((memory) => memory.essence).filter(Boolean);
-      return {
-        id: createId("chapter"),
-        title: formatMonthLabel(month),
-        period: month === "unknown" ? "" : month.replace("-", "."),
-        summary: essences.slice(0, 2).join(" / ") || "この時期の記憶を、静かに束ねました。",
-        memoryIds: items.map((memory) => memory.id)
-      };
-    });
+function getJournalTimelineEntries(journal) {
+  if (!journal?.length) return demoJournalEntries;
+  return [...journal]
+    .sort((a, b) => String(b.dateKey || "").localeCompare(String(a.dateKey || "")))
+    .map((entry, index) => ({
+      id: entry.id || `journal-${index}`,
+      dateKey: entry.dateKey,
+      dateLabel: toJapaneseMonthDay(entry.dateKey) || entry.dateLabel || "今日",
+      tag: index === 0 ? "TONIGHT" : entry.source === "quest" ? "QUEST" : "",
+      title: entry.title || entry.summary || (entry.lines || []).join("。") || "静かな記録",
+      lines: entry.title ? (entry.lines || []) : []
+    }));
+}
+
+function getChapterTimelineEntries(chapters) {
+  if (!chapters?.length) return demoChapters;
+  const total = chapters.length;
+  return chapters.map((chapter, index) => ({
+    id: chapter.id || `chapter-${index}`,
+    title: chapter.title || "名前のない章",
+    ordinal: `第${toJapaneseNumber(total - index)}章`,
+    period: chapter.period || "いま",
+    summary: chapter.observation || chapter.summary || "過ぎた時間の輪郭が、少しずつ見えてくる。"
+  }));
+}
+
+function toJapaneseMonthDay(value) {
+  if (!value) return "";
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+function toJapaneseNumber(value) {
+  const labels = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+  return labels[value] || String(value);
+}
+
+function createDailyQuests() {
+  return dailyQuestPrompts.map((quest) => ({
+    id: createId("daily"),
+    source: "daily",
+    completed: false,
+    ...quest
+  }));
 }
 
 function formatMonthLabel(month) {
@@ -3458,6 +4731,166 @@ function parseClockMinutes(value, fallback) {
   return hour * 60 + minute;
 }
 
+const REFLECTION_FREQUENCY_LABELS = {
+  daily: "毎日",
+  weekly: "毎週",
+  monthly: "毎月",
+  seasonal: "季節ごと",
+  off: "オフ"
+};
+
+const REFLECTION_DONE_PROMPTS = {
+  daily: "今日は記録済みです",
+  weekly: "今週は記録済みです",
+  monthly: "今月は記録済みです",
+  seasonal: "今季は記録済みです"
+};
+
+const NILO_STYLE_HINTS = {
+  empathetic: "「それは辛かったですね」と、感情に寄り添い受け止めます。",
+  questioning: "「その決断の奥に、何があったと思いますか」と、静かに問いかけます。",
+  organizing: "「3つのことが起きていたようです」と、論理的に整理します。",
+  silent: "解釈はせず、記録を促す問いだけを置きます。"
+};
+
+function normalizeReflectionFrequency(value) {
+  return REFLECTION_FREQUENCY_LABELS[value] ? value : "daily";
+}
+
+function dateFromDateKey(key) {
+  const [year, month, day] = String(key || "").split("-").map(Number);
+  if (!year || !month || !day) return new Date();
+  return new Date(year, month - 1, day);
+}
+
+function isoWeekKey(date) {
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayNr = (target.getDay() + 6) % 7;
+  target.setDate(target.getDate() - dayNr + 3);
+  const firstThursday = new Date(target.getFullYear(), 0, 4);
+  const firstDayNr = (firstThursday.getDay() + 6) % 7;
+  firstThursday.setDate(firstThursday.getDate() - firstDayNr + 3);
+  const week = 1 + Math.round((target - firstThursday) / (7 * 24 * 3600 * 1000));
+  return `${target.getFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+function seasonKey(date) {
+  const month = date.getMonth();
+  const season = month <= 1 || month === 11 ? "winter"
+    : month <= 4 ? "spring"
+    : month <= 7 ? "summer"
+    : "autumn";
+  const year = season === "winter" && month === 11 ? date.getFullYear() + 1 : date.getFullYear();
+  return `${year}-${season}`;
+}
+
+// The "period" a reflection belongs to, given the user's chosen cadence.
+// Recording one reflection fills the current period; the next opens when it rolls over.
+function reflectionPeriodKey(frequency = "daily", date = new Date()) {
+  const journalDay = getJournalDateKey(date);
+  switch (normalizeReflectionFrequency(frequency)) {
+    case "weekly": return `w:${isoWeekKey(dateFromDateKey(journalDay))}`;
+    case "monthly": return `m:${journalDay.slice(0, 7)}`;
+    case "seasonal": return `s:${seasonKey(dateFromDateKey(journalDay))}`;
+    default: return `d:${journalDay}`;
+  }
+}
+
+// "off" never locks the composer; otherwise a period is "done" once any journal
+// entry falls within the current period.
+function isReflectionRecordedForPeriod(journal, frequency, date = new Date()) {
+  if (normalizeReflectionFrequency(frequency) === "off") return false;
+  const currentKey = reflectionPeriodKey(frequency, date);
+  return (journal || []).some((entry) => {
+    const entryDate = dateFromDateKey(entry.dateKey || getJournalDateKey(date));
+    return reflectionPeriodKey(frequency, entryDate) === currentKey;
+  });
+}
+
+// ---- Account / sovereignty helpers ----
+
+const RECOVERY_WORDLIST = ("river,stone,quiet,ember,maple,harbor,lantern,willow,meadow,cedar,pebble,thunder,velvet,orchid,copper,marble,silent,gather,anchor,beacon,canyon,drift,echo,feather,glimmer,hollow,ivory,jasmine,kindle,linen,mellow,nectar,opal,prairie,ripple,saffron,timber,umber,violet,whisper,amber,basil,clover,dahlia,elder,fennel,ginger,hazel,indigo,juniper,kelp,lotus,mint,nettle,olive,poppy,quince,rosemary,sage,thyme,verbena,yarrow,zinnia,brook,cliff,dawn,dusk,fern,grove,heath,isle,knoll,lake,moss,north,ocean,peak,reef,shore,tide,vale,wave,acorn,birch,cone,frost,glade,hush,leaf,nest,petal,root,seed,sprout,trail,bloom,cove,fjord,marsh").split(",");
+
+async function generateRecoveryKey() {
+  const bytes = await Crypto.getRandomBytesAsync(24);
+  return Array.from(bytes).map((byte) => RECOVERY_WORDLIST[byte % RECOVERY_WORDLIST.length]).join(" ");
+}
+
+function buildExportJson({ journal, memories, quests, chapters, profile, settings }) {
+  return JSON.stringify({
+    exportedAt: new Date().toISOString(),
+    app: "ARC",
+    journal,
+    memories,
+    quests,
+    chapters,
+    profile,
+    settings
+  }, null, 2);
+}
+
+function buildExportMarkdown({ journal, memories, chapters }) {
+  const lines = ["# ARC アーカイブ", "", `書き出し日時: ${new Date().toLocaleString("ja-JP")}`, "", "## 日記", ""];
+  (journal || []).forEach((entry) => {
+    lines.push(`### ${entry.dateLabel || entry.dateKey || ""}${entry.tag ? `  ·  ${entry.tag}` : ""}`);
+    const body = entry.text || entry.summary || "";
+    if (body) lines.push("", body);
+    lines.push("");
+  });
+  if ((memories || []).length) {
+    lines.push("## 記憶", "");
+    memories.forEach((memory) => {
+      lines.push(`- ${memory.dateLabel || memory.dateKey || ""}：${memory.essence || memory.keptPhrase || ""}`);
+    });
+    lines.push("");
+  }
+  if ((chapters || []).length) {
+    lines.push("## 人生の章", "");
+    chapters.forEach((chapter) => lines.push(`### ${chapter.title || "無題の章"}`, chapter.summary || "", ""));
+  }
+  return lines.join("\n");
+}
+
+// Real AES-256 (CBC) with a PBKDF2-derived key — runs in pure JS, so the file is
+// genuinely encrypted on both web and native before it ever leaves the device.
+function encryptExportPayload(plaintext, passphrase) {
+  const salt = CryptoJS.lib.WordArray.random(128 / 8);
+  const key = CryptoJS.PBKDF2(passphrase, salt, { keySize: 256 / 32, iterations: 150000 });
+  const iv = CryptoJS.lib.WordArray.random(128 / 8);
+  const encrypted = CryptoJS.AES.encrypt(plaintext, key, { iv });
+  return JSON.stringify({
+    format: "arc-encrypted-export",
+    algorithm: "AES-256-CBC",
+    kdf: "PBKDF2-SHA256",
+    iterations: 150000,
+    salt: salt.toString(CryptoJS.enc.Hex),
+    iv: iv.toString(CryptoJS.enc.Hex),
+    ciphertext: encrypted.ciphertext.toString(CryptoJS.enc.Base64)
+  }, null, 2);
+}
+
+async function saveTextFile(content, filename, mimeType) {
+  if (Platform.OS === "web") {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+    return;
+  }
+  const file = new FileSystem.File(FileSystem.Paths.cache, filename);
+  file.write(content);
+  if (await Sharing.isAvailableAsync()) {
+    await Sharing.shareAsync(file.uri, { mimeType, dialogTitle: filename });
+  }
+}
+
+function isEmailLike(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
 function getJournalCalendarDays(date = new Date()) {
   const base = new Date(`${getJournalDateKey(date)}T00:00:00`);
   return Array.from({ length: 7 }, (_, index) => {
@@ -3514,9 +4947,82 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#03050b"
   },
+  backgroundTexture: {
+    ...StyleSheet.absoluteFillObject,
+    height: "100%",
+    opacity: 0.92,
+    width: "100%"
+  },
   scrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(3,5,11,0.58)"
+    backgroundColor: "rgba(3,5,11,0.18)"
+  },
+  outerGradient: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: "hidden"
+  },
+  lowerGlowBase: {
+    bottom: 0,
+    height: "44%",
+    left: 0,
+    position: "absolute",
+    right: 0
+  },
+  lowerGlowPool: {
+    bottom: -96,
+    height: 320,
+    left: "-12%",
+    opacity: 0.72,
+    position: "absolute",
+    right: "-12%"
+  },
+  nightGrain: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.055
+  },
+  deepNightGrain: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.055
+  },
+  niloLightWrap: {
+    alignItems: "center",
+    height: 180,
+    justifyContent: "center",
+    width: 180
+  },
+  niloLightHalo: {
+    borderRadius: 90,
+    height: 180,
+    overflow: "hidden",
+    position: "absolute",
+    width: 180
+  },
+  niloLightGlowMid: {
+    borderRadius: 50,
+    height: 100,
+    overflow: "hidden",
+    position: "absolute",
+    width: 100
+  },
+  niloLightGlowInner: {
+    borderRadius: 23,
+    height: 46,
+    overflow: "hidden",
+    position: "absolute",
+    width: 46
+  },
+  niloLightCore: {
+    borderRadius: 4,
+    height: 8,
+    overflow: "hidden",
+    shadowColor: "#f4fbff",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 14,
+    width: 8
+  },
+  niloLightFill: {
+    ...StyleSheet.absoluteFillObject
   },
   safe: {
     flex: 1
@@ -3560,27 +5066,56 @@ const styles = StyleSheet.create({
   },
   brand: {
     color: "#f6efe4",
-    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
-    fontSize: 34,
-    fontWeight: "600"
+    fontFamily: fontSerifEnLight,
+    fontSize: 38,
+    fontWeight: "300",
+    letterSpacing: 1.5
   },
   brandSub: {
-    color: "rgba(246,239,228,0.68)",
-    fontSize: 12
+    color: "rgba(246,239,228,0.6)",
+    fontSize: 12,
+    letterSpacing: 0.6,
+    marginTop: 2
   },
-  settingsButton: {
+  accountButton: {
     alignItems: "center",
-    backgroundColor: "rgba(255,254,244,0.105)",
-    borderColor: "rgba(255,254,244,0.24)",
-    borderRadius: 16,
-    borderWidth: 1,
-    height: 42,
+    backgroundColor: "rgba(255,254,244,0.08)",
+    borderColor: "rgba(255,254,244,0.22)",
+    borderRadius: 999,
+    borderWidth: 1.5,
+    height: 44,
     justifyContent: "center",
+    overflow: "hidden",
+    position: "relative",
     shadowColor: "#ffffff",
     shadowOffset: { width: -7, height: -9 },
     shadowOpacity: 0.1,
     shadowRadius: 20,
-    width: 42
+    width: 44
+  },
+  accountButtonImage: {
+    height: "100%",
+    width: "100%"
+  },
+  accountButtonInitial: {
+    color: "#fbfbfb",
+    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    fontSize: 17,
+    fontWeight: "700"
+  },
+  accountButtonStatus: {
+    backgroundColor: "rgba(160,160,160,0.85)",
+    borderColor: "#03050b",
+    borderRadius: 999,
+    borderWidth: 2,
+    bottom: 1,
+    height: 12,
+    position: "absolute",
+    right: 1,
+    width: 12
+  },
+  accountButtonStatusConnected: {
+    backgroundColor: "#d9b36a"
   },
   symbolButtonText: {
     color: "#f6efe4",
@@ -3605,9 +5140,10 @@ const styles = StyleSheet.create({
   },
   gateLogo: {
     color: "#f6efe4",
-    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
-    fontSize: 48,
-    fontWeight: "700"
+    fontFamily: fontSerifEnLight,
+    fontSize: 56,
+    fontWeight: "300",
+    letterSpacing: 2
   },
   gateSlogan: {
     color: "rgba(246,239,228,0.7)",
@@ -3801,17 +5337,19 @@ const styles = StyleSheet.create({
     textAlign: "center"
   },
   niloStageQuestion: {
-    color: "#f6efe4",
-    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
-    fontSize: 25,
-    fontWeight: "600",
-    lineHeight: 34,
+    color: "rgba(246,239,228,0.94)",
+    fontFamily: fontSerifJa,
+    fontSize: 23,
+    fontWeight: "300",
+    letterSpacing: 0.8,
+    lineHeight: 36,
     marginTop: 10,
     textAlign: "center"
   },
   niloStageQuestionCompact: {
-    fontSize: 23,
-    lineHeight: 31,
+    fontSize: 21,
+    letterSpacing: 0.6,
+    lineHeight: 32,
     marginTop: 6
   },
   answerPreview: {
@@ -3835,10 +5373,12 @@ const styles = StyleSheet.create({
     textAlign: "center"
   },
   answerPreviewText: {
-    color: "rgba(255,254,244,0.82)",
-    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    color: "rgba(255,254,244,0.78)",
+    fontFamily: fontSerifJa,
     fontSize: 18,
-    lineHeight: 26,
+    fontWeight: "300",
+    letterSpacing: 1.4,
+    lineHeight: 28,
     textAlign: "center"
   },
   niloStageText: {
@@ -3941,9 +5481,9 @@ const styles = StyleSheet.create({
   },
   ritualStartButton: {
     alignItems: "center",
-    backgroundColor: "rgba(255,254,244,0.15)",
-    borderColor: "rgba(255,254,244,0.28)",
-    borderTopColor: "rgba(255,254,244,0.5)",
+    backgroundColor: "rgba(12,10,12,0.88)",
+    borderColor: "rgba(217,179,106,0.28)",
+    borderTopColor: "rgba(240,209,138,0.32)",
     borderRadius: 999,
     borderWidth: 1,
     flexDirection: "row",
@@ -3954,39 +5494,42 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     position: "relative",
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.34,
-    shadowRadius: 22
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.26,
+    shadowRadius: 18
   },
-  ritualButtonSheen: {
-    backgroundColor: "rgba(255,255,255,0.1)",
-    borderTopLeftRadius: 999,
-    borderTopRightRadius: 999,
-    height: "50%",
-    left: 0,
+  ritualButtonGradient: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.82
+  },
+  ritualButtonMatte: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(3,5,11,0.18)",
     position: "absolute",
-    right: 0,
-    top: 0
   },
   ritualStartButtonPressed: {
     transform: [{ scale: 0.97 }]
   },
   ritualStartButtonDisabled: {
-    backgroundColor: "rgba(255,254,244,0.04)",
-    borderColor: "rgba(255,254,244,0.08)",
+    backgroundColor: "rgba(12,10,12,0.74)",
+    borderColor: "rgba(217,179,106,0.1)",
     opacity: 0.46,
     shadowOpacity: 0
   },
   ritualStartIcon: {
-    color: "#f0d18a",
+    color: "#f1cc79",
     fontSize: 14,
-    marginRight: 10
+    marginRight: 10,
+    textShadowColor: "rgba(217,179,106,0.22)",
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 8
   },
   ritualStartCopy: {
-    alignItems: "center"
+    alignItems: "center",
+    zIndex: 1
   },
   ritualStartText: {
-    color: "#f6efe4",
+    color: "#fff4dc",
     fontFamily: Platform.select({ ios: "Didot", android: "serif", default: "serif" }),
     fontSize: 13,
     fontWeight: "700",
@@ -3994,7 +5537,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase"
   },
   ritualStreakText: {
-    color: "rgba(240,209,138,0.78)",
+    color: "rgba(240,209,138,0.74)",
     fontSize: 10,
     fontWeight: "700",
     letterSpacing: 0.4,
@@ -4104,6 +5647,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: "#07080b",
+    fontFamily: fontUiMedium,
     fontSize: 14,
     fontWeight: "700"
   },
@@ -4119,17 +5663,22 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: "rgba(255,255,255,0.78)",
+    fontFamily: fontUiMedium,
     fontSize: 14,
     fontWeight: "700"
   },
   panel: {
-    backgroundColor: "rgba(255,254,244,0.085)",
-    borderColor: "rgba(255,254,244,0.2)",
-    borderRadius: 24,
+    backgroundColor: "rgba(255,254,244,0.075)",
+    borderColor: "rgba(255,254,244,0.18)",
+    borderRadius: 22,
     borderWidth: 1,
     gap: 8,
     marginBottom: 12,
-    padding: 16
+    padding: 16,
+    shadowColor: "#fff7df",
+    shadowOffset: { width: -7, height: -9 },
+    shadowOpacity: 0.08,
+    shadowRadius: 24
   },
   memoryCard: {
     backgroundColor: "rgba(255,254,244,0.06)",
@@ -4197,17 +5746,54 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5
   },
   chapterCard: {
-    backgroundColor: "rgba(255,254,244,0.06)",
-    borderColor: "rgba(255,254,244,0.16)",
-    borderRadius: 22,
-    borderWidth: 1,
-    gap: 11,
-    marginBottom: 12,
-    overflow: "hidden",
-    paddingBottom: 20,
-    paddingLeft: 26,
-    paddingRight: 20,
-    paddingTop: 18
+    backgroundColor: "rgba(255,254,244,0.035)",
+    borderRadius: 24,
+    gap: 16,
+    marginBottom: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 26
+  },
+  chapterMark: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 15
+  },
+  chapterRoman: {
+    color: "#d9b36a",
+    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    fontSize: 42,
+    lineHeight: 40
+  },
+  chapterMarkCol: {
+    gap: 3,
+    paddingTop: 5
+  },
+  chapterEyebrowLabel: {
+    color: "#d9b36a",
+    fontSize: 10,
+    letterSpacing: 3
+  },
+  chapterPeriodRefined: {
+    color: "#8f9bb0",
+    fontSize: 11,
+    letterSpacing: 1.5
+  },
+  chapterEpigraph: {
+    color: "#b3ada2",
+    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    fontSize: 15,
+    fontStyle: "italic",
+    lineHeight: 26
+  },
+  ruleGold: {
+    backgroundColor: "rgba(217,179,106,0.22)",
+    height: 1
+  },
+  proposalPeriod: {
+    color: "rgba(217,179,106,0.85)",
+    fontSize: 11,
+    letterSpacing: 1.5,
+    marginTop: 7
   },
   chapterAccent: {
     backgroundColor: "rgba(217,179,106,0.5)",
@@ -4242,9 +5828,8 @@ const styles = StyleSheet.create({
   chapterCardTitle: {
     color: "#f6efe4",
     fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
-    fontSize: 24,
-    fontWeight: "600",
-    lineHeight: 32
+    fontSize: 27,
+    lineHeight: 35
   },
   chapterSummary: {
     color: "#c2bbb0",
@@ -4271,6 +5856,217 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 0.5
   },
+  chapterCardTitleEmpty: {
+    color: "rgba(246,239,228,0.45)",
+    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    fontSize: 20,
+    fontStyle: "italic",
+    lineHeight: 28
+  },
+  chapterNameActions: {
+    gap: 8
+  },
+  renameTrail: {
+    color: "#857e73",
+    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    fontSize: 12,
+    fontStyle: "italic",
+    marginTop: 4
+  },
+  inProgressPanel: {
+    backgroundColor: "rgba(255,254,244,0.04)",
+    borderColor: "rgba(255,254,244,0.12)",
+    borderRadius: 18,
+    borderWidth: 1,
+    marginBottom: 14,
+    padding: 16
+  },
+  inProgressText: {
+    color: "#9d978c",
+    fontSize: 13,
+    fontStyle: "italic",
+    lineHeight: 21
+  },
+  proposalCard: {
+    backgroundColor: "rgba(217,179,106,0.07)",
+    borderColor: "rgba(217,179,106,0.32)",
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: 12,
+    marginBottom: 12,
+    padding: 20
+  },
+  proposalEyebrow: {
+    color: "#d9b36a",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.5
+  },
+  proposalObservation: {
+    color: "#f6efe4",
+    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    fontSize: 18,
+    lineHeight: 27
+  },
+  proposalActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 2
+  },
+  proposalAccept: {
+    backgroundColor: "rgba(217,179,106,0.18)",
+    borderColor: "rgba(217,179,106,0.45)",
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 9
+  },
+  proposalAcceptText: {
+    color: "#f6efe4",
+    fontSize: 13,
+    fontWeight: "700"
+  },
+  proposalGhost: {
+    borderColor: "rgba(255,254,244,0.18)",
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 9
+  },
+  proposalGhostText: {
+    color: "#c2bbb0",
+    fontSize: 13
+  },
+  proposalNameRow: {
+    gap: 8,
+    marginTop: 2
+  },
+  proposalSkipName: {
+    color: "#9d978c",
+    fontSize: 12,
+    paddingVertical: 6,
+    textAlign: "center"
+  },
+  throughline: {
+    gap: 10,
+    marginTop: 2
+  },
+  throughlineRow: {
+    alignItems: "baseline",
+    flexDirection: "row",
+    gap: 14
+  },
+  throughlineLabel: {
+    color: "#9d978c",
+    fontSize: 10,
+    letterSpacing: 2,
+    width: 32
+  },
+  throughlineValue: {
+    color: "#cfc8bc",
+    flex: 1,
+    fontSize: 14,
+    letterSpacing: 1,
+    lineHeight: 22
+  },
+  chipWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6
+  },
+  chip: {
+    backgroundColor: "rgba(255,254,244,0.07)",
+    borderColor: "rgba(255,254,244,0.16)",
+    borderRadius: 999,
+    borderWidth: 1,
+    color: "#e7e0d4",
+    fontSize: 12,
+    overflow: "hidden",
+    paddingHorizontal: 11,
+    paddingVertical: 4
+  },
+  meaningShift: {
+    marginTop: 6
+  },
+  meaningText: {
+    color: "#9d978c",
+    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    fontSize: 14,
+    fontStyle: "italic",
+    lineHeight: 22
+  },
+  meaningTextTo: {
+    color: "#d8d1c4",
+    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    fontSize: 14,
+    fontStyle: "italic",
+    lineHeight: 22
+  },
+  meaningRule: {
+    backgroundColor: "#d9b36a",
+    height: 1,
+    marginVertical: 9,
+    width: 26
+  },
+  meaningArrow: {
+    color: "#d9b36a",
+    fontSize: 12
+  },
+  episodeBlock: {
+    marginTop: 4
+  },
+  episodeToggle: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 7,
+    paddingVertical: 6
+  },
+  episodeToggleChevron: {
+    color: "#d9b36a",
+    fontSize: 11
+  },
+  episodeToggleText: {
+    color: "#9d978c",
+    fontSize: 10,
+    letterSpacing: 2
+  },
+  episodeList: {
+    marginTop: 4
+  },
+  episodeItem: {
+    flexDirection: "row",
+    gap: 14,
+    paddingVertical: 14
+  },
+  episodeItemDivided: {
+    borderTopColor: "rgba(255,254,244,0.06)",
+    borderTopWidth: 1
+  },
+  episodeDate: {
+    color: "#d9b36a",
+    fontSize: 11,
+    letterSpacing: 1,
+    paddingTop: 1,
+    width: 50
+  },
+  episodeText: {
+    color: "#c2bbb0",
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 22
+  },
+  chipSmall: {
+    backgroundColor: "rgba(255,254,244,0.06)",
+    borderColor: "rgba(255,254,244,0.14)",
+    borderRadius: 999,
+    borderWidth: 1,
+    color: "#c2bbb0",
+    fontSize: 11,
+    overflow: "hidden",
+    paddingHorizontal: 9,
+    paddingVertical: 3
+  },
   panelTitle: {
     color: "#f6efe4",
     fontSize: 17,
@@ -4290,6 +6086,7 @@ const styles = StyleSheet.create({
   },
   mutedText: {
     color: "#c2bbb0",
+    fontFamily: fontUi,
     fontSize: 14,
     lineHeight: 21
   },
@@ -4593,14 +6390,8 @@ const styles = StyleSheet.create({
     shadowColor: "#fff7df",
     shadowOffset: { width: -8, height: -10 },
     shadowOpacity: 0.08,
-    shadowRadius: 26
-  },
-  tabHighlight: {
-    backgroundColor: "rgba(255,254,244,0.56)",
-    borderRadius: 999,
-    height: 2,
-    position: "absolute",
-    top: 0
+    shadowRadius: 26,
+    zIndex: 30
   },
   tabItem: {
     alignItems: "center",
@@ -4611,23 +6402,26 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     zIndex: 1
   },
+  tabItemMotion: {
+    alignItems: "center",
+    gap: 4,
+    justifyContent: "center",
+    minHeight: 48,
+    minWidth: 54,
+    position: "relative"
+  },
   tabItemHome: {
-    backgroundColor: "rgba(255,254,244,0.07)",
-    borderColor: "rgba(255,254,244,0.12)",
-    borderRadius: 18,
-    borderWidth: 1,
-    marginHorizontal: 2,
-    minHeight: 58,
-    shadowColor: "#fff7df",
-    shadowOffset: { width: -5, height: -7 },
-    shadowOpacity: 0.08,
-    shadowRadius: 18
+    backgroundColor: "transparent",
+    borderRadius: 0,
+    marginHorizontal: 0,
+    minHeight: 52,
+    shadowOpacity: 0,
+    shadowRadius: 0
   },
   tabItemHomeActive: {
-    backgroundColor: "rgba(255,254,244,0.16)",
-    borderColor: "rgba(255,254,244,0.3)",
-    shadowOpacity: 0.16,
-    shadowRadius: 26
+    backgroundColor: "transparent",
+    shadowOpacity: 0,
+    shadowRadius: 0
   },
   tabItemActive: {
     backgroundColor: "rgba(217,179,106,0.12)"
@@ -4812,14 +6606,38 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 16
   },
-  modalTitleWrap: {
+  accountHeader: {
     alignItems: "center",
     flex: 1,
-    paddingLeft: 42
+    flexDirection: "row",
+    gap: 13,
+    minWidth: 0
+  },
+  accountHeaderAvatar: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderColor: "rgba(255,255,255,0.18)",
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 54,
+    justifyContent: "center",
+    overflow: "hidden",
+    width: 54
+  },
+  accountHeaderInitial: {
+    color: "#fbfbfb",
+    fontFamily: fontUiMedium,
+    fontSize: 21,
+    fontWeight: "700"
+  },
+  modalTitleWrap: {
+    alignItems: "flex-start",
+    flex: 1,
+    minWidth: 0
   },
   modalTitle: {
     color: "#fafafa",
-    fontFamily: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    fontFamily: fontUiMedium,
     fontSize: 17,
     fontWeight: "700",
     letterSpacing: 0.4
@@ -4843,9 +6661,15 @@ const styles = StyleSheet.create({
   },
   modalSub: {
     color: "rgba(255,255,255,0.42)",
+    fontFamily: fontUi,
     fontSize: 11,
-    marginTop: 3,
-    textTransform: "uppercase"
+    marginTop: 3
+  },
+  accountHeaderMeta: {
+    color: "rgba(255,255,255,0.52)",
+    fontFamily: fontUi,
+    fontSize: 11,
+    marginTop: 3
   },
   modalCompass: {
     alignItems: "center",
@@ -4859,12 +6683,56 @@ const styles = StyleSheet.create({
   },
   modalCompassText: {
     color: "rgba(255,255,255,0.72)",
+    fontFamily: fontUi,
     fontSize: 24,
     fontWeight: "300",
     lineHeight: 26
   },
   settingsBody: {
     flex: 1
+  },
+  accountRootTabs: {
+    backgroundColor: "rgba(255,254,244,0.052)",
+    borderColor: "rgba(255,254,244,0.14)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    padding: 4
+  },
+  accountRootTab: {
+    alignItems: "center",
+    borderRadius: 999,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 46,
+    paddingHorizontal: 8,
+    paddingVertical: 8
+  },
+  accountRootTabActive: {
+    backgroundColor: "rgba(255,254,244,0.13)",
+    shadowColor: "#fff6dc",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12
+  },
+  accountRootTabLabel: {
+    color: "rgba(255,255,255,0.55)",
+    fontFamily: fontUiMedium,
+    fontSize: 13,
+    fontWeight: "700"
+  },
+  accountRootTabLabelActive: {
+    color: "#fff9eb"
+  },
+  accountRootTabSub: {
+    color: "rgba(255,255,255,0.34)",
+    fontFamily: fontUi,
+    fontSize: 10,
+    marginTop: 2
+  },
+  accountRootTabSubActive: {
+    color: "rgba(255,249,235,0.62)"
   },
   settingsTabList: {
     gap: 10,
@@ -4888,16 +6756,19 @@ const styles = StyleSheet.create({
   },
   settingsTabIcon: {
     color: "#c2bbb0",
+    fontFamily: fontUiMedium,
     fontSize: 18,
     fontWeight: "700"
   },
   settingsTabTitle: {
     color: "#f6efe4",
+    fontFamily: fontUiMedium,
     fontSize: 14,
     fontWeight: "700"
   },
   settingsTabSub: {
     color: "#aaa6af",
+    fontFamily: fontUi,
     fontSize: 10,
     lineHeight: 13
   },
@@ -4975,7 +6846,7 @@ const styles = StyleSheet.create({
   },
   baseAvatarText: {
     color: "#fbfbfb",
-    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    fontFamily: fontUiMedium,
     fontSize: 34,
     fontWeight: "700"
   },
@@ -4985,12 +6856,13 @@ const styles = StyleSheet.create({
   },
   baseName: {
     color: "#fbfbfb",
-    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    fontFamily: fontUiMedium,
     fontSize: 25,
     fontWeight: "700"
   },
   baseLevel: {
     color: "rgba(236,193,112,0.86)",
+    fontFamily: fontUiMedium,
     fontSize: 14,
     fontWeight: "700"
   },
@@ -5013,6 +6885,7 @@ const styles = StyleSheet.create({
   },
   baseXpText: {
     color: "rgba(255,255,255,0.55)",
+    fontFamily: fontUi,
     fontSize: 12
   },
   baseMetaRow: {
@@ -5035,16 +6908,18 @@ const styles = StyleSheet.create({
   },
   baseMetaIcon: {
     color: "rgba(255,255,255,0.52)",
+    fontFamily: fontUi,
     fontSize: 20,
     width: 30
   },
   baseMetaLabel: {
     color: "rgba(255,255,255,0.52)",
+    fontFamily: fontUi,
     fontSize: 12
   },
   baseMetaValue: {
     color: "#fbfbfb",
-    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    fontFamily: fontUiMedium,
     fontSize: 17,
     fontWeight: "700",
     marginTop: 2
@@ -5073,12 +6948,13 @@ const styles = StyleSheet.create({
   },
   baseStatValue: {
     color: "#fbfbfb",
-    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    fontFamily: fontUiMedium,
     fontSize: 18,
     fontWeight: "700"
   },
   baseStatLabel: {
     color: "rgba(255,255,255,0.44)",
+    fontFamily: fontUi,
     fontSize: 10,
     marginTop: 2
   },
@@ -5087,7 +6963,7 @@ const styles = StyleSheet.create({
   },
   baseSectionTitle: {
     color: "rgba(255,255,255,0.48)",
-    fontFamily: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    fontFamily: fontUiMedium,
     fontSize: 11,
     fontWeight: "800",
     letterSpacing: 1.5,
@@ -5401,15 +7277,18 @@ const styles = StyleSheet.create({
   },
   baseRowTitle: {
     color: "#f7f7f7",
+    fontFamily: fontUiMedium,
     fontSize: 15,
     fontWeight: "700"
   },
   baseRowBody: {
     color: "rgba(255,255,255,0.43)",
+    fontFamily: fontUi,
     fontSize: 12
   },
   baseRowValue: {
     color: "rgba(255,255,255,0.62)",
+    fontFamily: fontUiMedium,
     fontSize: 12,
     fontWeight: "700",
     maxWidth: 74,
@@ -5423,6 +7302,7 @@ const styles = StyleSheet.create({
   },
   baseBadgeText: {
     color: "#ecc170",
+    fontFamily: fontUiMedium,
     fontSize: 12,
     fontWeight: "700"
   },
@@ -5437,6 +7317,7 @@ const styles = StyleSheet.create({
   },
   backToBaseText: {
     color: "rgba(255,255,255,0.72)",
+    fontFamily: fontUiMedium,
     fontSize: 14,
     fontWeight: "700"
   },
@@ -5448,6 +7329,7 @@ const styles = StyleSheet.create({
   },
   settingsPageIcon: {
     color: "rgba(240,189,118,0.72)",
+    fontFamily: fontUiMedium,
     fontSize: 20,
     fontWeight: "700",
     width: 34
@@ -5455,6 +7337,12 @@ const styles = StyleSheet.create({
   settingsPageCopy: {
     flex: 1,
     gap: 3
+  },
+  settingsPageHeading: {
+    color: "#f6efe4",
+    fontFamily: fontUiMedium,
+    fontSize: 17,
+    fontWeight: "700"
   },
   settingsCard: {
     backgroundColor: "rgba(255,255,255,0.048)",
@@ -5490,7 +7378,7 @@ const styles = StyleSheet.create({
   },
   profileEditAvatarText: {
     color: "#fbfbfb",
-    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    fontFamily: fontUiMedium,
     fontSize: 28,
     fontWeight: "700"
   },
@@ -5500,7 +7388,7 @@ const styles = StyleSheet.create({
   },
   profileEditName: {
     color: "#f8f8f8",
-    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
+    fontFamily: fontUiMedium,
     fontSize: 24,
     fontWeight: "700"
   },
@@ -5527,6 +7415,7 @@ const styles = StyleSheet.create({
   },
   profileSaveButtonText: {
     color: "#f8e4b8",
+    fontFamily: fontUiMedium,
     fontSize: 13,
     fontWeight: "800"
   },
@@ -5552,6 +7441,7 @@ const styles = StyleSheet.create({
   },
   syncStatusText: {
     color: "#f8e4b8",
+    fontFamily: fontUiMedium,
     fontSize: 12,
     fontWeight: "800"
   },
@@ -5578,16 +7468,19 @@ const styles = StyleSheet.create({
   },
   dangerButtonText: {
     color: "#fff7f7",
+    fontFamily: fontUiMedium,
     fontSize: 14,
     fontWeight: "800"
   },
   errorText: {
     color: "#ffb4a7",
+    fontFamily: fontUi,
     fontSize: 12,
     lineHeight: 18
   },
   noticeText: {
     color: "#d9b36a",
+    fontFamily: fontUi,
     fontSize: 12,
     lineHeight: 18
   },
@@ -5599,17 +7492,20 @@ const styles = StyleSheet.create({
   },
   redirectText: {
     color: "rgba(255,255,255,0.55)",
+    fontFamily: fontUi,
     fontSize: 11,
     lineHeight: 16
   },
   settingLabel: {
     color: "rgba(255,255,255,0.43)",
+    fontFamily: fontUiMedium,
     fontSize: 11,
     fontWeight: "700",
     letterSpacing: 0.5
   },
   settingValue: {
     color: "#f7f7f7",
+    fontFamily: fontUiMedium,
     fontSize: 16,
     fontWeight: "700"
   },
@@ -5624,6 +7520,7 @@ const styles = StyleSheet.create({
   },
   soundStatusText: {
     color: "rgba(255,255,255,0.58)",
+    fontFamily: fontUiMedium,
     fontSize: 12,
     fontWeight: "700"
   },
@@ -5645,6 +7542,7 @@ const styles = StyleSheet.create({
   },
   soundStepText: {
     color: "rgba(255,255,255,0.76)",
+    fontFamily: fontUiMedium,
     fontSize: 19,
     fontWeight: "800",
     lineHeight: 21
@@ -5676,6 +7574,7 @@ const styles = StyleSheet.create({
   },
   soundTrackMark: {
     color: "rgba(236,193,112,0.86)",
+    fontFamily: fontUiMedium,
     fontSize: 11,
     fontWeight: "800"
   },
@@ -5697,11 +7596,13 @@ const styles = StyleSheet.create({
   },
   legalSectionTitle: {
     color: "#f7f7f7",
+    fontFamily: fontUiMedium,
     fontSize: 15,
     fontWeight: "800"
   },
   legalBody: {
     color: "rgba(255,255,255,0.62)",
+    fontFamily: fontUi,
     fontSize: 13,
     lineHeight: 21
   },
@@ -5711,9 +7612,61 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     color: "#f7f7f7",
+    fontFamily: fontUi,
     fontSize: 16,
     minHeight: 46,
     paddingHorizontal: 14
+  },
+  ownershipStatement: {
+    color: "#efd49a",
+    fontFamily: fontUiMedium,
+    fontSize: 16,
+    marginBottom: 2
+  },
+  recoveryKeyText: {
+    backgroundColor: "rgba(2,4,11,0.5)",
+    borderColor: "rgba(234,204,145,0.34)",
+    borderRadius: 12,
+    borderWidth: 1,
+    color: "#efd49a",
+    fontFamily: fontUi,
+    fontSize: 15,
+    letterSpacing: 0.5,
+    lineHeight: 26,
+    padding: 14
+  },
+  entryRow: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderColor: "rgba(255,255,255,0.1)",
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10
+  },
+  entryRowText: {
+    color: "#e8e8e8",
+    flex: 1,
+    fontFamily: fontUi,
+    fontSize: 14
+  },
+  entryRemove: {
+    alignItems: "center",
+    borderColor: "rgba(255,255,255,0.18)",
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 28,
+    justifyContent: "center",
+    width: 28
+  },
+  entryRemoveText: {
+    color: "#c2bbb0",
+    fontFamily: fontUi,
+    fontSize: 16,
+    lineHeight: 18
   },
   toggleRow: {
     alignItems: "center",
@@ -5745,6 +7698,7 @@ const styles = StyleSheet.create({
   },
   toggleText: {
     color: "rgba(255,255,255,0.54)",
+    fontFamily: fontUiMedium,
     fontSize: 12,
     fontWeight: "800"
   },
@@ -5774,10 +7728,1236 @@ const styles = StyleSheet.create({
   },
   segmentText: {
     color: "rgba(255,255,255,0.54)",
+    fontFamily: fontUiMedium,
     fontSize: 13,
     fontWeight: "700"
   },
   segmentTextActive: {
     color: "#f8e4b8"
+  },
+
+  background: {
+    flex: 1,
+    backgroundColor: "#100C0A"
+  },
+  backgroundTexture: {
+    ...StyleSheet.absoluteFillObject,
+    height: "100%",
+    opacity: 0.1,
+    width: "100%"
+  },
+  scrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(8,6,4,0.22)"
+  },
+  lowerGlowBase: {
+    bottom: 0,
+    height: "42%",
+    left: 0,
+    opacity: 0.64,
+    position: "absolute",
+    right: 0
+  },
+  lowerGlowPool: {
+    bottom: -118,
+    height: 360,
+    left: "-18%",
+    opacity: 0.58,
+    position: "absolute",
+    right: "-18%"
+  },
+  header: {
+    alignItems: "center",
+    flexDirection: "row",
+    height: 82,
+    justifyContent: "space-between",
+    left: 0,
+    paddingHorizontal: 0,
+    paddingTop: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    zIndex: 40
+  },
+  headerSide: {
+    display: "none"
+  },
+  headerClock: {
+    color: "rgba(232,226,214,0.24)",
+    fontFamily: fontSerifEn,
+    fontSize: 12,
+    left: 0,
+    letterSpacing: 2.6,
+    position: "absolute",
+    right: 0,
+    textAlign: "center",
+    top: 20
+  },
+  settingsSunButton: {
+    alignItems: "center",
+    height: 34,
+    justifyContent: "center",
+    outlineStyle: "none",
+    position: "absolute",
+    right: 22,
+    top: 36,
+    width: 34
+  },
+  settingsSunGlyph: {
+    height: 19,
+    position: "relative",
+    width: 19
+  },
+  settingsSunCore: {
+    borderColor: "rgba(225,205,170,0.5)",
+    borderRadius: 999,
+    borderWidth: 1.3,
+    height: 7,
+    left: 6,
+    position: "absolute",
+    top: 6,
+    width: 7
+  },
+  settingsSunRay: {
+    backgroundColor: "rgba(225,205,170,0.5)",
+    borderRadius: 999,
+    height: 3.1,
+    position: "absolute",
+    width: 1.3
+  },
+  settingsSunRayTop: {
+    left: 8.85,
+    top: 0
+  },
+  settingsSunRayBottom: {
+    bottom: 0,
+    left: 8.85
+  },
+  settingsSunRayLeft: {
+    height: 1.3,
+    left: 0,
+    top: 8.85,
+    width: 3.1
+  },
+  settingsSunRayRight: {
+    height: 1.3,
+    right: 0,
+    top: 8.85,
+    width: 3.1
+  },
+  settingsSunRaySlashA: {
+    height: 1.3,
+    left: 3,
+    top: 3,
+    transform: [{ rotate: "45deg" }],
+    width: 3.1
+  },
+  settingsSunRaySlashB: {
+    bottom: 3,
+    height: 1.3,
+    right: 3,
+    transform: [{ rotate: "45deg" }],
+    width: 3.1
+  },
+  settingsSunRaySlashC: {
+    height: 1.3,
+    right: 3,
+    top: 3,
+    transform: [{ rotate: "-45deg" }],
+    width: 3.1
+  },
+  settingsSunRaySlashD: {
+    bottom: 3,
+    height: 1.3,
+    left: 3,
+    transform: [{ rotate: "-45deg" }],
+    width: 3.1
+  },
+  content: {
+    flex: 1
+  },
+  pageRail: {
+    alignItems: "stretch"
+  },
+  pageFrame: {
+    flex: 1
+  },
+  composerAvoider: {
+    bottom: 70,
+    left: 0,
+    position: "absolute",
+    right: 0
+  },
+  homeReflectionScreen: {
+    flex: 1,
+    justifyContent: "flex-start",
+    paddingBottom: 122,
+    paddingHorizontal: 46
+  },
+  reflectionTapArea: {
+    alignItems: "center",
+    flex: 0,
+    justifyContent: "flex-start"
+  },
+  homeLeadText: {
+    color: "rgba(190,180,162,0.72)",
+    fontFamily: fontSerifJa,
+    fontSize: 18,
+    letterSpacing: 1.1,
+    lineHeight: 32,
+    marginBottom: 30,
+    textAlign: "center"
+  },
+  homeLeadTextDimmed: {
+    opacity: 0.28
+  },
+  niloStage: {
+    alignItems: "center",
+    marginBottom: 6,
+    overflow: "visible",
+    paddingHorizontal: 0,
+    paddingVertical: 0
+  },
+  niloStageCopy: {
+    alignItems: "center",
+    gap: 0,
+    paddingHorizontal: 0,
+    paddingTop: 0
+  },
+  niloStageQuestion: {
+    color: "#E8E2D6",
+    fontFamily: fontSerifJa,
+    fontSize: 33,
+    fontWeight: "400",
+    letterSpacing: 1.65,
+    lineHeight: 64,
+    marginTop: 0,
+    textAlign: "center"
+  },
+  niloStageQuestionCompact: {
+    fontSize: 26,
+    lineHeight: 40,
+    marginTop: 0
+  },
+  niloStageCaret: {
+    color: "rgba(242,200,142,0.92)",
+    fontSize: 30,
+    fontWeight: "300"
+  },
+  niloStageCaretCompact: {
+    fontSize: 24
+  },
+  niloLightWrap: {
+    alignItems: "center",
+    height: 210,
+    justifyContent: "center",
+    width: 210
+  },
+  niloLightHalo: {
+    borderRadius: 105,
+    height: 210,
+    overflow: "hidden",
+    position: "absolute",
+    width: 210
+  },
+  niloLightGlowMid: {
+    borderRadius: 70,
+    height: 140,
+    overflow: "hidden",
+    position: "absolute",
+    width: 140
+  },
+  niloLightGlowInner: {
+    borderRadius: 38,
+    height: 76,
+    overflow: "hidden",
+    position: "absolute",
+    width: 76
+  },
+  niloLightCore: {
+    backgroundColor: "#f1c17a",
+    borderRadius: 999,
+    height: 10,
+    overflow: "hidden",
+    shadowColor: "#e4a95f",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.94,
+    shadowRadius: 30,
+    width: 10
+  },
+  ritualButtonWrap: {
+    alignItems: "center",
+    paddingBottom: 14
+  },
+  ritualStartButton: {
+    alignItems: "center",
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    flexDirection: "row",
+    justifyContent: "center",
+    minHeight: 32,
+    outlineStyle: "none",
+    paddingHorizontal: 16,
+    paddingVertical: 6
+  },
+  ritualStartButtonDisabled: {
+    opacity: 0.34
+  },
+  ritualStartIcon: {
+    color: "#e8bd78",
+    fontFamily: fontSerifEn,
+    fontSize: 30,
+    lineHeight: 28,
+    marginRight: 15,
+    textShadowColor: "rgba(232,189,120,0.64)",
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 18
+  },
+  ritualStartText: {
+    color: "rgba(238,224,202,0.36)",
+    fontFamily: fontSerifJa,
+    fontSize: 14,
+    letterSpacing: 1.8
+  },
+  composerLine: {
+    alignItems: "center",
+    backgroundColor: "rgba(20,14,10,0.9)",
+    borderColor: "rgba(221,180,111,0.22)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    minHeight: 48,
+    paddingHorizontal: 16,
+    shadowColor: "#e8bd78",
+    shadowOpacity: 0.12,
+    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 0 }
+  },
+  questScrollContent: {
+    paddingBottom: 118,
+    paddingHorizontal: 30,
+    paddingTop: 58
+  },
+  questHeader: {
+    marginBottom: 28
+  },
+  questScreenTitle: {
+    color: "#E8E2D6",
+    fontFamily: fontSerifJa,
+    fontSize: 22,
+    letterSpacing: 1.8,
+    lineHeight: 30
+  },
+  questEyebrow: {
+    color: "rgba(217,168,108,0.6)",
+    fontFamily: fontSerifEnMedium,
+    fontSize: 10,
+    letterSpacing: 2.8,
+    lineHeight: 12,
+    marginTop: 7
+  },
+  questProgress: {
+    color: "rgba(190,180,162,0.6)",
+    fontFamily: fontSerifJa,
+    fontSize: 11,
+    letterSpacing: 0.7,
+    lineHeight: 16,
+    marginTop: 4
+  },
+  questHeaderRule: {
+    backgroundColor: "rgba(217,168,108,0.14)",
+    borderRadius: 2,
+    height: 2,
+    marginTop: 9,
+    overflow: "hidden",
+    width: "100%"
+  },
+  questHeaderRuleFill: {
+    backgroundColor: "rgba(242,200,142,0.95)",
+    borderRadius: 2,
+    height: "100%",
+    shadowColor: "#d9a86c",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8
+  },
+  questList: {
+    gap: 0
+  },
+  mobileQuestCard: {
+    backgroundColor: "rgba(46,36,26,0.54)",
+    borderColor: "rgba(217,168,108,0.18)",
+    borderRadius: 18,
+    borderWidth: 1,
+    marginBottom: 16,
+    overflow: "hidden",
+    paddingHorizontal: 22,
+    paddingVertical: 20,
+    position: "relative",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.38,
+    shadowRadius: 38
+  },
+  mobileQuestCategory: {
+    color: "rgba(225,190,140,0.85)",
+    fontFamily: fontSerifEnMedium,
+    fontSize: 10,
+    letterSpacing: 2.2,
+    marginBottom: 0
+  },
+  mobileQuestNilo: {
+    borderColor: "rgba(217,168,108,0.32)",
+    borderRadius: 999,
+    borderWidth: 1,
+    color: "rgba(232,200,150,0.78)",
+    fontFamily: fontSerifEnMedium,
+    fontSize: 9,
+    letterSpacing: 2,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    position: "absolute",
+    right: 22,
+    top: 20
+  },
+  mobileQuestTitle: {
+    color: "#E8E2D6",
+    fontFamily: fontSerifJa,
+    fontSize: 20,
+    letterSpacing: 0.6,
+    lineHeight: 32,
+    marginBottom: 18,
+    marginTop: 13
+  },
+  mobileQuestComplete: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    marginTop: "auto",
+    outlineStyle: "none"
+  },
+  mobileQuestCheck: {
+    alignItems: "center",
+    backgroundColor: "rgba(221,180,111,0.48)",
+    borderRadius: 999,
+    height: 23,
+    justifyContent: "center",
+    shadowColor: "#e8bd78",
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 0 },
+    width: 23
+  },
+  mobileQuestCheckText: {
+    color: "#1b130d",
+    fontFamily: fontUiMedium,
+    fontSize: 13,
+    lineHeight: 15
+  },
+  mobileQuestCompleteText: {
+    color: "rgba(221,180,111,0.5)",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    letterSpacing: 0.9
+  },
+  mobileQuestActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 0
+  },
+  mobileQuestAction: {
+    alignItems: "center",
+    borderRadius: 11,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 40,
+    outlineStyle: "none",
+    paddingVertical: 11
+  },
+  mobileQuestActionPrimary: {
+    backgroundColor: "rgba(217,168,108,0.07)",
+    borderColor: "rgba(217,168,108,0.3)"
+  },
+  mobileQuestActionSecondary: {
+    backgroundColor: "rgba(232,226,214,0.03)",
+    borderColor: "rgba(232,226,214,0.12)"
+  },
+  mobileQuestActionPrimaryText: {
+    color: "rgba(228,184,124,0.9)",
+    fontFamily: fontSerifJa,
+    fontSize: 13
+  },
+  mobileQuestActionSecondaryText: {
+    color: "rgba(225,218,205,0.78)",
+    fontFamily: fontSerifJa,
+    fontSize: 13
+  },
+  litQuestionsHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 14,
+    marginTop: 14
+  },
+  litQuestionsTitle: {
+    color: "rgba(190,180,162,0.45)",
+    fontFamily: fontSerifJa,
+    fontSize: 11,
+    letterSpacing: 3.3
+  },
+  litQuestionsRule: {
+    backgroundColor: "rgba(217,168,108,0.22)",
+    flex: 1,
+    height: 1
+  },
+  litQuestionsTimeline: {
+    marginTop: 16,
+    paddingLeft: 22,
+    position: "relative"
+  },
+  litQuestionsLine: {
+    backgroundColor: "rgba(217,168,108,0.24)",
+    bottom: 8,
+    left: 3,
+    position: "absolute",
+    top: 8,
+    width: 1
+  },
+  litQuestionItem: {
+    paddingVertical: 13,
+    position: "relative"
+  },
+  litQuestionDot: {
+    backgroundColor: "rgba(232,196,138,0.9)",
+    borderRadius: 999,
+    height: 7,
+    left: -22,
+    position: "absolute",
+    shadowColor: "#d9a86c",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 9,
+    top: 19,
+    width: 7
+  },
+  litQuestionMetaRow: {
+    alignItems: "baseline",
+    flexDirection: "row",
+    gap: 10
+  },
+  litQuestionDate: {
+    color: "rgba(205,176,134,0.7)",
+    fontFamily: fontSerifEnMedium,
+    fontSize: 10,
+    letterSpacing: 1.4
+  },
+  litQuestionTag: {
+    color: "rgba(190,180,162,0.4)",
+    fontFamily: fontSerifEnMedium,
+    fontSize: 9,
+    letterSpacing: 2
+  },
+  litQuestionText: {
+    color: "rgba(228,222,210,0.82)",
+    fontFamily: fontSerifJa,
+    fontSize: 15,
+    letterSpacing: 0.3,
+    marginTop: 6
+  },
+  litQuestionExcerpt: {
+    color: "rgba(190,180,162,0.5)",
+    fontFamily: fontSerifJa,
+    fontSize: 12,
+    marginTop: 5
+  },
+  journalScrollContent: {
+    paddingBottom: 118,
+    paddingHorizontal: 30,
+    paddingTop: 58
+  },
+  journalHeader: {
+    minHeight: 80,
+    position: "relative"
+  },
+  mobileScreenTitle: {
+    color: "#E8E2D6",
+    fontFamily: fontSerifJa,
+    fontSize: 22,
+    letterSpacing: 2.2,
+    lineHeight: 30
+  },
+  mobileGoldLabel: {
+    color: "rgba(217,168,108,0.5)",
+    fontFamily: fontSerifJa,
+    fontSize: 10,
+    letterSpacing: 2.6,
+    lineHeight: 12,
+    marginTop: 7
+  },
+  journalMonth: {
+    color: "rgba(190,180,162,0.5)",
+    fontFamily: fontSerifEnMedium,
+    fontSize: 12,
+    letterSpacing: 2.4,
+    position: "absolute",
+    right: 0,
+    top: 32
+  },
+  journalWatermark: {
+    color: "rgba(221,180,111,0.055)",
+    fontFamily: fontSerifJa,
+    fontSize: 56,
+    lineHeight: 56,
+    position: "absolute",
+    right: 0,
+    top: 38
+  },
+  timeline: {
+    paddingLeft: 26,
+    position: "relative"
+  },
+  timelineLine: {
+    backgroundColor: "rgba(217,168,108,0.32)",
+    bottom: 20,
+    left: 4,
+    position: "absolute",
+    top: 14,
+    width: 1
+  },
+  timelineItem: {
+    flexDirection: "row",
+    gap: 0,
+    marginBottom: 0,
+    minHeight: 0,
+    paddingVertical: 16,
+    position: "relative"
+  },
+  timelineDot: {
+    backgroundColor: "rgba(217,168,108,0.6)",
+    borderRadius: 999,
+    height: 7,
+    left: -25,
+    position: "absolute",
+    top: 22,
+    width: 7
+  },
+  timelineDotActive: {
+    backgroundColor: "rgba(242,200,142,0.98)",
+    height: 10,
+    left: -26,
+    shadowColor: "#d9a86c",
+    shadowOpacity: 0.55,
+    shadowRadius: 14,
+    width: 10
+  },
+  timelineCopy: {
+    flex: 1
+  },
+  timelineMetaRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 11,
+    marginBottom: 9
+  },
+  timelineDate: {
+    color: "rgba(205,191,168,0.6)",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    letterSpacing: 1.3
+  },
+  timelineDateActive: {
+    color: "rgba(232,200,150,0.88)"
+  },
+  timelineTag: {
+    color: "rgba(221,180,111,0.58)",
+    fontFamily: fontSerifEnMedium,
+    fontSize: 10,
+    letterSpacing: 3
+  },
+  timelineText: {
+    color: "rgba(236,230,218,0.94)",
+    fontFamily: fontSerifJa,
+    fontSize: 17,
+    fontWeight: "300",
+    letterSpacing: 0.3,
+    lineHeight: 30
+  },
+  timelineTextMuted: {
+    color: "rgba(232,226,214,0.6)",
+    fontFamily: fontSerifJa,
+    fontSize: 17,
+    fontWeight: "300",
+    letterSpacing: 0.3,
+    lineHeight: 30
+  },
+  storyScrollContent: {
+    paddingBottom: 118,
+    paddingHorizontal: 30,
+    paddingTop: 58
+  },
+  storyHeader: {
+    marginBottom: 23
+  },
+  chapterTimeline: {
+    paddingLeft: 26,
+    position: "relative"
+  },
+  chapterTimelineLine: {
+    backgroundColor: "rgba(221,180,111,0.34)",
+    bottom: 20,
+    left: 1,
+    position: "absolute",
+    top: 8,
+    width: 1
+  },
+  chapterTimelineItem: {
+    flexDirection: "row",
+    gap: 0,
+    marginBottom: 30,
+    position: "relative"
+  },
+  chapterTimelineDot: {
+    backgroundColor: "rgba(238,224,202,0.22)",
+    borderRadius: 999,
+    height: 8,
+    left: -31,
+    position: "absolute",
+    top: 11,
+    width: 8
+  },
+  chapterTimelineDotActive: {
+    backgroundColor: "#e8bd78",
+    height: 14,
+    left: -34,
+    shadowColor: "#e8bd78",
+    shadowOpacity: 0.68,
+    shadowRadius: 20,
+    width: 14
+  },
+  chapterTimelineCopy: {
+    flex: 1
+  },
+  chapterMetaRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12
+  },
+  chapterOrdinalText: {
+    color: "rgba(232,200,150,0.9)",
+    fontFamily: fontSerifJa,
+    fontSize: 12,
+    letterSpacing: 3.6
+  },
+  chapterPeriodText: {
+    color: "rgba(221,180,111,0.62)",
+    fontFamily: fontSerifEnMedium,
+    fontSize: 11,
+    letterSpacing: 2.4
+  },
+  chapterTimelineTitle: {
+    color: "#F3E6D0",
+    fontFamily: fontSerifJa,
+    fontSize: 26,
+    letterSpacing: 0.8,
+    lineHeight: 35
+  },
+  chapterPastTitle: {
+    color: "rgba(246,239,228,0.46)"
+  },
+  chapterTimelineSummary: {
+    color: "rgba(222,206,180,0.62)",
+    fontFamily: fontSerifJa,
+    fontSize: 14,
+    fontWeight: "300",
+    letterSpacing: 0.6,
+    lineHeight: 24,
+    marginTop: 11
+  },
+  chapterPastSummary: {
+    color: "rgba(238,224,202,0.32)"
+  },
+  chapterNowNote: {
+    color: "rgba(232,200,150,0.7)",
+    fontFamily: fontSerifEnMedium,
+    fontSize: 10,
+    letterSpacing: 2.2,
+    marginTop: 13
+  },
+  lifeQuestCard: {
+    backgroundColor: "rgba(48,37,26,0.56)",
+    borderColor: "rgba(217,168,108,0.18)",
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 18,
+    outlineStyle: "none",
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.34,
+    shadowRadius: 30
+  },
+  lifeQuestLabel: {
+    color: "rgba(225,190,140,0.85)",
+    fontFamily: fontSerifEnMedium,
+    fontSize: 9,
+    letterSpacing: 2.6,
+    marginBottom: 9
+  },
+  lifeQuestTitle: {
+    color: "#EDE3D2",
+    fontFamily: fontSerifJa,
+    fontSize: 18,
+    letterSpacing: 0.5,
+    lineHeight: 26
+  },
+  lifeQuestMetaRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 14
+  },
+  lifeQuestMeta: {
+    color: "rgba(190,180,162,0.6)",
+    fontFamily: fontSerifJa,
+    fontSize: 11
+  },
+  lifeQuestChevron: {
+    color: "rgba(225,180,120,0.7)",
+    flex: 1,
+    fontSize: 18,
+    textAlign: "right"
+  },
+  chapterNewItem: {
+    paddingBottom: 8,
+    paddingTop: 18,
+    position: "relative"
+  },
+  chapterNewDot: {
+    borderColor: "rgba(190,180,162,0.4)",
+    borderRadius: 999,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    height: 9,
+    left: -23,
+    position: "absolute",
+    top: 24,
+    width: 9
+  },
+  chapterNewCard: {
+    alignItems: "center",
+    borderColor: "rgba(190,180,162,0.22)",
+    borderRadius: 14,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    justifyContent: "center",
+    paddingHorizontal: 18,
+    paddingVertical: 16
+  },
+  chapterNewText: {
+    color: "rgba(190,180,162,0.55)",
+    fontFamily: fontSerifJa,
+    fontSize: 14,
+    letterSpacing: 0.8
+  },
+  chapterFindButton: {
+    alignSelf: "flex-start",
+    borderColor: "rgba(221,180,111,0.24)",
+    borderRadius: 999,
+    borderWidth: 1,
+    marginLeft: 28,
+    paddingHorizontal: 15,
+    paddingVertical: 8
+  },
+  chapterFindButtonText: {
+    color: "rgba(221,180,111,0.7)",
+    fontFamily: fontSerifJa,
+    fontSize: 12
+  },
+  lifeQuestDetailScroll: {
+    paddingBottom: 40,
+    paddingHorizontal: 34,
+    paddingTop: 92
+  },
+  lifeQuestBack: {
+    alignItems: "center",
+    height: 40,
+    justifyContent: "center",
+    outlineStyle: "none",
+    position: "absolute",
+    left: 22,
+    top: 46,
+    width: 40,
+    zIndex: 10
+  },
+  lifeQuestBackText: {
+    color: "rgba(221,180,111,0.82)",
+    fontSize: 30,
+    lineHeight: 32
+  },
+  lifeQuestDetailLabel: {
+    color: "rgba(225,190,140,0.85)",
+    fontFamily: fontSerifEnMedium,
+    fontSize: 9,
+    letterSpacing: 3,
+    marginBottom: 0
+  },
+  lifeQuestDetailTitle: {
+    color: "#F1E8DA",
+    fontFamily: fontSerifJa,
+    fontSize: 28,
+    letterSpacing: 0.8,
+    lineHeight: 39,
+    marginTop: 12
+  },
+  lifeQuestDetailMeta: {
+    color: "rgba(190,180,162,0.55)",
+    fontFamily: fontSerifJa,
+    fontSize: 11,
+    letterSpacing: 0.7,
+    marginTop: 14
+  },
+  latestWordCard: {
+    backgroundColor: "rgba(255,243,225,0.07)",
+    borderColor: "rgba(240,224,198,0.18)",
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 28,
+    paddingHorizontal: 22,
+    paddingVertical: 24,
+    shadowColor: "#d9a86c",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.14,
+    shadowRadius: 40
+  },
+  latestWordLabel: {
+    color: "rgba(225,190,140,0.7)",
+    fontFamily: fontSerifEnMedium,
+    fontSize: 9,
+    letterSpacing: 2.4,
+    marginBottom: 12
+  },
+  latestWordText: {
+    color: "#F3E6D0",
+    fontFamily: fontSerifJa,
+    fontSize: 19,
+    letterSpacing: 0.6,
+    lineHeight: 36
+  },
+  recordTrailHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 14,
+    marginTop: 34
+  },
+  recordTrailLabel: {
+    color: "rgba(190,180,162,0.5)",
+    fontFamily: fontSerifJa,
+    fontSize: 11,
+    letterSpacing: 3.1
+  },
+  recordTrailRule: {
+    backgroundColor: "rgba(221,180,111,0.16)",
+    flex: 1,
+    height: 1
+  },
+  lifeQuestActions: {
+    gap: 12,
+    marginTop: 36
+  },
+  lifeQuestTalkButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(217,168,108,0.08)",
+    borderColor: "rgba(217,168,108,0.34)",
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 15
+  },
+  lifeQuestTalkText: {
+    color: "rgba(228,184,124,0.92)",
+    fontFamily: fontSerifJa,
+    fontSize: 14,
+    letterSpacing: 0.6
+  },
+  lifeQuestGhostRow: {
+    flexDirection: "row",
+    gap: 12
+  },
+  lifeQuestGhostButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(232,226,214,0.03)",
+    borderColor: "rgba(232,226,214,0.12)",
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    paddingVertical: 13
+  },
+  lifeQuestGhostText: {
+    color: "rgba(225,218,205,0.7)",
+    fontFamily: fontSerifJa,
+    fontSize: 13
+  },
+  lifeQuestPhilosophy: {
+    color: "rgba(190,180,162,0.4)",
+    fontFamily: fontSerifJa,
+    fontSize: 11,
+    lineHeight: 19,
+    marginTop: 6,
+    textAlign: "center"
+  },
+  lifeQuestRecordTimeline: {
+    marginTop: 18,
+    paddingLeft: 22,
+    position: "relative"
+  },
+  lifeQuestRecordLine: {
+    backgroundColor: "rgba(217,168,108,0.24)",
+    bottom: 8,
+    left: 3,
+    position: "absolute",
+    top: 8,
+    width: 1
+  },
+  lifeQuestRecordItem: {
+    flexDirection: "row",
+    marginBottom: 0,
+    paddingVertical: 13,
+    position: "relative"
+  },
+  lifeQuestRecordDot: {
+    backgroundColor: "rgba(217,168,108,0.7)",
+    borderRadius: 999,
+    height: 7,
+    left: -22,
+    position: "absolute",
+    shadowColor: "#d9a86c",
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    top: 19,
+    width: 7
+  },
+  lifeQuestRecordCopy: {
+    flex: 1
+  },
+  lifeQuestRecordDate: {
+    color: "rgba(205,176,134,0.65)",
+    fontFamily: fontSerifEnMedium,
+    fontSize: 10,
+    letterSpacing: 1.4,
+    marginBottom: 6
+  },
+  lifeQuestRecordText: {
+    color: "rgba(228,222,210,0.78)",
+    fontFamily: fontSerifJa,
+    fontSize: 15,
+    lineHeight: 26
+  },
+  tabBar: {
+    alignSelf: "center",
+    alignItems: "flex-start",
+    backgroundColor: "transparent",
+    borderColor: "rgba(221,180,111,0.08)",
+    borderTopWidth: 1,
+    bottom: 0,
+    flexDirection: "row",
+    gap: 2,
+    height: 90,
+    justifyContent: "space-around",
+    left: 0,
+    overflow: "hidden",
+    paddingBottom: 0,
+    paddingHorizontal: 12,
+    paddingTop: 18,
+    position: "absolute",
+    right: 0,
+    zIndex: 30
+  },
+  tabItem: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 52,
+    outlineStyle: "none"
+  },
+  tabItemMotion: {
+    alignItems: "center",
+    gap: 7,
+    justifyContent: "center",
+    minHeight: 40,
+    minWidth: 54,
+    position: "relative"
+  },
+  tabActiveLamp: {
+    backgroundColor: "transparent",
+    borderRadius: 999,
+    height: 5,
+    width: 5
+  },
+  tabActiveLampOn: {
+    backgroundColor: "#e8bd78",
+    shadowColor: "#e8bd78",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 13
+  },
+  tabText: {
+    color: "rgba(190,180,162,0.4)",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    letterSpacing: 1.04
+  },
+  tabTextActive: {
+    color: "rgba(232,200,150,0.92)",
+    fontWeight: "500"
+  },
+  modal: {
+    backgroundColor: "#100C0A",
+    flex: 1
+  },
+  modalHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    height: 132,
+    justifyContent: "space-between",
+    paddingBottom: 0,
+    paddingHorizontal: 0,
+    paddingTop: 58,
+    zIndex: 2
+  },
+  modalBackButton: {
+    alignItems: "center",
+    height: 38,
+    justifyContent: "center",
+    outlineStyle: "none",
+    position: "absolute",
+    left: 22,
+    top: 46,
+    width: 38
+  },
+  modalBackText: {
+    color: "rgba(221,180,111,0.82)",
+    fontSize: 32,
+    lineHeight: 34
+  },
+  modalTitleWrap: {
+    alignItems: "center",
+    flex: 1
+  },
+  modalTitle: {
+    color: "rgba(232,226,214,0.9)",
+    fontFamily: fontSerifJa,
+    fontSize: 22,
+    letterSpacing: 2.2,
+    lineHeight: 30,
+    marginTop: 9
+  },
+  modalSub: {
+    color: "rgba(190,180,162,0.45)",
+    fontFamily: fontSerifEnMedium,
+    fontSize: 11,
+    letterSpacing: 3.7
+  },
+  modalHeaderSpacer: {
+    width: 38
+  },
+  settingSection: {
+    gap: 20,
+    paddingHorizontal: 0,
+    paddingTop: 18,
+    paddingBottom: 54
+  },
+  simpleSettingsPage: {
+    paddingHorizontal: 42
+  },
+  arcSettingRow: {
+    alignItems: "center",
+    borderBottomColor: "rgba(232,226,214,0.06)",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 80,
+    outlineStyle: "none",
+    paddingVertical: 20
+  },
+  arcSettingCopy: {
+    flex: 1,
+    gap: 8,
+    paddingRight: 18
+  },
+  arcSettingTitle: {
+    color: "rgba(236,230,218,0.9)",
+    fontFamily: fontSerifJa,
+    fontSize: 17,
+    letterSpacing: 0.7,
+    lineHeight: 24
+  },
+  arcSettingBody: {
+    color: "rgba(190,180,162,0.45)",
+    fontFamily: fontSerifJa,
+    fontSize: 12,
+    fontWeight: "300",
+    lineHeight: 18
+  },
+  arcSettingValueWrap: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10
+  },
+  arcSettingValue: {
+    color: "rgba(225,200,160,0.7)",
+    fontFamily: fontSerifEn,
+    fontSize: 15
+  },
+  arcSettingChevron: {
+    color: "rgba(238,224,202,0.22)",
+    fontSize: 22,
+    lineHeight: 24
+  },
+  arcSwitch: {
+    alignItems: "center",
+    backgroundColor: "rgba(217,168,108,0.28)",
+    borderColor: "rgba(217,168,108,0.26)",
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 30,
+    justifyContent: "center",
+    paddingHorizontal: 4,
+    width: 58
+  },
+  arcSwitchOn: {
+    backgroundColor: "rgba(221,180,111,0.48)",
+    shadowColor: "#e8bd78",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.42,
+    shadowRadius: 14
+  },
+  arcSwitchKnob: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(238,224,202,0.5)",
+    borderRadius: 999,
+    height: 22,
+    width: 22
+  },
+  arcSwitchKnobOn: {
+    alignSelf: "flex-end",
+    backgroundColor: "#ffd08a"
+  },
+  settingsWordmark: {
+    alignItems: "center",
+    marginTop: 92
+  },
+  settingsWordmarkText: {
+    color: "rgba(217,168,108,0.3)",
+    fontFamily: fontSerifEnLight,
+    fontSize: 26,
+    letterSpacing: 11
+  },
+  settingsVersion: {
+    color: "rgba(190,180,162,0.28)",
+    fontFamily: fontSerifEn,
+    fontSize: 10,
+    letterSpacing: 2.2,
+    marginTop: 8
   }
 });

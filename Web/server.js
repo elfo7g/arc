@@ -484,23 +484,46 @@ JSONだけを返してください。Markdownは禁止です。
 `.trim();
 }
 
-function normalizeChapters(value) {
-  const chapters = Array.isArray(value?.chapters)
-    ? value.chapters.slice(0, 8).map((chapter) => ({
-      title: String(chapter.title || "無題の章").slice(0, 40),
-      period: String(chapter.period || "").slice(0, 32),
-      summary: String(chapter.summary || "").slice(0, 160),
-      memoryIds: Array.isArray(chapter.memoryIds)
-        ? chapter.memoryIds.slice(0, 80).map((id) => String(id || "").slice(0, 80)).filter(Boolean)
-        : []
-    })).filter((chapter) => chapter.title)
+function toStrList(value, max, len) {
+  return Array.isArray(value)
+    ? value.slice(0, max).map((item) => String(item || "").slice(0, len)).filter(Boolean)
     : [];
-  return { chapters };
 }
 
-function buildChapterPrompt({ memories }) {
+// Nilo proposes chapter CANDIDATES at inflection points — it never declares or
+// names them. Returns { proposals } carrying the throughline of each period
+// (recurring emotions, people, questions, and how meaning shifted), no titles.
+function normalizeChapters(value) {
+  const proposals = Array.isArray(value?.proposals)
+    ? value.proposals.slice(0, 6).map((p) => ({
+      period: String(p.period || "").slice(0, 40),
+      observation: String(p.observation || "").slice(0, 200),
+      memoryIds: Array.isArray(p.memoryIds)
+        ? p.memoryIds.slice(0, 120).map((id) => String(id || "").slice(0, 80)).filter(Boolean)
+        : [],
+      emotions: toStrList(p.emotions, 5, 24),
+      people: toStrList(p.people, 6, 24),
+      questions: toStrList(p.questions, 4, 80),
+      meaningFrom: String(p.meaningFrom || "").slice(0, 120),
+      meaningTo: String(p.meaningTo || "").slice(0, 120),
+      episodes: Array.isArray(p.episodes)
+        ? p.episodes.slice(0, 6).map((ep) => ({
+          period: String(ep.period || "").slice(0, 40),
+          observation: String(ep.observation || "").slice(0, 160),
+          emotions: toStrList(ep.emotions, 4, 24),
+          memoryIds: Array.isArray(ep.memoryIds)
+            ? ep.memoryIds.slice(0, 60).map((id) => String(id || "").slice(0, 80)).filter(Boolean)
+            : []
+        })).filter((ep) => ep.observation || ep.memoryIds.length)
+        : []
+    })).filter((p) => p.memoryIds.length)
+    : [];
+  return { proposals };
+}
+
+function buildChapterPrompt({ memories, split }) {
   const safeMemories = Array.isArray(memories)
-    ? memories.slice(0, 120).map((memory, index) => {
+    ? memories.slice(0, 160).map((memory, index) => {
       const date = String(memory.dateKey || memory.dateLabel || "").slice(0, 10);
       const essence = String(memory.essence || "").slice(0, 120);
       const kept = String(memory.keptPhrase || "").slice(0, 80);
@@ -511,28 +534,53 @@ function buildChapterPrompt({ memories }) {
 
   return `
 あなたは人生アプリ ARC の Nilo です。
-ユーザーが夜ごとに残してきた「記憶」（その日の意味）を、人生の章として静かに束ねます。
-これは要約ではなく、時間の流れの中で意味のまとまりを見つける作業です。
+ユーザーが夜ごとに残してきた「記憶」を読み、人生の章の"候補"をそっと差し出します。
 
-記憶一覧（日付つき）:
+あなたは章を断定しません。命名もしません（名前はユーザーがつけます）。
+あなたの仕事は、意味づけの変化点——価値観・人間関係・悩み・成長が変わったように見える瞬間——を見つけ、「この時期、何かが変わったように見えます」と候補を差し出すことだけです。
+
+渡された記憶は、すでに十分に時間が経った「過去」のものだけです。
+
+章は人生の「時代」の単位です。人はやがて80年分の日々をここに重ねます。
+だから章は数週間ではなく、数ヶ月から数年にわたる大きなまとまりであるべきです。
+数週間の出来事は章ではなく、章の中の一場面にすぎません。
+
+ひとつの時代の中で気分や状況が揺れること——始まりと終わりで意味づけが変わること——は、
+章を分ける理由ではなく、その章の弧（arc）そのものです。
+本当に新しい時代が始まったと感じるときだけ章を分け、迷ったらひとつにまとめてください。
+章は少ないほど良い。変化が弱ければ1個でよく、多くても全体で数個までにしてください。${split ? "\nただし今回は、提示された記憶群が一つの章には大きすぎると感じられたため、より細かい変化点で必ず2つ以上の候補に分けてください。" : ""}
+
+記憶一覧（古い順）:
 ${safeMemories || "なし"}
 
-章のまとめ方:
-- 記憶を時期やテーマのまとまりで 2〜5 個の章に分けてください。記憶が少なければ 1 章でもよいです。
-- 各章には、その時期の温度が伝わる短いタイトルをつけてください。出来事名の羅列にしないでください。
-- period は章が含む記憶の時期（例 "2026.06" や "2026.06.01 – 2026.06.20"）。
-- summary はその章が何を意味する時期だったかを 1〜2 文で静かに。説明ではなく余韻を残してください。
-- memoryIds には、その章に含まれる記憶の id を入れてください。与えられた id 以外は作らないでください。
-- 圧、評価、励まし、アドバイスはしないでください。ただ、そっと束ねるだけ。
+各候補について：
+- period: その候補が含む時期（例 "2026.05" や "2026.05.01 – 2026.06.20"）。
+- observation: 変化点をそっと指し示す静かな一文。断定・評価・励まし・助言はしない。
+- memoryIds: その候補に含まれる記憶のid。与えられたid以外は作らない。
+- emotions: その期間に繰り返し現れた感情（短い語、最大5）。
+- people: その期間によく登場した人（最大6。いなければ空）。
+- questions: その期間に繰り返し書かれていた問い（最大4）。
+- meaningFrom / meaningTo: 始まりと終わりで意味づけがどう変わったか（それぞれ1文）。
+- episodes: その時代の中にある、より短いまとまり（数日〜数週間の"場面"）。各 episode は { period, observation（短い一文）, emotions, memoryIds }。時代の弧を形づくる節目を 2〜5 個ほど。場面が乏しければ空でよい。エピソードは細かく分けてよい——章を粗く保つための"内側の細部"です。
+
+要約や出来事の圧縮はしないでください。
+「何があったか」ではなく「その時期、自分は何を抱えていたか」を浮かび上がらせてください。
 
 次のJSONだけを返してください。Markdownは不要です。
 {
-  "chapters": [
+  "proposals": [
     {
-      "title": "章のタイトル。40文字以内",
-      "period": "時期の表記",
-      "summary": "1〜2文。160文字以内",
-      "memoryIds": ["含まれる記憶のid"]
+      "period": "時期",
+      "observation": "変化点を指す静かな一文",
+      "memoryIds": ["id"],
+      "emotions": ["感情"],
+      "people": ["人"],
+      "questions": ["問い"],
+      "meaningFrom": "始まりの意味づけ",
+      "meaningTo": "終わりの意味づけ",
+      "episodes": [
+        { "period": "場面の時期", "observation": "短い一文", "emotions": ["感情"], "memoryIds": ["id"] }
+      ]
     }
   ]
 }
