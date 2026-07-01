@@ -38,6 +38,10 @@ import {
   CormorantGaramond_400Regular,
   CormorantGaramond_500Medium
 } from "@expo-google-fonts/cormorant-garamond";
+import {
+  ShipporiMincho_400Regular,
+  ShipporiMincho_500Medium
+} from "@expo-google-fonts/shippori-mincho";
 import { supabase } from "./src/supabase";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -47,13 +51,21 @@ WebBrowser.maybeCompleteAuthSession();
 const fontSerifEn = "CormorantGaramond_400Regular";
 const fontSerifEnLight = "CormorantGaramond_300Light";
 const fontSerifEnMedium = "CormorantGaramond_500Medium";
-const fontSerifJa = Platform.select({ ios: "HiraMinProN-W3", android: "serif", default: "serif" });
+// Shippori Mincho — the same Mincho the prototype and Web preview use, now
+// bundled so the Japanese voice is identical on iOS, Android, and web (no more
+// falling back to a platform gothic). Shippori has no 300, so light text lands
+// on 400 — which is exactly what the webfont resolves to as well.
+const fontSerifJa = "ShipporiMincho_400Regular";
+const fontSerifJaMedium = "ShipporiMincho_500Medium";
 const fontUi = Platform.select({ ios: "Avenir Next", android: "sans-serif", default: "sans-serif" });
 const fontUiMedium = Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" });
 
 const backgroundTexture = require("./assets/textures/arc-night-texture.png");
 const grainTexture = require("./assets/textures/grain.png");
 const deepGrainTexture = require("./assets/textures/grain-deep.png");
+// A pre-rendered soft radial glow — the same diffuse amber orb the prototype and
+// Web preview draw with a CSS radial-gradient (which RN can't do natively).
+const niloOrbTexture = require("./assets/nilo-orb.png");
 
 const tabs = [
   { id: "home", label: "ホーム" },
@@ -203,38 +215,83 @@ const demoJournalEntries = [
     dateKey: "2026-06-28",
     dateLabel: "6月28日",
     tag: "TONIGHT",
+    source: "home",
     title: "夕方、ひとりで長い散歩をした。川沿いの道を、ただ歩いていた。",
-    lines: []
+    lines: [],
+    dialogue: [
+      { role: "nilo", text: "今日はどんな日だった？" },
+      { role: "user", text: "夕方、ひとりで長い散歩をした。川沿いの道を、ただ歩いていた。" },
+      { role: "nilo", text: "ひとりの時間は、あなたにとってどんな意味があった？" },
+      { role: "user", text: "誰にも気をつかわなくていい。ようやく、呼吸ができた気がした。" },
+      { role: "nilo", text: "その「呼吸ができた」感じを、最近よく探している？" },
+      { role: "user", text: "たぶん。少しずつ、自分のペースを取り戻している。" }
+    ],
+    emotions: ["#静けさ", "#回復", "#ひとり時間"],
+    related: [{ date: "5月19日", text: "夜、海まで歩いた。波の音だけが、ずっと残っていた。" }]
   },
   {
     id: "demo-journal-quest",
     dateKey: "2026-06-27",
     dateLabel: "6月27日",
     tag: "QUEST",
+    source: "quest",
+    questText: "いちばん安心する場所は、どこ？",
     title: "実家の台所の隅。母が料理していた音がする場所。",
-    lines: []
+    lines: [],
+    dialogue: [
+      { role: "nilo", text: "いちばん安心する場所は、どこ？" },
+      { role: "user", text: "実家の台所の隅。母が料理していた音がする場所。" },
+      { role: "nilo", text: "その音は、いまのあなたに何を思い出させる？" },
+      { role: "user", text: "守られていた頃のこと。もう戻れないけど、確かにあった時間。" }
+    ],
+    emotions: ["#安心", "#記憶", "#家族"]
   },
   {
     id: "demo-journal-rain",
     dateKey: "2026-06-25",
     dateLabel: "6月25日",
+    source: "home",
     title: "雨の音で目が覚めた。久しぶりに、何も予定のない朝。",
-    lines: []
+    lines: [],
+    dialogue: [
+      { role: "nilo", text: "今日はどんな日だった？" },
+      { role: "user", text: "雨の音で目が覚めた。久しぶりに、何も予定のない朝。" },
+      { role: "nilo", text: "その静けさは、どんな色をしていた？" },
+      { role: "user", text: "薄いグレー。でも嫌じゃない、やわらかい色。" }
+    ],
+    emotions: ["#休息", "#静けさ"]
   },
   {
     id: "demo-journal-call",
     dateKey: "2026-06-21",
     dateLabel: "6月21日",
+    source: "home",
     title: "母に電話した。短い会話だったけど、声が聞けてよかった。",
-    lines: []
+    lines: [],
+    dialogue: [
+      { role: "nilo", text: "今日はどんな日だった？" },
+      { role: "user", text: "母に電話した。短い会話だったけど、声が聞けてよかった。" },
+      { role: "nilo", text: "伝えられなかったことは、何かある？" },
+      { role: "user", text: "ありがとう、かな。いつも言いそびれてしまう。" }
+    ],
+    emotions: ["#家族", "#感謝"]
   },
   {
     id: "demo-journal-old",
     dateKey: "2026-06-14",
     dateLabel: "6月14日",
     tag: "QUEST",
+    source: "quest",
+    questText: "そっと手放したいものは？",
     title: "完璧じゃない自分を、責めてしまう癖。",
-    lines: []
+    lines: [],
+    dialogue: [
+      { role: "nilo", text: "そっと手放したいものは？" },
+      { role: "user", text: "完璧じゃない自分を責める癖。" },
+      { role: "nilo", text: "それを手放せたら、何が変わると思う？" },
+      { role: "user", text: "もう少し、自分にやさしくなれる気がする。" }
+    ],
+    emotions: ["#決意", "#内省"]
   }
 ];
 
@@ -276,6 +333,21 @@ const demoLifeQuest = {
   ]
 };
 
+// The diary timeline fades with age across five graded steps (newest → oldest),
+// matching the ARC reference: the node shrinks and dims, the date and body cool.
+// Each node overrides timelineDot's 7x7 base size, so left/top are recomputed
+// per size to keep every dot centered on the timeline (they'd drift off the
+// line otherwise, since left/top are measured from the box's corner).
+const diaryNodeStyles = [
+  { width: 10, height: 10, left: -26.5, top: 20.5, backgroundColor: "rgba(242,200,142,0.98)", shadowColor: "#d9a86c", shadowOpacity: 0.55, shadowRadius: 14, shadowOffset: { width: 0, height: 0 } },
+  { width: 7, height: 7, left: -25, top: 22, backgroundColor: "rgba(217,168,108,0.6)", shadowColor: "#d9a86c", shadowOpacity: 0.22, shadowRadius: 7, shadowOffset: { width: 0, height: 0 } },
+  { width: 6, height: 6, left: -24.5, top: 22.5, backgroundColor: "rgba(195,176,148,0.42)" },
+  { width: 6, height: 6, left: -24.5, top: 22.5, backgroundColor: "rgba(180,164,138,0.34)" },
+  { width: 5, height: 5, left: -24, top: 23, backgroundColor: "rgba(170,156,132,0.3)" }
+];
+const diaryDateColors = ["rgba(232,200,150,0.88)", "rgba(205,191,168,0.6)", "rgba(205,191,168,0.5)", "rgba(205,191,168,0.4)", "rgba(205,191,168,0.32)"];
+const diaryTextColors = ["rgba(236,230,218,0.94)", "rgba(232,226,214,0.7)", "rgba(232,226,214,0.6)", "rgba(232,226,214,0.5)", "rgba(232,226,214,0.42)"];
+
 const questLitQuestions = [
   {
     date: "JUNE 27",
@@ -303,11 +375,15 @@ function AppContent() {
   const [fontsLoaded] = useFonts({
     CormorantGaramond_300Light,
     CormorantGaramond_400Regular,
-    CormorantGaramond_500Medium
+    CormorantGaramond_500Medium,
+    ShipporiMincho_400Regular,
+    ShipporiMincho_500Medium
   });
   const [activeTab, setActiveTab] = useState("home");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState("base");
+  // A tapped diary entry / lit question opens its full record. null = closed.
+  const [detailEntry, setDetailEntry] = useState(null);
   const [ritualMessages, setRitualMessages] = useState([
     { role: "nilo", text: reflectionQuestions[0] }
   ]);
@@ -431,6 +507,12 @@ function AppContent() {
     extrapolate: "clamp"
   });
   const redirectUri = Linking.createURL("auth/callback");
+  // English month-day label for Nilo's header ("JUNE 28 · 今夜"), like the reference.
+  const niloEnDate = useMemo(() => {
+    const d = new Date();
+    const months = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
+    return `${months[d.getMonth()]} ${d.getDate()}`;
+  }, []);
 
   function keepRitualInputFocused() {
     if (!ritualLockedRef.current) return;
@@ -481,6 +563,16 @@ function AppContent() {
         { text: "終了", style: "destructive", onPress: exitNightRitual }
       ]
     );
+  }
+
+  function openEntryDetail(entry) {
+    if (!entry) return;
+    playUiSound();
+    setDetailEntry(entry);
+  }
+
+  function closeEntryDetail() {
+    setDetailEntry(null);
   }
 
   useEffect(() => {
@@ -1011,11 +1103,11 @@ function AppContent() {
     },
     {
       id: "quests",
-      node: <QuestScreen quests={quests} completeQuest={completeQuest} onUiSound={playUiSound} active={activeTab === "quests"} />
+      node: <QuestScreen quests={quests} completeQuest={completeQuest} onUiSound={playUiSound} active={activeTab === "quests"} journal={journal} onOpenDetail={openEntryDetail} />
     },
     {
       id: "journal",
-      node: <JournalScreen journal={journal} active={activeTab === "journal"} />
+      node: <JournalScreen journal={journal} active={activeTab === "journal"} onOpenDetail={openEntryDetail} />
     },
     {
       id: "story",
@@ -1528,33 +1620,7 @@ function AppContent() {
           pointerEvents="box-none"
           style={[styles.composerAvoider, keyboardVisible && styles.composerAvoiderFocused]}
         >
-          {ritualLocked ? (
-            <RitualComposer
-              inputRef={composerInputRef}
-              input={input}
-              setInput={setInput}
-              submitRitual={submitRitual}
-              isSending={isSending}
-              visible={activeTab === "home" && homePromptVisible}
-              focused={inputMode}
-              locked={ritualLocked}
-              enabled={reflectionInputEnabled}
-              prompt={composerPrompt}
-              onFocus={() => setInputMode(true)}
-              onBlur={() => {
-                if (ritualLocked) {
-                  keepRitualInputFocused();
-                  return;
-                }
-                setInputMode(false);
-              }}
-              onPress={keepRitualInputFocused}
-              onExit={requestExitNightRitual}
-              animatedStyle={{
-                transform: [{ scale: composerScale }]
-              }}
-            />
-          ) : (
+          {!ritualLocked && !sealActive && (
             <NightRitualButton
               enabled={reflectionInputEnabled}
               visible={activeTab === "home" && homePromptVisible && !sealActive}
@@ -1567,6 +1633,15 @@ function AppContent() {
           )}
         </KeyboardAvoidingView>
 
+        {activeTab !== "home" && (
+          <LinearGradient
+            pointerEvents="none"
+            colors={["rgba(0,0,0,0)", "rgba(0,0,0,0.55)", "rgba(0,0,0,0.88)", "#000000"]}
+            locations={[0, 0.4, 0.75, 1]}
+            style={styles.screenBottomFade}
+          />
+        )}
+
         <TabBar
           activeTab={activeTab}
           setActiveTab={goToTab}
@@ -1575,6 +1650,24 @@ function AppContent() {
           hidden={inputMode || keyboardVisible || ritualLocked}
           opacity={tabBarOpacity}
           unlocks={tabUnlocks}
+        />
+
+        <NiloDialogScreen
+          visible={ritualLocked || sealActive}
+          closing={sealActive}
+          question={currentReflectionQuestion}
+          dimmed={questionTransitioning}
+          thinking={isSending}
+          dateLabel={niloEnDate}
+          inputRef={composerInputRef}
+          input={input}
+          setInput={setInput}
+          enabled={reflectionInputEnabled}
+          onSubmit={submitRitual}
+          onExit={requestExitNightRitual}
+          onBlur={() => {
+            if (ritualLockedRef.current) keepRitualInputFocused();
+          }}
         />
 
         {!!unlockNotice && (
@@ -1596,6 +1689,8 @@ function AppContent() {
             <Text style={styles.unlockNoticeText}>{unlockNotice}</Text>
           </Animated.View>
         )}
+
+        <EntryDetailModal entry={detailEntry} onClose={closeEntryDetail} />
 
         <SettingsModal
           visible={settingsOpen}
@@ -1751,8 +1846,9 @@ function OuterGradient() {
 }
 
 function NiloLight({ style }) {
-  // The one light source on the screen: Nilo's still flame. It does not move;
-  // it only breathes, the way a candle holds its place yet stays alive.
+  // The one light source on the screen: Nilo's soft glow. It does not move; it
+  // only breathes — a diffuse amber radial like the prototype's, drawn from a
+  // pre-rendered image so RN matches the Web's CSS radial-gradient exactly.
   const breath = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -1760,13 +1856,13 @@ function NiloLight({ style }) {
       Animated.sequence([
         Animated.timing(breath, {
           toValue: 1,
-          duration: 4200,
+          duration: 4000,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true
         }),
         Animated.timing(breath, {
           toValue: 0,
-          duration: 4200,
+          duration: 4000,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true
         })
@@ -1776,51 +1872,17 @@ function NiloLight({ style }) {
     return () => loop.stop();
   }, [breath]);
 
-  const coreOpacity = breath.interpolate({ inputRange: [0, 1], outputRange: [0.74, 1] });
-  const haloOpacity = breath.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0.8] });
+  const opacity = breath.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0.92] });
+  const scale = breath.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] });
 
   return (
     <View pointerEvents="none" style={[styles.niloLightWrap, style]}>
-      <Animated.View style={[styles.niloLightHalo, { opacity: haloOpacity }]}>
-        <LinearGradient
-          pointerEvents="none"
-          colors={["rgba(255,213,140,0)", "rgba(232,176,96,0.14)", "rgba(255,213,140,0)"]}
-          locations={[0, 0.52, 1]}
-          start={{ x: 0.15, y: 0.1 }}
-          end={{ x: 0.85, y: 0.9 }}
-          style={styles.niloLightFill}
-        />
-      </Animated.View>
-      <View style={styles.niloLightGlowMid}>
-        <LinearGradient
-          pointerEvents="none"
-          colors={["rgba(255,213,140,0)", "rgba(232,176,96,0.26)", "rgba(255,213,140,0.04)"]}
-          locations={[0, 0.48, 1]}
-          start={{ x: 0.12, y: 0.12 }}
-          end={{ x: 0.88, y: 0.88 }}
-          style={styles.niloLightFill}
-        />
-      </View>
-      <View style={styles.niloLightGlowInner}>
-        <LinearGradient
-          pointerEvents="none"
-          colors={["rgba(255,213,140,0.06)", "rgba(255,203,128,0.42)", "rgba(232,176,96,0.12)"]}
-          locations={[0, 0.5, 1]}
-          start={{ x: 0.12, y: 0.08 }}
-          end={{ x: 0.88, y: 0.92 }}
-          style={styles.niloLightFill}
-        />
-      </View>
-      <Animated.View style={[styles.niloLightCore, { opacity: coreOpacity }]}>
-        <LinearGradient
-          pointerEvents="none"
-          colors={["#ffe1aa", "#f2bd76", "#9b6735"]}
-          locations={[0, 0.58, 1]}
-          start={{ x: 0.18, y: 0 }}
-          end={{ x: 0.82, y: 1 }}
-          style={styles.niloLightFill}
-        />
-      </Animated.View>
+      <Animated.Image
+        pointerEvents="none"
+        source={niloOrbTexture}
+        resizeMode="contain"
+        style={[styles.niloOrbImage, { opacity, transform: [{ scale }] }]}
+      />
     </View>
   );
 }
@@ -2437,6 +2499,164 @@ function NightRitualButton({ enabled, visible, streakDays, onPress, animatedStyl
   );
 }
 
+// Nilo's small breathing mark at the head of the dialogue — a soft amber glow
+// (the pre-rendered orb) with a bright core, the prototype's 46px light.
+function NiloMark() {
+  const breath = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(breath, { toValue: 1, duration: 3500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(breath, { toValue: 0, duration: 3500, easing: Easing.inOut(Easing.sin), useNativeDriver: true })
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [breath]);
+  const glowOpacity = breath.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0.95] });
+  const glowScale = breath.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] });
+  return (
+    <View pointerEvents="none" style={styles.niloMarkWrap}>
+      <Animated.Image source={niloOrbTexture} resizeMode="contain" style={[styles.niloMarkGlow, { opacity: glowOpacity, transform: [{ scale: glowScale }] }]} />
+      <View style={styles.niloMarkCore} />
+    </View>
+  );
+}
+
+// Nilo's question, written glyph by glyph (writeQuestion: 340ms breath, then a
+// character every 52ms), fading as it changes between questions.
+function NiloDialogQuestion({ question, dimmed, closing }) {
+  const opacity = useRef(new Animated.Value(1)).current;
+  const caret = useRef(new Animated.Value(0.9)).current;
+  const [typed, setTyped] = useState(question || "");
+  const timers = useRef([]);
+
+  useEffect(() => {
+    opacity.setValue(0);
+    Animated.timing(opacity, { toValue: dimmed ? 0 : 1, duration: dimmed ? 360 : 820, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start();
+  }, [dimmed, opacity, question]);
+
+  useEffect(() => {
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+    if (dimmed) return undefined;
+    const chars = Array.from(question || "");
+    setTyped("");
+    const begin = setTimeout(() => {
+      chars.forEach((_, index) => {
+        const timer = setTimeout(() => setTyped(chars.slice(0, index + 1).join("")), index * 52);
+        timers.current.push(timer);
+      });
+    }, 340);
+    timers.current.push(begin);
+    return () => {
+      timers.current.forEach(clearTimeout);
+      timers.current = [];
+    };
+  }, [question, dimmed]);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(caret, { toValue: 0.9, duration: 0, useNativeDriver: true }),
+        Animated.delay(560),
+        Animated.timing(caret, { toValue: 0, duration: 0, useNativeDriver: true }),
+        Animated.delay(590)
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [caret]);
+
+  return (
+    <Animated.Text style={[styles.niloDialogQuestion, { opacity }]}>
+      {typed}
+      {!closing && <Animated.Text style={[styles.niloDialogCaret, { opacity: caret }]}>▏</Animated.Text>}
+    </Animated.Text>
+  );
+}
+
+// NILO (SCR · two tiers) — Nilo asks above, you answer below. Faithful to the
+// reference layout, but the answer is captured with the OS keyboard rather than
+// the prototype's mock 五十音 grid. The save / question-advance / seal logic is
+// the existing night-ritual flow, unchanged.
+function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLabel, inputRef, input, setInput, enabled, onSubmit, onExit, onBlur }) {
+  const fade = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(fade, { toValue: visible ? 1 : 0, duration: visible ? 520 : 240, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start();
+  }, [fade, visible]);
+
+  if (!visible) return null;
+
+  return (
+    <Animated.View style={[styles.niloScreen, { opacity: fade }]}>
+      <BackgroundTexture />
+      <OuterGradient />
+      <View style={styles.scrim} />
+      <NightGrain />
+      <View style={styles.niloScreenSafe}>
+        <View style={styles.niloTopTier}>
+          <NiloMark />
+          <Text style={styles.niloMarkLabel}>NILO</Text>
+          <Text style={styles.niloDateLabel}>{dateLabel} · 今夜</Text>
+          <View style={styles.niloQuestionArea}>
+            {thinking ? (
+              <NiloThinkingIndicator />
+            ) : (
+              <NiloDialogQuestion question={question} dimmed={dimmed} closing={closing} />
+            )}
+          </View>
+        </View>
+
+        {closing ? (
+          <View style={styles.niloClosing}>
+            <Text style={styles.niloClosingText}>今夜の言葉は、そのまま{"\n"}日記に綴られます。</Text>
+          </View>
+        ) : (
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.niloBottomTier}>
+            <View style={styles.niloYouDivider}>
+              <LinearGradient colors={["rgba(217,168,108,0)", "rgba(217,168,108,0.2)"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.niloYouLine} />
+              <Text style={styles.niloYouLabel}>YOU</Text>
+              <LinearGradient colors={["rgba(217,168,108,0.2)", "rgba(217,168,108,0)"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.niloYouLine} />
+            </View>
+            <TextInput
+              ref={inputRef}
+              value={input}
+              onChangeText={(value) => setInput(value.replace(/\n/g, "").slice(0, 120))}
+              onKeyPress={(event) => {
+                if (event.nativeEvent.key === "Enter") {
+                  event.preventDefault?.();
+                  onSubmit();
+                }
+              }}
+              placeholder="ここに、こたえを書く"
+              placeholderTextColor="rgba(190,180,162,0.32)"
+              style={styles.niloDraftInput}
+              multiline
+              autoFocus
+              editable={enabled}
+              selectionColor="#F2C88E"
+              cursorColor="#F2C88E"
+              returnKeyType="send"
+              blurOnSubmit={false}
+              onSubmitEditing={onSubmit}
+              onBlur={onBlur}
+            />
+            {input.trim().length > 0 && (
+              <Pressable onPress={onSubmit} style={({ pressed }) => [styles.niloSendButton, pressed && styles.touchPressedTight]}>
+                <Text style={styles.niloSendText}>送信</Text>
+              </Pressable>
+            )}
+            <Pressable onPress={onExit} style={styles.niloExitLink}>
+              <Text style={styles.niloExitText}>今夜はここまでにする</Text>
+            </Pressable>
+          </KeyboardAvoidingView>
+        )}
+      </View>
+    </Animated.View>
+  );
+}
+
 function FirstRunCard({ session, needsProfile, authBusy, onGoogleSignIn, onOpenProfile }) {
   const signedIn = Boolean(session);
   const title = signedIn ? "プロフィールを完成させましょう" : "Arcを始める準備";
@@ -2467,8 +2687,25 @@ function FirstRunCard({ session, needsProfile, authBusy, onGoogleSignIn, onOpenP
   );
 }
 
-function QuestScreen({ quests, completeQuest, onUiSound, active }) {
+function QuestScreen({ quests, completeQuest, onUiSound, active, journal, onOpenDetail }) {
   const token = useEntrancePlay(active);
+  // Lit questions resolve back to the record they produced, so tapping one
+  // opens its full detail — mirroring the reference's openDetail(o.i).
+  const lookupEntries = journal?.length ? getJournalTimelineEntries(journal) : demoJournalEntries;
+  function openLit(item) {
+    const match = lookupEntries.find((entry) => entry.questText === item.question || entry.title === item.excerpt);
+    onOpenDetail?.(match || {
+      dateLabel: item.date,
+      source: "quest",
+      questText: item.question,
+      title: item.excerpt,
+      dialogue: [
+        { role: "nilo", text: item.question },
+        { role: "user", text: item.excerpt }
+      ],
+      emotions: []
+    });
+  }
   const sourceQuests = quests.length ? quests : dailyQuestPrompts.map((quest, index) => ({
     id: `preview-quest-${index}`,
     source: "daily",
@@ -2510,14 +2747,19 @@ function QuestScreen({ quests, completeQuest, onUiSound, active }) {
       <View style={styles.litQuestionsTimeline}>
         <View pointerEvents="none" style={styles.litQuestionsLine} />
         {questLitQuestions.map((item, index) => (
-          <RiseIn key={item.question} index={shownQuests.length + 2 + index} playToken={token} duration={500} style={styles.litQuestionItem}>
-            <View style={styles.litQuestionDot} />
-            <View style={styles.litQuestionMetaRow}>
-              <Text style={styles.litQuestionDate}>{item.date}</Text>
-              <Text style={styles.litQuestionTag}>QUEST</Text>
-            </View>
-            <Text style={styles.litQuestionText}>{item.question}</Text>
-            <Text numberOfLines={1} style={styles.litQuestionExcerpt}>{item.excerpt}</Text>
+          <RiseIn key={item.question} index={shownQuests.length + 2 + index} playToken={token} duration={500}>
+            <Pressable
+              onPress={() => openLit(item)}
+              style={({ pressed }) => [styles.litQuestionItem, pressed && styles.touchPressedSubtle]}
+            >
+              <View style={styles.litQuestionDot} />
+              <View style={styles.litQuestionMetaRow}>
+                <Text style={styles.litQuestionDate}>{item.date}</Text>
+                <Text style={styles.litQuestionTag}>QUEST</Text>
+              </View>
+              <Text style={styles.litQuestionText}>{item.question}</Text>
+              <Text numberOfLines={1} style={styles.litQuestionExcerpt}>{item.excerpt}</Text>
+            </Pressable>
           </RiseIn>
         ))}
       </View>
@@ -2711,7 +2953,7 @@ function QuestTile({ quest, onComplete, onUiSound }) {
   );
 }
 
-function JournalScreen({ journal, active }) {
+function JournalScreen({ journal, active, onOpenDetail }) {
   const token = useEntrancePlay(active);
   const entries = getJournalTimelineEntries(journal);
 
@@ -2725,21 +2967,32 @@ function JournalScreen({ journal, active }) {
       </RiseIn>
       <View style={styles.timeline}>
         <View pointerEvents="none" style={styles.timelineLine} />
-        {entries.map((entry, index) => (
-          <RiseIn key={entry.id} index={index + 1} playToken={token} duration={550} style={styles.timelineItem}>
-            <View style={[styles.timelineDot, index === 0 && styles.timelineDotActive]} />
-            <View style={styles.timelineCopy}>
-              <View style={styles.timelineMetaRow}>
-                <Text style={[styles.timelineDate, index === 0 && styles.timelineDateActive]}>{entry.dateLabel}</Text>
-                {!!entry.tag && <Text style={styles.timelineTag}>{entry.tag}</Text>}
-              </View>
-              <Text style={[styles.timelineText, index > 0 && styles.timelineTextMuted]}>{entry.title}</Text>
-              {(entry.lines || []).map((line, lineIndex) => (
-                <Text key={lineIndex} style={styles.timelineTextMuted}>{line}</Text>
-              ))}
-            </View>
-          </RiseIn>
-        ))}
+        {entries.map((entry, index) => {
+          // The timeline fades with age: the newest node is the brightest and
+          // largest, the oldest the faintest — five graded steps, as in ARC.
+          const fade = Math.min(index, 4);
+          return (
+            <RiseIn key={entry.id} index={index + 1} playToken={token} duration={550}>
+              <Pressable
+                onPress={() => onOpenDetail?.(entry)}
+                style={({ pressed }) => [styles.timelineItem, pressed && styles.touchPressedSubtle]}
+              >
+                <View style={[styles.timelineDot, diaryNodeStyles[fade]]} />
+                <View style={styles.timelineCopy}>
+                  <View style={styles.timelineMetaRow}>
+                    <Text style={[styles.timelineDate, { color: diaryDateColors[fade] }]}>{entry.dateLabel}</Text>
+                    {entry.tag === "TONIGHT" && <Text style={styles.timelineTag}>TONIGHT</Text>}
+                    {entry.tag === "QUEST" && <Text style={styles.timelineQuestTag}>QUEST</Text>}
+                  </View>
+                  <Text style={[styles.timelineText, { color: diaryTextColors[fade] }]}>{entry.title}</Text>
+                  {(entry.lines || []).map((line, lineIndex) => (
+                    <Text key={lineIndex} style={[styles.timelineText, { color: diaryTextColors[fade] }]}>{line}</Text>
+                  ))}
+                </View>
+              </Pressable>
+            </RiseIn>
+          );
+        })}
       </View>
     </ScrollView>
   );
@@ -2753,6 +3006,7 @@ function StoryScreen({ memories, chapters, proposals, eligibleCount, busy, onPro
 
   return (
     <>
+      <Text pointerEvents="none" style={styles.chapterWatermark}>章</Text>
       <ScrollView contentContainerStyle={styles.storyScrollContent} showsVerticalScrollIndicator={false}>
         <RiseIn index={0} playToken={token} style={styles.storyHeader}>
           <Text style={styles.mobileScreenTitle}>章</Text>
@@ -2772,7 +3026,7 @@ function StoryScreen({ memories, chapters, proposals, eligibleCount, busy, onPro
                 <Text style={[styles.chapterTimelineSummary, index > 0 && styles.chapterPastSummary]}>{chapter.summary}</Text>
                 {index === 0 && (
                   <>
-                    <Text style={styles.chapterNowNote}>-- いま、この章の中に</Text>
+                    <Text style={styles.chapterNowNote}>—— いま、この章の中に</Text>
                     <Pressable onPress={() => setLifeQuestOpen(true)} style={({ pressed }) => [styles.lifeQuestCard, pressed && styles.touchPressedSubtle]}>
                       <Text style={styles.lifeQuestLabel}>LIFE QUEST</Text>
                       <Text style={styles.lifeQuestTitle}>{demoLifeQuest.title}</Text>
@@ -2879,6 +3133,84 @@ function LifeQuestDetailModal({ visible, onClose, quest }) {
               <Text style={styles.lifeQuestPhilosophy}>達成より、道のりを残す。{"\n"}どちらも同じ重さで、章になる。</Text>
             </View>
           </ScrollView>
+          <StatusBar barStyle="light-content" />
+        </SafeAreaView>
+      </View>
+    </Modal>
+  );
+}
+
+// ENTRY DETAIL (SCR-05) — a tapped record opens into the full conversation
+// with Nilo, the emotions it left, a similar night, and the quiet reminder
+// that the record cannot be erased. Opened as a full-screen modal, like the
+// life-quest detail.
+function EntryDetailModal({ entry, onClose }) {
+  const visible = !!entry;
+  const token = useEntrancePlay(visible);
+  const e = entry || {};
+  const dialogue = e.dialogue && e.dialogue.length
+    ? e.dialogue
+    : [{ role: "user", text: e.title || e.summary || "" }];
+  const emotions = e.emotions || [];
+  const related = e.related || [];
+  const isTonight = e.tag === "TONIGHT" || e.tonight;
+  const isQuest = e.tag === "QUEST" || e.source === "quest";
+
+  return (
+    <Modal visible={visible} animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <View style={styles.background}>
+        <BackgroundTexture />
+        <OuterGradient />
+        <View style={styles.scrim} />
+        <NightGrain />
+        <SafeAreaView style={styles.safe}>
+          <ScrollView contentContainerStyle={styles.entryDetailScroll} showsVerticalScrollIndicator={false}>
+            <RiseIn index={0} playToken={token}>
+              <View style={styles.entryDetailHeadRow}>
+                <Text style={styles.entryDetailDate}>{e.dateLabel || "今夜"}</Text>
+                {isTonight && <Text style={styles.entryDetailTonight}>TONIGHT</Text>}
+                {isQuest && <Text style={styles.entryDetailQuestTag}>QUEST</Text>}
+              </View>
+              <View style={styles.entryDetailRule} />
+            </RiseIn>
+
+            <View style={styles.entryDetailDialogue}>
+              {dialogue.map((message, index) => (
+                <RiseIn key={index} index={index + 1} playToken={token} duration={550} style={styles.entryDetailMsg}>
+                  {message.role === "nilo" && <Text style={styles.entryDetailNiloLabel}>NILO ねむる</Text>}
+                  <Text style={message.role === "nilo" ? styles.entryDetailNiloText : styles.entryDetailUserText}>{message.text}</Text>
+                </RiseIn>
+              ))}
+            </View>
+
+            {emotions.length > 0 && (
+              <View style={styles.entryDetailEmotions}>
+                {emotions.map((tag) => (
+                  <Text key={tag} style={styles.entryDetailEmotionChip}>{tag}</Text>
+                ))}
+              </View>
+            )}
+
+            {related.length > 0 && (
+              <View style={styles.entryDetailRelated}>
+                <Text style={styles.entryDetailRelatedLabel}>Niloがそっと差し出す、似た夜</Text>
+                {related.map((item, index) => (
+                  <View key={index} style={styles.entryDetailRelatedItem}>
+                    <Text style={styles.entryDetailRelatedDate}>{item.date}</Text>
+                    <Text style={styles.entryDetailRelatedText}>{item.text}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <Text style={styles.entryDetailFooter}>この記録は、消すことができません。</Text>
+          </ScrollView>
+          <View pointerEvents="none" style={styles.entryDetailTopFade}>
+            <LinearGradient colors={["rgba(16,12,9,0.92)", "rgba(16,12,9,0)"]} style={StyleSheet.absoluteFill} />
+          </View>
+          <Pressable focusable={false} onPress={onClose} style={({ pressed }) => [styles.lifeQuestBack, pressed && styles.touchPressedTight]}>
+            <Text style={styles.lifeQuestBackText}>‹</Text>
+          </Pressable>
           <StatusBar barStyle="light-content" />
         </SafeAreaView>
       </View>
@@ -3171,7 +3503,7 @@ function TabBar({ activeTab, setActiveTab, scrollX, pageStep, hidden, opacity, u
                 }
               ]}
             >
-              <View style={[styles.tabActiveLamp, isActive && styles.tabActiveLampOn]} />
+              <TabIcon id={tab.id} active={isActive} locked={!isUnlocked} />
               <Text style={[styles.tabText, isActive && styles.tabTextActive, !isUnlocked && styles.tabTextLocked]}>{tab.label}</Text>
             </Animated.View>
           </Pressable>
@@ -3186,51 +3518,53 @@ function TabIcon({ id, active, locked }) {
   const dotStyle = [styles.tabIconDot, active && styles.tabIconDotActive, locked && styles.tabIconLineLocked];
   const boxStyle = [styles.tabIconBox, active && styles.tabIconBoxActive, locked && styles.tabIconLineLocked];
 
+  let glyph;
   if (id === "quests") {
-    return (
-      <View style={styles.tabIconCanvas}>
+    glyph = (
+      <>
         <View style={[lineStyle, styles.questIconStem]} />
         <View style={[lineStyle, styles.questIconFlag]} />
         <View style={[dotStyle, styles.questIconPoint]} />
-      </View>
+      </>
     );
-  }
-
-  if (id === "journal") {
-    return (
-      <View style={styles.tabIconCanvas}>
+  } else if (id === "journal") {
+    glyph = (
+      <>
         <View style={[boxStyle, styles.journalIconPage]} />
         <View style={[lineStyle, styles.journalIconLineA]} />
         <View style={[lineStyle, styles.journalIconLineB]} />
-      </View>
+      </>
     );
-  }
-
-  if (id === "home") {
-    return (
-      <View style={styles.tabIconCanvas}>
+  } else if (id === "home") {
+    glyph = (
+      <>
         <View style={[lineStyle, styles.homeIconRoofLeft]} />
         <View style={[lineStyle, styles.homeIconRoofRight]} />
         <View style={[boxStyle, styles.homeIconBase]} />
-      </View>
+      </>
     );
-  }
-
-  if (id === "story") {
-    return (
-      <View style={styles.tabIconCanvas}>
+  } else if (id === "story") {
+    glyph = (
+      <>
         <View style={[boxStyle, styles.storyIconLeft]} />
         <View style={[boxStyle, styles.storyIconRight]} />
         <View style={[lineStyle, styles.storyIconSpine]} />
-      </View>
+      </>
+    );
+  } else {
+    glyph = (
+      <>
+        <View style={[boxStyle, styles.memoryIconRing]} />
+        <View style={[dotStyle, styles.memoryIconDotCenter]} />
+        <View style={[dotStyle, styles.memoryIconDotOrbit]} />
+      </>
     );
   }
 
   return (
     <View style={styles.tabIconCanvas}>
-      <View style={[boxStyle, styles.memoryIconRing]} />
-      <View style={[dotStyle, styles.memoryIconDotCenter]} />
-      <View style={[dotStyle, styles.memoryIconDotOrbit]} />
+      <View pointerEvents="none" style={[styles.tabIconGlow, active && styles.tabIconGlowOn]} />
+      {glyph}
     </View>
   );
 }
@@ -4634,7 +4968,14 @@ function getJournalTimelineEntries(journal) {
       dateLabel: toJapaneseMonthDay(entry.dateKey) || entry.dateLabel || "今日",
       tag: index === 0 ? "TONIGHT" : entry.source === "quest" ? "QUEST" : "",
       title: entry.title || entry.summary || (entry.lines || []).join("。") || "静かな記録",
-      lines: entry.title ? (entry.lines || []) : []
+      lines: entry.title ? (entry.lines || []) : [],
+      // Carry the conversational record through so a tapped entry can open into
+      // its full detail (dialogue / emotions / a similar night).
+      source: entry.source,
+      questText: entry.questText,
+      dialogue: entry.dialogue,
+      emotions: entry.emotions,
+      related: entry.related
     }));
 }
 
@@ -6434,6 +6775,22 @@ const styles = StyleSheet.create({
     position: "relative",
     width: 24
   },
+  tabIconGlow: {
+    backgroundColor: "transparent",
+    borderRadius: 999,
+    height: 44,
+    left: -10,
+    position: "absolute",
+    top: -11,
+    width: 44
+  },
+  tabIconGlowOn: {
+    backgroundColor: "rgba(232,196,138,0.4)",
+    shadowColor: "#e8bd78",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 18
+  },
   tabIconLine: {
     backgroundColor: "rgba(246,239,228,0.62)",
     borderRadius: 999,
@@ -7800,7 +8157,7 @@ const styles = StyleSheet.create({
     outlineStyle: "none",
     position: "absolute",
     right: 22,
-    top: 36,
+    top: 46,
     width: 34
   },
   settingsSunGlyph: {
@@ -7952,6 +8309,10 @@ const styles = StyleSheet.create({
     height: 210,
     justifyContent: "center",
     width: 210
+  },
+  niloOrbImage: {
+    height: 340,
+    width: 340
   },
   niloLightHalo: {
     borderRadius: 105,
@@ -8312,6 +8673,15 @@ const styles = StyleSheet.create({
     right: 0,
     top: 38
   },
+  chapterWatermark: {
+    bottom: 60,
+    color: "rgba(217,168,108,0.035)",
+    fontFamily: fontSerifJaMedium,
+    fontSize: 180,
+    lineHeight: 126,
+    position: "absolute",
+    right: -8
+  },
   timeline: {
     paddingLeft: 26,
     position: "relative"
@@ -8369,10 +8739,21 @@ const styles = StyleSheet.create({
     color: "rgba(232,200,150,0.88)"
   },
   timelineTag: {
-    color: "rgba(221,180,111,0.58)",
-    fontFamily: fontSerifEnMedium,
-    fontSize: 10,
-    letterSpacing: 3
+    color: "rgba(232,200,150,0.78)",
+    fontFamily: fontSerifEn,
+    fontSize: 9,
+    letterSpacing: 2.16
+  },
+  timelineQuestTag: {
+    borderColor: "rgba(190,180,162,0.22)",
+    borderRadius: 18,
+    borderWidth: 1,
+    color: "rgba(190,180,162,0.45)",
+    fontFamily: fontSerifEn,
+    fontSize: 9,
+    letterSpacing: 1.8,
+    paddingHorizontal: 8,
+    paddingVertical: 2
   },
   timelineText: {
     color: "rgba(236,230,218,0.94)",
@@ -8429,6 +8810,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#e8bd78",
     height: 14,
     left: -34,
+    top: 8,
     shadowColor: "#e8bd78",
     shadowOpacity: 0.68,
     shadowRadius: 20,
@@ -8753,12 +9135,299 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 26
   },
+  entryDetailScroll: {
+    paddingBottom: 70,
+    paddingHorizontal: 40,
+    paddingTop: 96
+  },
+  entryDetailTopFade: {
+    height: 96,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0
+  },
+  entryDetailHeadRow: {
+    alignItems: "baseline",
+    flexDirection: "row",
+    gap: 12
+  },
+  entryDetailDate: {
+    color: "#E8E2D6",
+    fontFamily: fontSerifJa,
+    fontSize: 17,
+    letterSpacing: 1.02
+  },
+  entryDetailTonight: {
+    color: "rgba(232,200,150,0.78)",
+    fontFamily: fontSerifEn,
+    fontSize: 9,
+    letterSpacing: 2.16
+  },
+  entryDetailQuestTag: {
+    borderColor: "rgba(190,180,162,0.24)",
+    borderRadius: 18,
+    borderWidth: 1,
+    color: "rgba(190,180,162,0.5)",
+    fontFamily: fontSerifEn,
+    fontSize: 9,
+    letterSpacing: 1.8,
+    paddingHorizontal: 8,
+    paddingVertical: 2
+  },
+  entryDetailRule: {
+    backgroundColor: "rgba(217,168,108,0.4)",
+    height: 1,
+    marginTop: 8,
+    width: 46
+  },
+  entryDetailDialogue: {
+    marginTop: 34
+  },
+  entryDetailMsg: {
+    marginBottom: 30
+  },
+  entryDetailNiloLabel: {
+    color: "rgba(225,190,140,0.78)",
+    fontFamily: fontSerifEn,
+    fontSize: 9,
+    letterSpacing: 2.34,
+    marginBottom: 11
+  },
+  entryDetailNiloText: {
+    color: "rgba(208,198,182,0.66)",
+    fontFamily: fontSerifJa,
+    fontSize: 18,
+    fontWeight: "300",
+    letterSpacing: 0.54,
+    lineHeight: 36
+  },
+  entryDetailUserText: {
+    color: "#ECE6DA",
+    fontFamily: fontSerifJa,
+    fontSize: 20,
+    letterSpacing: 0.6,
+    lineHeight: 40
+  },
+  entryDetailEmotions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 14
+  },
+  entryDetailEmotionChip: {
+    borderColor: "rgba(217,168,108,0.28)",
+    borderRadius: 20,
+    borderWidth: 1,
+    color: "rgba(228,196,150,0.82)",
+    fontFamily: fontSerifJa,
+    fontSize: 12,
+    letterSpacing: 0.48,
+    paddingHorizontal: 14,
+    paddingVertical: 6
+  },
+  entryDetailRelated: {
+    marginTop: 44
+  },
+  entryDetailRelatedLabel: {
+    color: "rgba(190,180,162,0.5)",
+    fontFamily: fontSerifJa,
+    fontSize: 11,
+    letterSpacing: 2.42
+  },
+  entryDetailRelatedItem: {
+    borderLeftColor: "rgba(217,168,108,0.3)",
+    borderLeftWidth: 1,
+    marginTop: 16,
+    paddingBottom: 4,
+    paddingLeft: 18,
+    paddingTop: 4
+  },
+  entryDetailRelatedDate: {
+    color: "rgba(205,176,134,0.6)",
+    fontFamily: fontSerifEn,
+    fontSize: 10,
+    letterSpacing: 1.8
+  },
+  entryDetailRelatedText: {
+    color: "rgba(220,210,195,0.62)",
+    fontFamily: fontSerifJa,
+    fontSize: 16,
+    fontWeight: "300",
+    letterSpacing: 0.3,
+    lineHeight: 29,
+    marginTop: 6
+  },
+  entryDetailFooter: {
+    color: "rgba(190,180,162,0.3)",
+    fontFamily: fontSerifJa,
+    fontSize: 11,
+    fontWeight: "300",
+    letterSpacing: 1.76,
+    marginTop: 50,
+    textAlign: "center"
+  },
+  niloScreen: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#100C0A",
+    elevation: 50,
+    zIndex: 50
+  },
+  niloScreenSafe: {
+    flex: 1
+  },
+  niloTopTier: {
+    alignItems: "center",
+    flex: 1,
+    paddingTop: 34
+  },
+  niloMarkWrap: {
+    alignItems: "center",
+    height: 46,
+    justifyContent: "center",
+    width: 46
+  },
+  niloMarkGlow: {
+    height: 74,
+    position: "absolute",
+    width: 74
+  },
+  niloMarkCore: {
+    backgroundColor: "#FBEAD0",
+    borderRadius: 999,
+    height: 11,
+    shadowColor: "#d9a86c",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7,
+    shadowRadius: 14,
+    width: 11
+  },
+  niloMarkLabel: {
+    color: "rgba(225,190,140,0.82)",
+    fontFamily: fontSerifEn,
+    fontSize: 10,
+    letterSpacing: 3.6,
+    marginTop: 13
+  },
+  niloDateLabel: {
+    color: "rgba(190,180,162,0.4)",
+    fontFamily: fontSerifEn,
+    fontSize: 10,
+    letterSpacing: 2.4,
+    marginTop: 6
+  },
+  niloQuestionArea: {
+    alignItems: "center",
+    alignSelf: "stretch",
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 40
+  },
+  niloDialogQuestion: {
+    color: "rgba(233,196,140,0.92)",
+    fontFamily: fontSerifJa,
+    fontSize: 27,
+    letterSpacing: 1.35,
+    lineHeight: 53,
+    textAlign: "center",
+    textShadowColor: "rgba(217,168,108,0.22)",
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 26
+  },
+  niloDialogCaret: {
+    color: "rgba(242,200,142,0.92)",
+    fontFamily: fontSerifJa,
+    fontSize: 27
+  },
+  niloClosing: {
+    alignItems: "center",
+    paddingBottom: 40,
+    paddingHorizontal: 26,
+    paddingTop: 4
+  },
+  niloClosingText: {
+    color: "rgba(190,180,162,0.5)",
+    fontFamily: fontSerifJa,
+    fontSize: 12,
+    letterSpacing: 0.96,
+    lineHeight: 23,
+    textAlign: "center"
+  },
+  niloBottomTier: {
+    paddingBottom: 18
+  },
+  niloYouDivider: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 13,
+    marginBottom: 2,
+    paddingHorizontal: 30
+  },
+  niloYouLine: {
+    flex: 1,
+    height: 1
+  },
+  niloYouLabel: {
+    color: "rgba(205,180,140,0.6)",
+    fontFamily: fontSerifEn,
+    fontSize: 9,
+    letterSpacing: 3.06
+  },
+  niloDraftInput: {
+    color: "#F3EDE1",
+    fontFamily: fontSerifJa,
+    fontSize: 23,
+    letterSpacing: 0.69,
+    lineHeight: 44,
+    maxHeight: 150,
+    minHeight: 64,
+    outlineStyle: "none",
+    paddingBottom: 13,
+    paddingHorizontal: 32,
+    paddingTop: 15,
+    textAlign: "center"
+  },
+  niloSendButton: {
+    alignSelf: "center",
+    backgroundColor: "rgba(236,190,128,0.95)",
+    borderRadius: 999,
+    marginTop: 4,
+    paddingHorizontal: 28,
+    paddingVertical: 9,
+    shadowColor: "#d9a86c",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.42,
+    shadowRadius: 16
+  },
+  niloSendText: {
+    color: "#2a1d10",
+    fontFamily: fontSerifJa,
+    fontSize: 14,
+    letterSpacing: 0.7
+  },
+  niloExitLink: {
+    alignItems: "center",
+    marginTop: 10,
+    paddingVertical: 8
+  },
+  niloExitText: {
+    color: "rgba(190,180,162,0.4)",
+    fontFamily: fontSerifJa,
+    fontSize: 12,
+    letterSpacing: 1.44
+  },
+  screenBottomFade: {
+    bottom: 60,
+    height: 220,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    zIndex: 20
+  },
   tabBar: {
     alignSelf: "center",
     alignItems: "flex-start",
     backgroundColor: "transparent",
-    borderColor: "rgba(221,180,111,0.08)",
-    borderTopWidth: 1,
     bottom: 0,
     flexDirection: "row",
     gap: 2,
@@ -8788,19 +9457,6 @@ const styles = StyleSheet.create({
     minWidth: 54,
     position: "relative"
   },
-  tabActiveLamp: {
-    backgroundColor: "transparent",
-    borderRadius: 999,
-    height: 5,
-    width: 5
-  },
-  tabActiveLampOn: {
-    backgroundColor: "#e8bd78",
-    shadowColor: "#e8bd78",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 13
-  },
   tabText: {
     color: "rgba(190,180,162,0.4)",
     fontFamily: fontSerifJa,
@@ -8809,6 +9465,7 @@ const styles = StyleSheet.create({
   },
   tabTextActive: {
     color: "rgba(232,200,150,0.92)",
+    fontFamily: fontSerifJaMedium,
     fontWeight: "500"
   },
   modal: {

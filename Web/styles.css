@@ -449,6 +449,13 @@ body:not([data-mode="tab"]) .tab-bar {
   line-height: 1.35;
 }
 
+/* Quest and Chapter lead with the title, like the prototype and the mobile
+   app — the Latin eyebrow sits beneath it rather than above. */
+#screen-quest .tab-head p,
+#screen-chapter .tab-head p {
+  margin-top: 7px;
+}
+
 .tab-scroll {
   position: absolute;
   left: 0;
