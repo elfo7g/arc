@@ -74,32 +74,51 @@ const tabs = [
   { id: "story", label: "章" }
 ];
 
-// 詳細設定画面のタイトル定義。中身はUIリニューアルまで一時的にプレースホルダー表示。
-const settingsDetailScreens = {
-  ownershipPolicy: { icon: "data", title: "所有権ポリシー" },
-  ownershipExport: { icon: "data", title: "データエクスポート" },
-  ownershipDelete: { icon: "data", title: "アーカイブの削除" },
-  inheritanceContacts: { icon: "policy", title: "継承先の管理" },
-  inheritanceDefault: { icon: "policy", title: "未設定時のデフォルト処理" },
-  inheritanceDisclosure: { icon: "policy", title: "アクセス権の予約公開" },
-  securityEncryption: { icon: "privacy", title: "暗号化ステータス" },
-  securityRecovery: { icon: "privacy", title: "リカバリーキー" },
-  securityWitness: { icon: "privacy", title: "緊急連絡先（証人）" },
-  archiveStyle: { icon: "ritual", title: "Niloの対話スタイル" },
-  archiveFrequency: { icon: "ritual", title: "振り返り頻度" },
-  archiveSummary: { icon: "ritual", title: "要約スタイル" },
-  archiveTone: { icon: "notifications", title: "通知のトーン" },
-  bgm: { icon: "sound", title: "サウンド" },
-  notifications: { icon: "notifications", title: "夜のささやき" },
-  ritual: { icon: "ritual", title: "夜の対話" },
-  language: { icon: "language", title: "言語" },
-  data: { icon: "data", title: "記録を書き出す" },
-  profile: { icon: "profile", title: "プロフィール" },
-  sync: { icon: "sync", title: "データ同期" },
-  logout: { icon: "logout", title: "ログアウト" },
-  terms: { icon: "terms", title: "ARC について" },
-  privacyPolicy: { icon: "policy", title: "プライバシーポリシー" }
-};
+const termsSections = [
+  {
+    title: "1. ARCについて",
+    body: "ARCは、Niloとの夜の振り返り、日記、クエスト、記憶を通じて日々を記録するためのアプリです。医療、法律、金融、心理療法などの専門的助言を提供するものではありません。"
+  },
+  {
+    title: "2. アカウントと利用",
+    body: "ユーザーは、自分の責任でアカウント情報を管理し、第三者になりすました利用、不正アクセス、サービスの妨害、法令や公序良俗に反する利用を行わないものとします。"
+  },
+  {
+    title: "3. 記録内容",
+    body: "ユーザーが入力した振り返り、日記、クエスト、プロフィール情報は、ARC内の体験を提供するために利用されます。大切な情報や緊急性のある内容は、必要に応じて信頼できる人や専門機関にも共有してください。"
+  },
+  {
+    title: "4. AI応答について",
+    body: "Niloの応答は、ユーザーの入力をもとに生成される補助的な文章です。内容の正確性、完全性、有用性を保証するものではなく、最終的な判断はユーザー自身の責任で行うものとします。"
+  },
+  {
+    title: "5. 変更と停止",
+    body: "ARCは、機能改善、保守、仕様変更のため、予告なく一部機能を変更または停止する場合があります。重要な記録は、必要に応じてユーザー自身でも控えを保存してください。"
+  }
+];
+
+const privacyPolicySections = [
+  {
+    title: "1. 取得する情報",
+    body: "ARCは、メールアドレス、認証情報、名前、生年月日、日記、振り返り回答、クエスト、設定情報など、ユーザーが入力または利用時に生成した情報を扱います。"
+  },
+  {
+    title: "2. 利用目的",
+    body: "取得した情報は、ログイン、日数表示、日記保存、Niloの応答生成、クエストや記憶の作成、設定の反映、サービス改善、不正利用の防止のために利用します。"
+  },
+  {
+    title: "3. 外部サービス",
+    body: "ARCは、認証やデータ保存のために Supabase を利用します。また、AI応答生成などの機能で外部APIを利用する場合があります。外部サービスには、機能提供に必要な範囲の情報が送信されることがあります。"
+  },
+  {
+    title: "4. ユーザーの選択",
+    body: "設定のプライバシー画面から、日記内容をクエスト生成、記憶候補、プロフィール反映に利用するかを切り替えられます。ログアウトや開発モードでは、利用できる同期機能が変わる場合があります。"
+  },
+  {
+    title: "5. 保管と削除",
+    body: "保存された情報は、サービス提供に必要な期間保管されます。削除やエクスポートなどの操作は、今後の機能として整備していきます。"
+  }
+];
 
 const bgmTracks = [
   {
@@ -411,12 +430,27 @@ function AppContent() {
       tone: "quiet"
     },
     niloStyle: "empathetic",
+    fontScale: "standard",
     privacy: {
       questLink: true,
       memoryLink: true,
       profileUse: true
+    },
+    security: {
+      lockEnabled: true,
+      recoveryKeyIssued: false,
+      recoveryKeyIssuedAt: null,
+      emergencyContacts: []
+    },
+    inheritance: {
+      contacts: [],
+      defaultAction: "delete",
+      reservedDisclosures: []
     }
   });
+
+  // 子ツリーが描画される前に styles を差し替える（書体サイズ設定の反映）。
+  applyFontScale(settings.fontScale);
 
   const activeQuests = useMemo(() => quests.filter((quest) => !quest.completed), [quests]);
   const journalDateKey = getJournalDateKey();
@@ -637,7 +671,10 @@ function AppContent() {
                 ...current,
                 ...saved.settings,
                 ritual: { ...current.ritual, ...(saved.settings.ritual || {}) },
-                privacy: { ...current.privacy, ...(saved.settings.privacy || {}) }
+                privacy: { ...current.privacy, ...(saved.settings.privacy || {}) },
+                reflection: { ...current.reflection, ...(saved.settings.reflection || {}) },
+                security: { ...current.security, ...(saved.settings.security || {}) },
+                inheritance: { ...current.inheritance, ...(saved.settings.inheritance || {}) }
               }));
             }
           } catch {
@@ -3712,6 +3749,20 @@ function SettingsModal({
   const [activeSettingsTab, setActiveSettingsTab] = useState("base");
   const [name, setName] = useState(profile.name);
   const [birthdate, setBirthdate] = useState(profile.birthdate);
+  const [exportFormat, setExportFormat] = useState("json");
+  const [exportPassphrase, setExportPassphrase] = useState("");
+  const [exportStatus, setExportStatus] = useState("");
+  const [recoveryKey, setRecoveryKey] = useState("");
+  const [recoveryStatus, setRecoveryStatus] = useState("");
+  const [emergencyEmail, setEmergencyEmail] = useState("");
+  const [heirEmail, setHeirEmail] = useState("");
+  const [disclosureTarget, setDisclosureTarget] = useState("");
+  const [disclosureDate, setDisclosureDate] = useState("");
+  const [disclosureRecipient, setDisclosureRecipient] = useState("");
+  const [inheritanceStatus, setInheritanceStatus] = useState("");
+  const [notificationDraft, setNotificationDraft] = useState(null);
+  const [windowStartDraft, setWindowStartDraft] = useState(null);
+  const [windowEndDraft, setWindowEndDraft] = useState(null);
 
   useEffect(() => {
     if (visible) {
@@ -3729,7 +3780,280 @@ function SettingsModal({
     setSettings((current) => ({ ...current, ...patch }));
   }
 
-  const detailMeta = settingsDetailScreens[activeSettingsTab] || {};
+  function updateBgmVolume(delta) {
+    onUiSound?.();
+    setSettings((current) => ({
+      ...current,
+      bgmVolume: Math.max(0, Math.min(1, Number((current.bgmVolume + delta).toFixed(2))))
+    }));
+  }
+
+  function updateRitualSettings(patch) {
+    onUiSound?.();
+    setSettings((current) => ({
+      ...current,
+      ritual: { ...(current.ritual || {}), ...patch }
+    }));
+  }
+
+  function updateReflectionSettings(patch) {
+    onUiSound?.();
+    setSettings((current) => ({
+      ...current,
+      reflection: { ...(current.reflection || {}), ...patch }
+    }));
+  }
+
+  function updateSecurity(patch) {
+    setSettings((current) => ({ ...current, security: { ...(current.security || {}), ...patch } }));
+  }
+
+  function updateInheritance(patch) {
+    setSettings((current) => ({ ...current, inheritance: { ...(current.inheritance || {}), ...patch } }));
+  }
+
+  const displayName = name || profile.name || session?.user?.user_metadata?.name || session?.user?.email?.split("@")[0] || "あなた";
+  const profileInitial = displayName.slice(0, 1).toUpperCase();
+  const profileDay = daysSince(birthdate) || daysSince(profile.birthdate) || daysSince(arcStartDate) + 1;
+  const completedQuestCount = quests.filter((quest) => quest.completed).length;
+  const syncStatus = authLoading ? "確認中" : session ? "接続済み" : "未接続";
+  const accountLabel = authLoading ? "確認中..." : session?.user?.email || "Googleアカウント未接続";
+  const ritualConfig = settings.ritual || {};
+  const reflectionConfig = settings.reflection || {};
+  const securityConfig = settings.security || {};
+  const inheritanceConfig = settings.inheritance || {};
+
+  function commitClockValue(raw, fallback, apply) {
+    const value = String(raw ?? "").trim();
+    if (/^([01]?\d|2[0-3]):[0-5]\d$/.test(value)) {
+      apply(value);
+      return;
+    }
+    apply(fallback);
+  }
+
+  function confirmClearData(kind) {
+    onUiSound?.();
+    const actions = {
+      journal: {
+        title: "日記を削除しますか？",
+        body: "保存された日記だけをこの端末から削除します。",
+        run: () => setJournal([])
+      },
+      memories: {
+        title: "記憶を削除しますか？",
+        body: "保存された記憶と章をこの端末から削除します。",
+        run: () => {
+          setMemories([]);
+          setChapters([]);
+        }
+      },
+      quests: {
+        title: "クエストをリセットしますか？",
+        body: "現在のクエストを消して、デイリークエストを作り直します。",
+        run: () => setQuests(createDailyQuests())
+      },
+      all: {
+        title: "すべての記録を削除しますか？",
+        body: "日記、クエスト、記憶、章をこの端末から削除します。この操作は元に戻せません。",
+        run: () => {
+          setJournal([]);
+          setQuests(createDailyQuests());
+          setMemories([]);
+          setChapters([]);
+        }
+      }
+    };
+    const target = actions[kind];
+    if (!target) return;
+    confirmDialog(target.title, target.body, [
+      { text: "キャンセル", style: "cancel" },
+      { text: "削除", style: "destructive", onPress: target.run }
+    ]);
+  }
+
+  async function runExport() {
+    onUiSound?.();
+    setExportStatus("書き出しています…");
+    try {
+      const isMarkdown = exportFormat === "markdown";
+      const content = isMarkdown
+        ? buildExportMarkdown({ journal, memories, chapters })
+        : buildExportJson({ journal, memories, quests, chapters, profile, settings });
+      const passphrase = exportPassphrase.trim();
+      const dateKey = toDateKey(new Date());
+      if (passphrase) {
+        const encrypted = encryptExportPayload(content, passphrase);
+        await saveTextFile(encrypted, `arc-archive-${dateKey}.encrypted.json`, "application/json");
+        setExportStatus("暗号化して書き出しました。パスフレーズは大切に保管してください。");
+      } else {
+        await saveTextFile(
+          content,
+          `arc-archive-${dateKey}.${isMarkdown ? "md" : "json"}`,
+          isMarkdown ? "text/markdown" : "application/json"
+        );
+        setExportStatus("記録を書き出しました。");
+      }
+      setExportPassphrase("");
+    } catch {
+      setExportStatus("うまく書き出せませんでした。もう一度お試しください。");
+    }
+  }
+
+  function confirmDeleteAll() {
+    onUiSound?.();
+    confirmDialog(
+      "アーカイブを削除しますか？",
+      "この端末のすべての記録が消去されます。取り消せません。続ける前に書き出しをおすすめします。",
+      [
+        { text: "やめておく", style: "cancel" },
+        {
+          text: "削除する",
+          style: "destructive",
+          onPress: () => confirmDialog("最終確認", "本当に削除しますか？", [
+            { text: "やめておく", style: "cancel" },
+            {
+              text: "削除する",
+              style: "destructive",
+              onPress: () => {
+                setJournal([]);
+                setMemories([]);
+                setQuests(createDailyQuests());
+                setChapters([]);
+              }
+            }
+          ])
+        }
+      ]
+    );
+  }
+
+  async function issueRecoveryKey() {
+    onUiSound?.();
+    try {
+      const key = await generateRecoveryKey();
+      setRecoveryKey(key);
+      updateSecurity({ recoveryKeyIssued: true, recoveryKeyIssuedAt: new Date().toISOString() });
+      setRecoveryStatus("このキーを安全な場所に。画面を離れると、もう一度は表示できません。");
+    } catch {
+      setRecoveryStatus("キーを発行できませんでした。もう一度お試しください。");
+    }
+  }
+
+  async function copyRecoveryKey() {
+    if (!recoveryKey) return;
+    try {
+      await Clipboard.setStringAsync(recoveryKey);
+      setRecoveryStatus("コピーしました。安全な場所に貼り付けてください。");
+    } catch {
+      setRecoveryStatus("コピーできませんでした。手で書き写してください。");
+    }
+  }
+
+  function addEmergencyContact() {
+    if (!isEmailLike(emergencyEmail)) {
+      setRecoveryStatus("メールアドレスをご確認ください。");
+      return;
+    }
+    updateSecurity({ emergencyContacts: [...(securityConfig.emergencyContacts || []), { id: createId("witness"), email: emergencyEmail.trim() }] });
+    setEmergencyEmail("");
+    setRecoveryStatus("緊急連絡先を追加しました。");
+  }
+
+  function removeEmergencyContact(id) {
+    updateSecurity({ emergencyContacts: (securityConfig.emergencyContacts || []).filter((c) => c.id !== id) });
+  }
+
+  function addHeir() {
+    if (!isEmailLike(heirEmail)) {
+      setInheritanceStatus("メールアドレスをご確認ください。");
+      return;
+    }
+    updateInheritance({ contacts: [...(inheritanceConfig.contacts || []), { id: createId("heir"), email: heirEmail.trim() }] });
+    setHeirEmail("");
+    setInheritanceStatus("継承先を追加しました。");
+  }
+
+  function removeHeir(id) {
+    updateInheritance({ contacts: (inheritanceConfig.contacts || []).filter((c) => c.id !== id) });
+  }
+
+  function setDefaultAction(next) {
+    if ((inheritanceConfig.defaultAction || "delete") === next) return;
+    onUiSound?.();
+    confirmDialog(
+      "継承設定を変更しますか？",
+      next === "delete" ? "未設定のまま「その日」を迎えた場合、アーカイブは完全に削除されます。" : "未設定のまま「その日」を迎えた場合、アーカイブは継承先へ移管されます。",
+      [
+        { text: "やめておく", style: "cancel" },
+        {
+          text: "変更する",
+          onPress: () => {
+            updateInheritance({ defaultAction: next });
+            setInheritanceStatus("継承設定を変更しました。いつでも変えられます。");
+          }
+        }
+      ]
+    );
+  }
+
+  function addDisclosure() {
+    if (!disclosureTarget.trim()) {
+      setInheritanceStatus("公開する対象を入力してください。");
+      return;
+    }
+    if (!isEmailLike(disclosureRecipient)) {
+      setInheritanceStatus("受取人のメールアドレスをご確認ください。");
+      return;
+    }
+    updateInheritance({
+      reservedDisclosures: [...(inheritanceConfig.reservedDisclosures || []), {
+        id: createId("disclosure"), target: disclosureTarget.trim(), recipient: disclosureRecipient.trim(), date: disclosureDate.trim()
+      }]
+    });
+    setDisclosureTarget("");
+    setDisclosureDate("");
+    setDisclosureRecipient("");
+    setInheritanceStatus("予約公開を追加しました。いつでも取り消せます。");
+  }
+
+  function removeDisclosure(id) {
+    updateInheritance({ reservedDisclosures: (inheritanceConfig.reservedDisclosures || []).filter((d) => d.id !== id) });
+  }
+
+  function renderEntryRow(id, label, onRemove) {
+    return (
+      <View key={id} style={styles.entryRow}>
+        <Text style={styles.entryRowText}>{label}</Text>
+        <Pressable onPress={onRemove} style={({ pressed }) => [styles.entryRemove, pressed && styles.touchPressedTight]}>
+          <Text style={styles.entryRemoveText}>×</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  function confirmSignOut() {
+    confirmDialog("ログアウトしますか？", "このデバイスのログイン状態を解除します。記録データは端末内に残ります。", [
+      { text: "キャンセル", style: "cancel" },
+      { text: "ログアウト", style: "destructive", onPress: onSignOut }
+    ]);
+  }
+
+  function renderSegmentedRow(options, activeValue, onSelect) {
+    return (
+      <View style={styles.segmentedRow}>
+        {options.map(([value, label]) => (
+          <Pressable
+            key={String(value)}
+            onPress={() => onSelect(value)}
+            style={({ pressed }) => [styles.segmentButton, activeValue === value && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
+          >
+            <Text style={[styles.segmentText, activeValue === value && styles.segmentTextActive]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+    );
+  }
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
@@ -3754,6 +4078,8 @@ function SettingsModal({
             {activeSettingsTab === "base" && (
               <SettingsBase
                 settings={settings}
+                session={session}
+                authLoading={authLoading}
                 updateSettings={updateSettings}
                 onSelect={(tab) => {
                   onUiSound?.();
@@ -3774,14 +4100,612 @@ function SettingsModal({
               </Pressable>
             )}
 
-            {activeSettingsTab !== "base" && (
+            {activeSettingsTab === "ownershipPolicy" && (
               <View style={styles.settingsPage}>
-                <SettingsPageTitle
-                  icon={detailMeta.icon || "settings"}
-                  title={detailMeta.title || "設定"}
-                  body="この画面の詳細設定は、UIリニューアルに向けて準備中です。"
+                <SettingsPageTitle icon="data" title="所有権ポリシー" body="データはあなたのものです。ARCはそれを証明し、守ります。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.ownershipStatement}>このデータは、あなたのものです。</Text>
+                  <Text style={styles.mutedText}>ARCはあなたの記録を販売・学習・広告に利用しません。あなたの記録は、あなただけのものです。このポリシーは設定のどこからでも確認できます。</Text>
+                </View>
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>いつでも、持ち出せます</Text>
+                  <Text style={styles.mutedText}>すべての記録は、意味が損なわれない形でいつでも書き出せます。ARCをやめる日が来ても、あなたの夜はあなたと一緒に出ていけます。</Text>
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "ownershipExport" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="data" title="データエクスポート" body="すべての記録を、構造化フォーマットで書き出します。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>フォーマット</Text>
+                  {renderSegmentedRow([["json", "JSON"], ["markdown", "Markdown"]], exportFormat, setExportFormat)}
+                  <Text style={styles.settingLabel}>暗号化（任意）</Text>
+                  <TextInput
+                    value={exportPassphrase}
+                    onChangeText={setExportPassphrase}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    placeholder="パスフレーズを設定するとAES-256で保護"
+                    placeholderTextColor="#777"
+                    style={styles.settingInput}
+                  />
+                  <Pressable onPress={runExport} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
+                    <Text style={styles.secondaryButtonText}>記録を書き出す</Text>
+                  </Pressable>
+                  {!!exportStatus && <Text style={styles.mutedText}>{exportStatus}</Text>}
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "ownershipDelete" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="data" title="アーカイブの削除" body="端末内の記録を、選んで消去します。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>個別に整理</Text>
+                  <Pressable onPress={() => confirmClearData("journal")} style={({ pressed }) => [styles.soundTrackRow, pressed && styles.touchPressedSubtle]}>
+                    <Text style={styles.settingValue}>日記を削除</Text>
+                    <Text style={styles.baseChevron}>›</Text>
+                  </Pressable>
+                  <Pressable onPress={() => confirmClearData("memories")} style={({ pressed }) => [styles.soundTrackRow, pressed && styles.touchPressedSubtle]}>
+                    <Text style={styles.settingValue}>記憶と章を削除</Text>
+                    <Text style={styles.baseChevron}>›</Text>
+                  </Pressable>
+                  <Pressable onPress={() => confirmClearData("quests")} style={({ pressed }) => [styles.soundTrackRow, pressed && styles.touchPressedSubtle]}>
+                    <Text style={styles.settingValue}>クエストをリセット</Text>
+                    <Text style={styles.baseChevron}>›</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.dangerCard}>
+                  <GlassBackdrop intensity={20} />
+                  <Text style={styles.settingLabel}>危険な操作</Text>
+                  <Text style={styles.mutedText}>この端末のすべての記録を消去します。取り消せません。続ける前に書き出しをおすすめします。</Text>
+                  <Pressable onPress={confirmDeleteAll} style={({ pressed }) => [styles.dangerButton, pressed && styles.touchPressedSoft]}>
+                    <Text style={styles.dangerButtonText}>アーカイブを削除する</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "inheritanceContacts" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="policy" title="継承先の管理" body="いつか訪れる「その日」のために、静かに準備する場所。" />
+                <Text style={styles.mutedText}>重要な設定です。落ち着いて操作できる時に行ってください。</Text>
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>継承先（信頼できる連絡先）</Text>
+                  <TextInput
+                    value={heirEmail}
+                    onChangeText={setHeirEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    placeholder="example@mail.com"
+                    placeholderTextColor="#777"
+                    style={styles.settingInput}
+                  />
+                  <Pressable onPress={addHeir} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
+                    <Text style={styles.secondaryButtonText}>継承先を追加</Text>
+                  </Pressable>
+                  {(inheritanceConfig.contacts || []).length
+                    ? (inheritanceConfig.contacts || []).map((c) => renderEntryRow(c.id, c.email, () => removeHeir(c.id)))
+                    : <Text style={styles.mutedText}>継承先はまだ登録されていません。</Text>}
+                  {!!inheritanceStatus && <Text style={styles.mutedText}>{inheritanceStatus}</Text>}
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "inheritanceDefault" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="policy" title="未設定時のデフォルト処理" body="継承の意思を残さなかった場合の、アーカイブの行き先。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>デフォルト処理</Text>
+                  {renderSegmentedRow(
+                    [["delete", "完全削除"], ["transfer", "継承先へ移管"]],
+                    inheritanceConfig.defaultAction || "delete",
+                    setDefaultAction
+                  )}
+                  <Text style={styles.mutedText}>継承先が本人確認（公証人証明）を提出し、サービス側の審査を経て移管されます。</Text>
+                  {!!inheritanceStatus && <Text style={styles.mutedText}>{inheritanceStatus}</Text>}
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "inheritanceDisclosure" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="policy" title="アクセス権の予約公開" body="時間と相手を指定して、特定の章を段階的に公開します。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>予約公開</Text>
+                  <Text style={styles.mutedText}>いつでも取り消せます。</Text>
+                  <TextInput value={disclosureTarget} onChangeText={setDisclosureTarget} placeholder="公開対象（例：2024年の章 / 旅行タグ）" placeholderTextColor="#777" style={styles.settingInput} />
+                  <TextInput value={disclosureDate} onChangeText={setDisclosureDate} placeholder="公開日（例：2030-05-01）" placeholderTextColor="#777" style={styles.settingInput} />
+                  <TextInput value={disclosureRecipient} onChangeText={setDisclosureRecipient} autoCapitalize="none" keyboardType="email-address" placeholder="受取人のメール" placeholderTextColor="#777" style={styles.settingInput} />
+                  <Pressable onPress={addDisclosure} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
+                    <Text style={styles.secondaryButtonText}>予約公開を追加</Text>
+                  </Pressable>
+                  {(inheritanceConfig.reservedDisclosures || []).length
+                    ? (inheritanceConfig.reservedDisclosures || []).map((d) => renderEntryRow(d.id, `${d.target} → ${d.recipient}（${d.date || "日付未定"}）`, () => removeDisclosure(d.id)))
+                    : <Text style={styles.mutedText}>予約公開はまだありません。</Text>}
+                  {!!inheritanceStatus && <Text style={styles.mutedText}>{inheritanceStatus}</Text>}
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "securityEncryption" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="privacy" title="暗号化ステータス" body="技術的な安全を、人間の言葉で届けます。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>🔒 あなた以外には読めない構造</Text>
+                  <Text style={styles.mutedText}>記録の鍵はこの端末で生成・管理されます。ARCのサーバーでも、記録の内容は見えません。あなた以外には読めない形で守られています。</Text>
+                </View>
+                <SettingToggleRow
+                  title="この場所を守る"
+                  body="Face IDでロックします。"
+                  value={securityConfig.lockEnabled !== false}
+                  onPress={() => {
+                    onUiSound?.();
+                    updateSecurity({ lockEnabled: securityConfig.lockEnabled === false });
+                  }}
                 />
               </View>
+            )}
+
+            {activeSettingsTab === "securityRecovery" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="privacy" title="リカバリーキー" body="緊急時に記録を取り戻すための、24語の鍵。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>緊急時のリカバリー</Text>
+                  <Text style={styles.mutedText}>リカバリーキー（24語）は、オフラインの安全な場所に保管してください。これを失うと記録を取り戻せません。</Text>
+                  {securityConfig.recoveryKeyIssued && !recoveryKey && (
+                    <Text style={styles.mutedText}>リカバリーキーは発行済みです。再発行すると、新しいキーに置き換わります。</Text>
+                  )}
+                  <Pressable onPress={issueRecoveryKey} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
+                    <Text style={styles.secondaryButtonText}>{securityConfig.recoveryKeyIssued ? "リカバリーキーを再発行" : "リカバリーキーを発行"}</Text>
+                  </Pressable>
+                  {!!recoveryKey && <Text style={styles.recoveryKeyText}>{recoveryKey}</Text>}
+                  {!!recoveryKey && (
+                    <Pressable onPress={copyRecoveryKey} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
+                      <Text style={styles.secondaryButtonText}>コピー</Text>
+                    </Pressable>
+                  )}
+                  {!!recoveryStatus && <Text style={styles.mutedText}>{recoveryStatus}</Text>}
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "securityWitness" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="privacy" title="緊急連絡先（証人）" body="復旧の際、あなたの証人になってくれる人。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>緊急連絡先（証人）</Text>
+                  <Text style={styles.mutedText}>復旧の際、事前登録した連絡先が証人になります。</Text>
+                  <TextInput
+                    value={emergencyEmail}
+                    onChangeText={setEmergencyEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    placeholder="trusted@mail.com"
+                    placeholderTextColor="#777"
+                    style={styles.settingInput}
+                  />
+                  <Pressable onPress={addEmergencyContact} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
+                    <Text style={styles.secondaryButtonText}>緊急連絡先を追加</Text>
+                  </Pressable>
+                  {(securityConfig.emergencyContacts || []).length
+                    ? (securityConfig.emergencyContacts || []).map((c) => renderEntryRow(c.id, c.email, () => removeEmergencyContact(c.id)))
+                    : <Text style={styles.mutedText}>緊急連絡先はまだ登録されていません。</Text>}
+                  <Text style={styles.mutedText}>リカバリーには72時間の審査期間があります。「あなたが本当にあなたである」ことを確かめるための時間です。</Text>
+                  {!!recoveryStatus && <Text style={styles.mutedText}>{recoveryStatus}</Text>}
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "archiveStyle" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="ritual" title="Niloの対話スタイル" body="夜の対話での、Niloの寄り添い方。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>対話スタイル</Text>
+                  {renderSegmentedRow(
+                    [["empathetic", "共感型"], ["questioning", "問いかけ型"], ["organizing", "整理型"], ["silent", "沈黙型"]],
+                    settings.niloStyle || "empathetic",
+                    (value) => updateSettings({ niloStyle: value })
+                  )}
+                  <Text style={styles.mutedText}>{NILO_STYLE_HINTS[settings.niloStyle || "empathetic"]}</Text>
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "archiveFrequency" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="ritual" title="振り返り頻度" body="毎日から季節ごとまで、あなたのペースで。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>振り返り頻度</Text>
+                  {renderSegmentedRow(
+                    ["daily", "weekly", "monthly", "seasonal", "off"].map((freq) => [freq, REFLECTION_FREQUENCY_LABELS[freq]]),
+                    reflectionConfig.frequency || "daily",
+                    (value) => updateReflectionSettings({ frequency: value })
+                  )}
+                  <Text style={styles.mutedText}>毎日に縛られず、あなたのペースで。時間帯の制限はありません。オフにすると、いつでも書けます。</Text>
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "archiveSummary" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="ritual" title="要約スタイル" body="過去の自分と出会うときの、まとめ方。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>要約スタイル</Text>
+                  {renderSegmentedRow(
+                    [["narrative", "物語形式"], ["keyword", "キーワード形式"], ["timeline", "年表形式"]],
+                    reflectionConfig.summaryStyle || "narrative",
+                    (value) => updateReflectionSettings({ summaryStyle: value })
+                  )}
+                  <Text style={styles.mutedText}>振り返りで過去の自分と出会うときの、まとめ方です。</Text>
+                </View>
+                <SettingToggleRow
+                  title="1年前と比べる"
+                  body="価値観・感情・キーワードの変化を、そっと並べて見せます。"
+                  value={reflectionConfig.compareLastYear !== false}
+                  onPress={() => updateReflectionSettings({ compareLastYear: reflectionConfig.compareLastYear === false })}
+                />
+              </View>
+            )}
+
+            {activeSettingsTab === "archiveTone" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="notifications" title="通知のトーン" body="静かな促しか、積極的なリマインドか。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>通知のトーン</Text>
+                  {renderSegmentedRow(
+                    [["quiet", "静かな促し"], ["active", "積極的なリマインド"]],
+                    reflectionConfig.tone || "quiet",
+                    (value) => updateReflectionSettings({ tone: value })
+                  )}
+                  <Text style={styles.mutedText}>「いつでも来てください」か「待っています」か。促しの温度です。</Text>
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "bgm" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="sound" title="サウンド" body="流す曲と音量を選びます。" />
+                <SettingToggleRow
+                  title="BGM"
+                  body="夜のサウンドトラックを流します。"
+                  value={settings.bgmEnabled}
+                  onPress={() => updateSettings({ bgmEnabled: !settings.bgmEnabled })}
+                />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>現在のBGM</Text>
+                  <Text style={styles.settingValue}>{activeBgmTrack.title}</Text>
+                  <Text style={styles.mutedText}>{activeBgmTrack.subtitle}</Text>
+                  <View style={styles.soundStatusRow}>
+                    <Text style={styles.soundStatusText}>
+                      {settings.bgmEnabled ? (bgmStatus?.playing ? "再生中" : "読み込み中") : "停止中"}
+                    </Text>
+                    <Text style={styles.soundStatusText}>{Math.round(settings.bgmVolume * 100)}%</Text>
+                  </View>
+                  <View style={styles.soundVolumeRow}>
+                    <Pressable onPress={() => updateBgmVolume(-0.1)} style={({ pressed }) => [styles.soundStepButton, pressed && styles.touchPressedTight]}>
+                      <Text style={styles.soundStepText}>−</Text>
+                    </Pressable>
+                    <View style={styles.soundVolumeTrack}>
+                      <View style={[styles.soundVolumeFill, { width: `${Math.round(settings.bgmVolume * 100)}%` }]} />
+                    </View>
+                    <Pressable onPress={() => updateBgmVolume(0.1)} style={({ pressed }) => [styles.soundStepButton, pressed && styles.touchPressedTight]}>
+                      <Text style={styles.soundStepText}>＋</Text>
+                    </Pressable>
+                  </View>
+                </View>
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>サウンドトラック</Text>
+                  {bgmTracks.map((track) => (
+                    <Pressable
+                      key={track.id}
+                      onPress={() => updateSettings({ bgmTrackId: track.id, bgmEnabled: true })}
+                      style={({ pressed }) => [styles.soundTrackRow, settings.bgmTrackId === track.id && styles.soundTrackRowActive, pressed && styles.touchPressedSubtle]}
+                    >
+                      <View>
+                        <Text style={styles.settingValue}>{track.title}</Text>
+                        <Text style={styles.mutedText}>{track.subtitle}</Text>
+                      </View>
+                      <Text style={styles.soundTrackMark}>{settings.bgmTrackId === track.id ? "ON" : "選択"}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "notifications" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="notifications" title="夜のささやき" body="そっと問いが灯る時刻を決めます。" />
+                <SettingToggleRow
+                  title="通知"
+                  body="夜の記録の時間に知らせます。"
+                  value={settings.notificationsEnabled}
+                  onPress={() => updateSettings({ notificationsEnabled: !settings.notificationsEnabled })}
+                />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>合図の時刻</Text>
+                  {renderSegmentedRow(
+                    [["21:00", "21:00"], ["22:00", "22:00"], ["23:00", "23:00"]],
+                    settings.notificationTime,
+                    (value) => {
+                      setNotificationDraft(null);
+                      updateSettings({ notificationTime: value });
+                    }
+                  )}
+                  <TextInput
+                    value={notificationDraft ?? settings.notificationTime}
+                    onChangeText={setNotificationDraft}
+                    onBlur={() => {
+                      commitClockValue(notificationDraft ?? settings.notificationTime, settings.notificationTime, (value) => updateSettings({ notificationTime: value }));
+                      setNotificationDraft(null);
+                    }}
+                    placeholder="22:00"
+                    placeholderTextColor="#777"
+                    style={styles.settingInput}
+                  />
+                  <Text style={styles.mutedText}>時刻はこの端末に保存されます。実際の通知はこれからの実装で灯ります。</Text>
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "ritual" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="ritual" title="夜の対話" body="質問の数と、終わり方を整えます。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>質問数</Text>
+                  {renderSegmentedRow(
+                    [[3, "3問"], [4, "4問"], [5, "5問"]],
+                    ritualConfig.questionCount || 5,
+                    (value) => updateRitualSettings({ questionCount: value })
+                  )}
+                  <Text style={styles.mutedText}>短く終えたい時は3問、深く残したい時は5問にできます。</Text>
+                </View>
+                <SettingToggleRow
+                  title="終了後に日記へ保存"
+                  body="OFFにすると、会話を閉じても日記・記憶・クエストを作りません。"
+                  value={ritualConfig.autoSaveJournal !== false}
+                  onPress={() => updateRitualSettings({ autoSaveJournal: ritualConfig.autoSaveJournal === false })}
+                />
+                <SettingToggleRow
+                  title="途中退出の確認"
+                  body="振り返り中に×を押したとき、確認を表示します。"
+                  value={ritualConfig.confirmExit !== false}
+                  onPress={() => updateRitualSettings({ confirmExit: ritualConfig.confirmExit === false })}
+                />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>対話の時間帯</Text>
+                  <Text style={styles.mutedText}>夜の対話が灯る時間帯です。日付をまたいでもかまいません。</Text>
+                  <TextInput
+                    value={windowStartDraft ?? (ritualConfig.windowStart || "20:00")}
+                    onChangeText={setWindowStartDraft}
+                    onBlur={() => {
+                      commitClockValue(windowStartDraft ?? ritualConfig.windowStart, ritualConfig.windowStart || "20:00", (value) => updateRitualSettings({ windowStart: value }));
+                      setWindowStartDraft(null);
+                    }}
+                    placeholder="20:00"
+                    placeholderTextColor="#777"
+                    style={styles.settingInput}
+                  />
+                  <TextInput
+                    value={windowEndDraft ?? (ritualConfig.windowEnd || "03:00")}
+                    onChangeText={setWindowEndDraft}
+                    onBlur={() => {
+                      commitClockValue(windowEndDraft ?? ritualConfig.windowEnd, ritualConfig.windowEnd || "03:00", (value) => updateRitualSettings({ windowEnd: value }));
+                      setWindowEndDraft(null);
+                    }}
+                    placeholder="03:00"
+                    placeholderTextColor="#777"
+                    style={styles.settingInput}
+                  />
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "language" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="language" title="書体と言語" body="読みやすい大きさと、使う言葉を選びます。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>書体の大きさ</Text>
+                  {renderSegmentedRow(
+                    [["small", "小"], ["standard", "標準"], ["large", "大"]],
+                    settings.fontScale || "standard",
+                    (value) => updateSettings({ fontScale: value })
+                  )}
+                  <Text style={styles.mutedText}>アプリ全体の文字の大きさが変わります。</Text>
+                </View>
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>言語</Text>
+                  {renderSegmentedRow(
+                    [["ja", "日本語"], ["en", "English"], ["es", "Español"], ["zh", "中文"]],
+                    settings.language || "ja",
+                    (value) => updateSettings({ language: value })
+                  )}
+                  <Text style={styles.mutedText}>選んだ言語はこれから順次、表示に反映されます。</Text>
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "data" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="data" title="記録を書き出す" body="端末内に残る記録を確認・整理します。" />
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>端末内データ</Text>
+                  <View style={styles.syncSummaryRow}>
+                    <BaseStat label="日記" value={`${journal.length}`} />
+                    <BaseStat label="クエスト" value={`${quests.length}`} />
+                    <BaseStat label="記憶" value={`${memories.length}`} />
+                    <BaseStat label="章" value={`${chapters.length}`} />
+                  </View>
+                </View>
+                <ArcSettingRow
+                  title="データエクスポート"
+                  body="JSON / Markdownで書き出す"
+                  onPress={() => {
+                    onUiSound?.();
+                    setActiveSettingsTab("ownershipExport");
+                  }}
+                />
+                <ArcSettingRow
+                  title="アーカイブの削除"
+                  body="端末内の記録を消去する"
+                  onPress={() => {
+                    onUiSound?.();
+                    setActiveSettingsTab("ownershipDelete");
+                  }}
+                />
+              </View>
+            )}
+
+            {activeSettingsTab === "profile" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="profile" title="プロフィール" body="Arcに表示するあなたの情報を整えます。" />
+                <View style={styles.profileEditCard}>
+                  <GlassBackdrop intensity={24} />
+                  <View style={styles.profileEditTop}>
+                    <Pressable onPress={onPickProfileImage} style={({ pressed }) => [styles.profileEditAvatar, pressed && styles.touchPressedTight]}>
+                      {profile.imageUri ? (
+                        <Image source={{ uri: profile.imageUri }} style={styles.baseAvatarImage} />
+                      ) : (
+                        <Text style={styles.profileEditAvatarText}>{profileInitial}</Text>
+                      )}
+                    </Pressable>
+                    <View style={styles.profileEditCopy}>
+                      <Text style={styles.settingLabel}>表示プロフィール</Text>
+                      <Text style={styles.profileEditName}>{displayName}</Text>
+                      <Text style={styles.mutedText}>{profileDay}日目の記録者</Text>
+                    </View>
+                  </View>
+                  <Pressable onPress={onPickProfileImage} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
+                    <Text style={styles.secondaryButtonText}>プロフィール画像を変更</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>基本情報</Text>
+                  <TextInput value={name} onChangeText={setName} placeholder="名前" placeholderTextColor="#777" style={styles.settingInput} />
+                  <TextInput value={birthdate} onChangeText={setBirthdate} placeholder="YYYY-MM-DD" placeholderTextColor="#777" style={styles.settingInput} />
+                  <Text style={styles.mutedText}>生年月日または開始日から、Journey Dayを表示します。</Text>
+                  <View style={styles.profileSaveRow}>
+                    <Pressable
+                      onPress={() => {
+                        onUiSound?.();
+                        setProfile((current) => ({ ...current, name, birthdate }));
+                        setActiveSettingsTab("base");
+                      }}
+                      style={({ pressed }) => [styles.profileSaveButton, pressed && styles.touchPressedSoft]}
+                    >
+                      <Text style={styles.profileSaveButtonText}>プロフィールを保存</Text>
+                    </Pressable>
+                  </View>
+                </View>
+                <View style={styles.profileDataGrid}>
+                  <BaseStat label="日記" value={`${journal.length}`} />
+                  <BaseStat label="完了" value={`${completedQuestCount}`} />
+                  <BaseStat label="記憶" value={`${memories.length}`} />
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "sync" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="sync" title="データ同期" body="アカウント接続と保存状態を確認します。" />
+                <View style={styles.authCard}>
+                  <GlassBackdrop intensity={24} />
+                  <View style={styles.authCopy}>
+                    <Text style={styles.settingLabel}>Googleアカウント</Text>
+                    <Text style={styles.settingValue}>{accountLabel}</Text>
+                    <Text style={styles.mutedText}>
+                      接続すると、この端末の記録をあなたのアカウントに紐づける準備ができます。
+                    </Text>
+                  </View>
+                  {session ? (
+                    <View style={styles.syncStatusPill}>
+                      <Text style={styles.syncStatusText}>{syncStatus}</Text>
+                    </View>
+                  ) : (
+                    <Pressable disabled={authBusy} onPress={onGoogleSignIn} style={({ pressed }) => [styles.primaryButton, authBusy && styles.disabledButton, pressed && !authBusy && styles.touchPressedSoft]}>
+                      <Text style={styles.primaryButtonText}>{authBusy ? "接続中..." : "Googleでログイン"}</Text>
+                    </Pressable>
+                  )}
+                  {!!authError && <Text style={styles.errorText}>{authError}</Text>}
+                </View>
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>同期対象</Text>
+                  <View style={styles.syncSummaryRow}>
+                    <BaseStat label="日記" value={`${journal.length}`} />
+                    <BaseStat label="クエスト" value={`${quests.length}`} />
+                    <BaseStat label="記憶" value={`${memories.length}`} />
+                  </View>
+                  <Text style={styles.mutedText}>現在は端末内保存をベースに、アカウント接続状態を先に整えています。</Text>
+                </View>
+                <View style={styles.redirectBox}>
+                  <Text style={styles.settingLabel}>Redirect URI</Text>
+                  <Text style={styles.redirectText}>{redirectUri}</Text>
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "logout" && (
+              <View style={styles.settingsPage}>
+                <SettingsPageTitle icon="logout" title="ログアウト" body="このデバイスのログイン状態を解除します。" />
+                <View style={styles.dangerCard}>
+                  <GlassBackdrop intensity={20} />
+                  <Text style={styles.settingLabel}>現在のアカウント</Text>
+                  <Text style={styles.settingValue}>{accountLabel}</Text>
+                  <Text style={styles.mutedText}>ログアウトしても、端末内に保存された記録は削除されません。</Text>
+                  <Pressable
+                    disabled={!session || authBusy}
+                    onPress={confirmSignOut}
+                    style={({ pressed }) => [styles.dangerButton, (!session || authBusy) && styles.disabledButton, pressed && session && !authBusy && styles.touchPressedSoft]}
+                  >
+                    <Text style={styles.dangerButtonText}>{authBusy ? "処理中..." : "ログアウト"}</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            {activeSettingsTab === "terms" && (
+              <LegalPage
+                icon="terms"
+                title="ARC について"
+                body="ARCを安心して使うための基本ルールです。"
+                updatedAt="2026.06.06"
+                sections={termsSections}
+              />
+            )}
+
+            {activeSettingsTab === "privacyPolicy" && (
+              <LegalPage
+                icon="policy"
+                title="プライバシーポリシー"
+                body="ARCが扱うデータと、その使い方について。"
+                updatedAt="2026.06.06"
+                sections={privacyPolicySections}
+              />
             )}
           </ScrollView>
         </View>
@@ -3802,8 +4726,42 @@ function SettingsPageTitle({ icon, title, body }) {
   );
 }
 
+function LegalPage({ icon, title, body, updatedAt, sections }) {
+  return (
+    <View style={styles.settingsPage}>
+      <SettingsPageTitle icon={icon} title={title} body={body} />
+      <View style={styles.legalNoticeCard}>
+        <GlassBackdrop intensity={22} />
+        <Text style={styles.settingLabel}>最終更新</Text>
+        <Text style={styles.settingValue}>{updatedAt}</Text>
+        <Text style={styles.mutedText}>
+          この文面はアプリ内表示用のドラフトです。公開前には必要に応じて専門家の確認を行ってください。
+        </Text>
+      </View>
+      {sections.map((section) => (
+        <View key={section.title} style={styles.legalSectionCard}>
+          <GlassBackdrop intensity={20} />
+          <Text style={styles.legalSectionTitle}>{section.title}</Text>
+          <Text style={styles.legalBody}>{section.body}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function BaseStat({ label, value }) {
+  return (
+    <View style={styles.baseStat}>
+      <Text style={styles.baseStatValue}>{value}</Text>
+      <Text style={styles.baseStatLabel}>{label}</Text>
+    </View>
+  );
+}
+
 function SettingsBase({
   settings,
+  session,
+  authLoading,
   onSelect,
   updateSettings
 }) {
@@ -3913,7 +4871,7 @@ function SettingsBase({
       />
       <ArcSettingRow
         title="書体の大きさ"
-        value="標準"
+        value={{ small: "小", standard: "標準", large: "大" }[settings.fontScale || "standard"]}
         onPress={() => onSelect("language")}
       />
       <ArcSettingRow
@@ -3924,6 +4882,29 @@ function SettingsBase({
         title="ARC について"
         onPress={() => onSelect("terms")}
       />
+      <ArcSettingRow
+        title="プライバシーポリシー"
+        onPress={() => onSelect("privacyPolicy")}
+      />
+
+      <Text style={[styles.arcGroupLabel, styles.arcGroupLabelSpaced]}>アカウント</Text>
+      <ArcSettingRow
+        title="プロフィール"
+        body="名前と、始まりの日"
+        onPress={() => onSelect("profile")}
+      />
+      <ArcSettingRow
+        title="データ同期"
+        body={authLoading ? "確認中" : session ? "接続済み" : "未接続"}
+        onPress={() => onSelect("sync")}
+      />
+      {!!session && (
+        <ArcSettingRow
+          title="ログアウト"
+          body="記録は端末に残ります"
+          onPress={() => onSelect("logout")}
+        />
+      )}
       <View style={styles.settingsWordmark}>
         <Text style={styles.settingsWordmarkText}>A R C</Text>
         <Text style={styles.settingsVersion}>VERSION 1.0 ・ あなたと、夜と</Text>
@@ -4376,6 +5357,26 @@ function isEmailLike(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
 }
 
+// react-native-web の Alert.alert は何もしないため、web では window.confirm /
+// window.alert に振り分ける。actions は Alert.alert と同じ配列形式。
+function confirmDialog(title, body, actions) {
+  if (Platform.OS === "web") {
+    const primary =
+      actions.find((action) => action.style === "destructive") ||
+      actions.find((action) => action.style !== "cancel");
+    if (actions.length <= 1) {
+      window.alert(`${title}\n\n${body}`);
+      primary?.onPress?.();
+      return;
+    }
+    if (window.confirm(`${title}\n\n${body}`)) {
+      primary?.onPress?.();
+    }
+    return;
+  }
+  Alert.alert(title, body, actions);
+}
+
 function getJournalCalendarDays(date = new Date()) {
   const base = new Date(`${getJournalDateKey(date)}T00:00:00`);
   return Array.from({ length: 7 }, (_, index) => {
@@ -4427,7 +5428,7 @@ function daysSince(value) {
   return Math.max(0, Math.floor((current - start) / 86400000));
 }
 
-const styles = StyleSheet.create({
+const baseStyleDefs = ({
   background: {
     flex: 1,
     backgroundColor: "#03050b"
@@ -8898,3 +9899,31 @@ const styles = StyleSheet.create({
     width: "100%"
   }
 });
+
+const FONT_SCALE_VALUES = { small: 0.92, standard: 1, large: 1.12 };
+
+function buildStyles(scale) {
+  if (scale === 1) return StyleSheet.create(baseStyleDefs);
+  const scaled = {};
+  for (const key of Object.keys(baseStyleDefs)) {
+    const def = baseStyleDefs[key];
+    const next = { ...def };
+    if (typeof next.fontSize === "number") next.fontSize = Math.round(next.fontSize * scale);
+    if (typeof next.lineHeight === "number") next.lineHeight = Math.round(next.lineHeight * scale);
+    scaled[key] = next;
+  }
+  return StyleSheet.create(scaled);
+}
+
+// 書体サイズ設定はモジュール変数 styles を差し替えて全体に反映する。
+// 全コンポーネントがレンダー時に styles.x を読む前提なので、React.memo で
+// レンダーを飛ばすコンポーネントを追加するとスタイルが古いままになる点に注意。
+let styles = buildStyles(1);
+let appliedFontScale = 1;
+
+function applyFontScale(mode) {
+  const scale = FONT_SCALE_VALUES[mode] || 1;
+  if (scale === appliedFontScale) return;
+  appliedFontScale = scale;
+  styles = buildStyles(scale);
+}
