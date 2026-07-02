@@ -341,16 +341,33 @@ const diaryNodeStyles = [
 const diaryDateColors = ["rgba(232,200,150,0.88)", "rgba(205,191,168,0.6)", "rgba(205,191,168,0.5)", "rgba(205,191,168,0.4)", "rgba(205,191,168,0.32)"];
 const diaryTextColors = ["rgba(236,230,218,0.94)", "rgba(232,226,214,0.7)", "rgba(232,226,214,0.6)", "rgba(232,226,214,0.5)", "rgba(232,226,214,0.42)"];
 
-const questLitQuestions = [
+// Quests per the ARC Quest Spec v1.0: Nilo proposes them from recurring themes
+// in the diary ("〜ですね" observation + "〜てみますか" invitation), the user
+// keeps the choice. Ongoing quests show only what they explore and how long
+// the user has faced them — no badges, progress bars, or clear states.
+const demoQuestProposals = [
   {
-    date: "JUNE 27",
-    question: "いちばん安心する場所は、どこ？",
-    excerpt: "実家の台所の隅。母が料理していた音がする場所。"
+    id: "proposal-breath",
+    theme: "「呼吸ができた」と感じる時間は、どこから来るのか",
+    observation: "「呼吸ができた」という言葉が、この一ヶ月で何度か出てきましたね。",
+    invitation: "その感じがどこから来ているのか、一緒に辿ってみますか。"
+  }
+];
+
+const demoOngoingQuests = [
+  {
+    id: "quest-mother",
+    theme: "母との関係が、どう変わってきたか",
+    since: "5月26日から",
+    duration: "5週間",
+    sessions: 6
   },
   {
-    date: "JUNE 14",
-    question: "そっと手放したいものは？",
-    excerpt: "完璧じゃない自分を、責めてしまう癖。"
+    id: "quest-release",
+    theme: "完璧じゃない自分を責める癖は、どこから来たのか",
+    since: "6月14日から",
+    duration: "2週間",
+    sessions: 3
   }
 ];
 
@@ -1159,7 +1176,7 @@ function AppContent() {
     },
     {
       id: "quests",
-      node: <QuestScreen quests={quests} completeQuest={completeQuest} onUiSound={playUiSound} active={activeTab === "quests"} journal={journal} onOpenDetail={openEntryDetail} />
+      node: <QuestScreen onUiSound={playUiSound} active={activeTab === "quests"} />
     },
     {
       id: "journal",
@@ -2815,115 +2832,87 @@ function FirstRunCard({ session, needsProfile, authBusy, onGoogleSignIn, onOpenP
   );
 }
 
-function QuestScreen({ quests, completeQuest, onUiSound, active, journal, onOpenDetail }) {
+// Quest tab per the Quest Spec: only Nilo's proposals and ongoing explorations
+// live here. No completion counts, progress bars, or clear states — a quest is
+// a weeks-to-months exploration, not a task.
+function QuestScreen({ onUiSound, active }) {
   const token = useEntrancePlay(active);
-  // Lit questions resolve back to the record they produced, so tapping one
-  // opens its full detail — mirroring the reference's openDetail(o.i).
-  const lookupEntries = journal?.length ? getJournalTimelineEntries(journal) : demoJournalEntries;
-  function openLit(item) {
-    const match = lookupEntries.find((entry) => entry.questText === item.question || entry.title === item.excerpt);
-    onOpenDetail?.(match || {
-      dateLabel: item.date,
-      source: "quest",
-      questText: item.question,
-      title: item.excerpt,
-      dialogue: [
-        { role: "nilo", text: item.question },
-        { role: "user", text: item.excerpt }
-      ],
-      emotions: []
-    });
+  const [proposals, setProposals] = useState(demoQuestProposals);
+  const [ongoing, setOngoing] = useState(demoOngoingQuests);
+
+  function acceptProposal(proposal) {
+    onUiSound?.();
+    setProposals((items) => items.filter((item) => item.id !== proposal.id));
+    setOngoing((items) => [
+      { id: proposal.id, theme: proposal.theme, since: "今日から", duration: "はじまったばかり", sessions: 0 },
+      ...items
+    ]);
   }
-  const sourceQuests = quests.length ? quests : dailyQuestPrompts.map((quest, index) => ({
-    id: `preview-quest-${index}`,
-    source: "daily",
-    completed: false,
-    ...quest
-  }));
-  const visibleQuests = sourceQuests.filter((quest) => !quest.completed);
-  const totalCount = Math.max(dailyQuestPrompts.length, sourceQuests.length || dailyQuestPrompts.length);
-  const doneCount = Math.max(0, sourceQuests.filter((quest) => quest.completed).length);
-  const progressWidth = `${Math.min(100, Math.round((doneCount / totalCount) * 100))}%`;
-  const shownQuests = (visibleQuests.length ? visibleQuests : dailyQuestPrompts).slice(0, 3);
+
+  function declineProposal(proposal) {
+    onUiSound?.();
+    setProposals((items) => items.filter((item) => item.id !== proposal.id));
+  }
 
   return (
     <ScrollView contentContainerStyle={styles.questScrollContent} showsVerticalScrollIndicator={false}>
       <RiseIn index={0} playToken={token} style={styles.questHeader}>
-        <Text style={styles.questScreenTitle}>今日のクエスト</Text>
-        <Text style={styles.questEyebrow}>QUEST ・ 与えられた問いに答える</Text>
-        <Text style={styles.questProgress}>今夜　{doneCount} / {totalCount} 完了</Text>
-        <View style={styles.questHeaderRule}>
-          <View style={[styles.questHeaderRuleFill, { width: progressWidth }]} />
-        </View>
+        <Text style={styles.questScreenTitle}>クエスト</Text>
+        <Text style={styles.questEyebrow}>QUEST ・ 時間をかけて掘り下げる探求</Text>
+        <Text style={styles.questPhilosophy}>日記が点だとすれば、クエストは、{"\n"}その点が集まってできる、一本の線。</Text>
       </RiseIn>
-      <View style={styles.questList}>
-        {shownQuests.map((quest, index) => (
-          <RiseIn key={quest.id || `daily-${index}`} index={index + 1} playToken={token} duration={500}>
-            <QuestCard
-              quest={{ ...dailyQuestPrompts[index % dailyQuestPrompts.length], ...quest }}
-              onComplete={completeQuest}
-              onUiSound={onUiSound}
-              preview={!quests.length}
-            />
-          </RiseIn>
-        ))}
-      </View>
-      <RiseIn index={shownQuests.length + 1} playToken={token} style={styles.litQuestionsHeader}>
-        <Text style={styles.litQuestionsTitle}>灯 し た 問 い</Text>
-        <View style={styles.litQuestionsRule} />
+
+      <RiseIn index={1} playToken={token} style={styles.questGroupHeader}>
+        <Text style={styles.questGroupTitle}>Niloからの提案</Text>
+        <View style={styles.questGroupRule} />
       </RiseIn>
-      <View style={styles.litQuestionsTimeline}>
-        <View pointerEvents="none" style={styles.litQuestionsLine} />
-        {questLitQuestions.map((item, index) => (
-          <RiseIn key={item.question} index={shownQuests.length + 2 + index} playToken={token} duration={500}>
-            <Pressable
-              onPress={() => openLit(item)}
-              style={({ pressed }) => [styles.litQuestionItem, pressed && styles.touchPressedSubtle]}
-            >
-              <View style={styles.litQuestionDot} />
-              <View style={styles.litQuestionMetaRow}>
-                <Text style={styles.litQuestionDate}>{item.date}</Text>
-                <Text style={styles.litQuestionTag}>QUEST</Text>
+      {proposals.length ? (
+        proposals.map((proposal, index) => (
+          <RiseIn key={proposal.id} index={index + 2} playToken={token} duration={500}>
+            <View style={styles.mobileQuestCard}>
+              <LinearGradient
+                pointerEvents="none"
+                colors={["rgba(46,36,26,0.64)", "rgba(22,17,14,0.55)"]}
+                locations={[0, 1]}
+                start={{ x: 0.08, y: 0 }}
+                end={{ x: 0.92, y: 1 }}
+                style={StyleSheet.absoluteFillObject}
+              />
+              <Text style={styles.mobileQuestNilo}>NILO</Text>
+              <Text style={styles.questProposalObservation}>{proposal.observation}</Text>
+              <Text style={styles.questProposalInvitation}>{proposal.invitation}</Text>
+              <View style={styles.mobileQuestActions}>
+                <Pressable onPress={() => acceptProposal(proposal)} style={({ pressed }) => [styles.mobileQuestAction, styles.mobileQuestActionPrimary, pressed && styles.touchPressedTight]}>
+                  <Text style={styles.mobileQuestActionPrimaryText}>一緒に見てみる</Text>
+                </Pressable>
+                <Pressable onPress={() => declineProposal(proposal)} style={({ pressed }) => [styles.mobileQuestAction, styles.mobileQuestActionSecondary, pressed && styles.touchPressedTight]}>
+                  <Text style={styles.mobileQuestActionSecondaryText}>今は、そのままに</Text>
+                </Pressable>
               </View>
-              <Text style={styles.litQuestionText}>{item.question}</Text>
-              <Text numberOfLines={1} style={styles.litQuestionExcerpt}>{item.excerpt}</Text>
-            </Pressable>
+            </View>
           </RiseIn>
-        ))}
-      </View>
+        ))
+      ) : (
+        <RiseIn index={2} playToken={token}>
+          <Text style={styles.questQuietNote}>いまは、静かなときです。{"\n"}日々の記録の中に繰り返し現れるものを見つけたら、{"\n"}Niloがここにそっと差し出します。</Text>
+        </RiseIn>
+      )}
+
+      <RiseIn index={proposals.length + 2} playToken={token} style={[styles.questGroupHeader, styles.questGroupHeaderSpaced]}>
+        <Text style={styles.questGroupTitle}>進行中の探求</Text>
+        <View style={styles.questGroupRule} />
+      </RiseIn>
+      {ongoing.map((quest, index) => (
+        <RiseIn key={quest.id} index={proposals.length + 3 + index} playToken={token} duration={500}>
+          <View style={styles.questOngoingRow}>
+            <Text style={styles.questOngoingTheme}>{quest.theme}</Text>
+            <Text style={styles.questOngoingMeta}>
+              {quest.since}　・　{quest.duration}{quest.sessions ? `　・　重ねた問い ${quest.sessions}回` : ""}
+            </Text>
+          </View>
+        </RiseIn>
+      ))}
     </ScrollView>
-  );
-}
-
-function QuestCard({ quest, onComplete, onUiSound, preview }) {
-  function handleComplete() {
-    if (preview) return;
-    onUiSound?.();
-    onComplete(quest.id);
-  }
-
-  return (
-    <View style={styles.mobileQuestCard}>
-      <LinearGradient
-        pointerEvents="none"
-        colors={["rgba(46,36,26,0.64)", "rgba(22,17,14,0.55)"]}
-        locations={[0, 1]}
-        start={{ x: 0.08, y: 0 }}
-        end={{ x: 0.92, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-      />
-      <Text style={styles.mobileQuestCategory}>{quest.category || getQuestCategory(quest)}</Text>
-      {!!quest.nilo && <Text style={styles.mobileQuestNilo}>NILO</Text>}
-      <Text style={styles.mobileQuestTitle}>{quest.title}</Text>
-      <View style={styles.mobileQuestActions}>
-        <Pressable onPress={handleComplete} style={({ pressed }) => [styles.mobileQuestAction, styles.mobileQuestActionPrimary, pressed && !preview && styles.touchPressedTight]}>
-          <Text style={styles.mobileQuestActionPrimaryText}>完了にする</Text>
-        </Pressable>
-        <Pressable onPress={onUiSound} style={({ pressed }) => [styles.mobileQuestAction, styles.mobileQuestActionSecondary, pressed && styles.touchPressedTight]}>
-          <Text style={styles.mobileQuestActionSecondaryText}>Niloに記録</Text>
-        </Pressable>
-      </View>
-    </View>
   );
 }
 
@@ -4070,7 +4059,6 @@ function SettingsModal({
             <Text style={styles.modalSub}>SETTINGS</Text>
             <Text style={styles.modalTitle}>設定</Text>
           </View>
-          <View style={styles.modalHeaderSpacer} />
         </View>
 
         <View style={styles.settingsBody}>
@@ -4130,7 +4118,7 @@ function SettingsModal({
                     secureTextEntry
                     autoCapitalize="none"
                     placeholder="パスフレーズを設定するとAES-256で保護"
-                    placeholderTextColor="#777"
+                    placeholderTextColor="rgba(190,180,162,0.38)"
                     style={styles.settingInput}
                   />
                   <Pressable onPress={runExport} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
@@ -4184,7 +4172,7 @@ function SettingsModal({
                     autoCapitalize="none"
                     keyboardType="email-address"
                     placeholder="example@mail.com"
-                    placeholderTextColor="#777"
+                    placeholderTextColor="rgba(190,180,162,0.38)"
                     style={styles.settingInput}
                   />
                   <Pressable onPress={addHeir} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
@@ -4222,9 +4210,9 @@ function SettingsModal({
                   <GlassBackdrop intensity={24} />
                   <Text style={styles.settingLabel}>予約公開</Text>
                   <Text style={styles.mutedText}>いつでも取り消せます。</Text>
-                  <TextInput value={disclosureTarget} onChangeText={setDisclosureTarget} placeholder="公開対象（例：2024年の章 / 旅行タグ）" placeholderTextColor="#777" style={styles.settingInput} />
-                  <TextInput value={disclosureDate} onChangeText={setDisclosureDate} placeholder="公開日（例：2030-05-01）" placeholderTextColor="#777" style={styles.settingInput} />
-                  <TextInput value={disclosureRecipient} onChangeText={setDisclosureRecipient} autoCapitalize="none" keyboardType="email-address" placeholder="受取人のメール" placeholderTextColor="#777" style={styles.settingInput} />
+                  <TextInput value={disclosureTarget} onChangeText={setDisclosureTarget} placeholder="公開対象（例：2024年の章 / 旅行タグ）" placeholderTextColor="rgba(190,180,162,0.38)" style={styles.settingInput} />
+                  <TextInput value={disclosureDate} onChangeText={setDisclosureDate} placeholder="公開日（例：2030-05-01）" placeholderTextColor="rgba(190,180,162,0.38)" style={styles.settingInput} />
+                  <TextInput value={disclosureRecipient} onChangeText={setDisclosureRecipient} autoCapitalize="none" keyboardType="email-address" placeholder="受取人のメール" placeholderTextColor="rgba(190,180,162,0.38)" style={styles.settingInput} />
                   <Pressable onPress={addDisclosure} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
                     <Text style={styles.secondaryButtonText}>予約公開を追加</Text>
                   </Pressable>
@@ -4293,7 +4281,7 @@ function SettingsModal({
                     autoCapitalize="none"
                     keyboardType="email-address"
                     placeholder="trusted@mail.com"
-                    placeholderTextColor="#777"
+                    placeholderTextColor="rgba(190,180,162,0.38)"
                     style={styles.settingInput}
                   />
                   <Pressable onPress={addEmergencyContact} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
@@ -4458,7 +4446,7 @@ function SettingsModal({
                       setNotificationDraft(null);
                     }}
                     placeholder="22:00"
-                    placeholderTextColor="#777"
+                    placeholderTextColor="rgba(190,180,162,0.38)"
                     style={styles.settingInput}
                   />
                   <Text style={styles.mutedText}>時刻はこの端末に保存されます。実際の通知はこれからの実装で灯ります。</Text>
@@ -4503,7 +4491,7 @@ function SettingsModal({
                       setWindowStartDraft(null);
                     }}
                     placeholder="20:00"
-                    placeholderTextColor="#777"
+                    placeholderTextColor="rgba(190,180,162,0.38)"
                     style={styles.settingInput}
                   />
                   <TextInput
@@ -4514,7 +4502,7 @@ function SettingsModal({
                       setWindowEndDraft(null);
                     }}
                     placeholder="03:00"
-                    placeholderTextColor="#777"
+                    placeholderTextColor="rgba(190,180,162,0.38)"
                     style={styles.settingInput}
                   />
                 </View>
@@ -4605,8 +4593,8 @@ function SettingsModal({
                 <View style={styles.settingsCard}>
                   <GlassBackdrop intensity={24} />
                   <Text style={styles.settingLabel}>基本情報</Text>
-                  <TextInput value={name} onChangeText={setName} placeholder="名前" placeholderTextColor="#777" style={styles.settingInput} />
-                  <TextInput value={birthdate} onChangeText={setBirthdate} placeholder="YYYY-MM-DD" placeholderTextColor="#777" style={styles.settingInput} />
+                  <TextInput value={name} onChangeText={setName} placeholder="名前" placeholderTextColor="rgba(190,180,162,0.38)" style={styles.settingInput} />
+                  <TextInput value={birthdate} onChangeText={setBirthdate} placeholder="YYYY-MM-DD" placeholderTextColor="rgba(190,180,162,0.38)" style={styles.settingInput} />
                   <Text style={styles.mutedText}>生年月日または開始日から、Journey Dayを表示します。</Text>
                   <View style={styles.profileSaveRow}>
                     <Pressable
@@ -4907,7 +4895,7 @@ function SettingsBase({
       )}
       <View style={styles.settingsWordmark}>
         <Text style={styles.settingsWordmarkText}>A R C</Text>
-        <Text style={styles.settingsVersion}>VERSION 1.0 ・ あなたと、夜と</Text>
+        <Text style={styles.settingsVersion}>VERSION 1.0 ・ 過ぎゆく日々に、消えない意味を。</Text>
       </View>
     </View>
   );
@@ -6122,36 +6110,40 @@ const baseStyleDefs = ({
   },
   primaryButton: {
     alignItems: "center",
-    backgroundColor: "rgba(236,193,112,0.84)",
+    backgroundColor: "rgba(236,190,128,0.9)",
     borderRadius: 999,
     justifyContent: "center",
     minHeight: 40,
-    paddingHorizontal: 18
+    paddingHorizontal: 18,
+    shadowColor: "#d9a86c",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.22,
+    shadowRadius: 14
   },
   disabledButton: {
     opacity: 0.46
   },
   primaryButtonText: {
-    color: "#07080b",
-    fontFamily: fontUiMedium,
+    color: "#2a1d10",
+    fontFamily: fontSerifJa,
     fontSize: 14,
-    fontWeight: "700"
+    letterSpacing: 0.7
   },
   secondaryButton: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(217,168,108,0.07)",
+    borderColor: "rgba(217,168,108,0.24)",
     borderRadius: 999,
     borderWidth: 1,
     justifyContent: "center",
-    minHeight: 38,
-    paddingHorizontal: 17
+    minHeight: 40,
+    paddingHorizontal: 18
   },
   secondaryButtonText: {
-    color: "rgba(255,255,255,0.78)",
-    fontFamily: fontUiMedium,
+    color: "rgba(228,184,124,0.9)",
+    fontFamily: fontSerifJa,
     fontSize: 14,
-    fontWeight: "700"
+    letterSpacing: 0.7
   },
   panel: {
     backgroundColor: "rgba(255,254,244,0.075)",
@@ -6571,10 +6563,11 @@ const baseStyleDefs = ({
     letterSpacing: 1
   },
   mutedText: {
-    color: "#c2bbb0",
-    fontFamily: fontUi,
+    color: "rgba(222,206,180,0.58)",
+    fontFamily: fontSerifJa,
     fontSize: 14,
-    lineHeight: 21
+    letterSpacing: 0.35,
+    lineHeight: 24
   },
   pageTitle: {
     gap: 7,
@@ -7264,7 +7257,8 @@ const baseStyleDefs = ({
     paddingBottom: 54
   },
   settingsPage: {
-    gap: 14
+    gap: 18,
+    paddingHorizontal: 42
   },
   basePage: {
     gap: 22
@@ -7425,23 +7419,24 @@ const baseStyleDefs = ({
   },
   baseStat: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.045)",
-    borderColor: "rgba(255,255,255,0.105)",
+    backgroundColor: "rgba(46,36,26,0.34)",
+    borderColor: "rgba(217,168,108,0.14)",
     borderRadius: 12,
     borderWidth: 1,
     flex: 1,
     paddingVertical: 10
   },
   baseStatValue: {
-    color: "#fbfbfb",
-    fontFamily: fontUiMedium,
+    color: "#F3E6D0",
+    fontFamily: fontSerifEnMedium,
     fontSize: 18,
-    fontWeight: "700"
+    letterSpacing: 0.8
   },
   baseStatLabel: {
-    color: "rgba(255,255,255,0.44)",
-    fontFamily: fontUi,
+    color: "rgba(190,180,162,0.46)",
+    fontFamily: fontSerifJa,
     fontSize: 10,
+    letterSpacing: 0.8,
     marginTop: 2
   },
   baseSection: {
@@ -7502,32 +7497,32 @@ const baseStyleDefs = ({
     width: 24
   },
   settingsIconLine: {
-    backgroundColor: "rgba(255,255,255,0.52)",
+    backgroundColor: "rgba(217,168,108,0.46)",
     borderRadius: 999,
     position: "absolute"
   },
   settingsIconLineActive: {
-    backgroundColor: "rgba(255,255,255,0.88)"
+    backgroundColor: "rgba(232,200,150,0.9)"
   },
   settingsIconLocked: {
     opacity: 0.48
   },
   settingsIconDot: {
-    backgroundColor: "rgba(255,255,255,0.52)",
+    backgroundColor: "rgba(217,168,108,0.46)",
     borderRadius: 999,
     position: "absolute"
   },
   settingsIconDotActive: {
-    backgroundColor: "rgba(255,255,255,0.88)"
+    backgroundColor: "rgba(232,200,150,0.9)"
   },
   settingsIconBox: {
-    borderColor: "rgba(255,255,255,0.52)",
+    borderColor: "rgba(217,168,108,0.46)",
     borderRadius: 5,
     borderWidth: 1.5,
     position: "absolute"
   },
   settingsIconBoxActive: {
-    borderColor: "rgba(255,255,255,0.88)"
+    borderColor: "rgba(232,200,150,0.9)"
   },
   settingsIconRing: {
     borderRadius: 999,
@@ -7793,25 +7788,29 @@ const baseStyleDefs = ({
     fontWeight: "700"
   },
   baseChevron: {
-    color: "rgba(255,255,255,0.3)",
+    color: "rgba(238,224,202,0.24)",
     fontSize: 26,
     lineHeight: 28
   },
   backToBase: {
     alignSelf: "flex-start",
-    paddingVertical: 4
+    borderColor: "rgba(217,168,108,0.18)",
+    borderRadius: 999,
+    borderWidth: 1,
+    marginLeft: -2,
+    paddingHorizontal: 13,
+    paddingVertical: 8
   },
   backToBaseText: {
-    color: "rgba(255,255,255,0.72)",
-    fontFamily: fontUiMedium,
-    fontSize: 14,
-    fontWeight: "700"
+    color: "rgba(221,180,111,0.82)",
+    fontFamily: fontSerifJa,
+    fontSize: 12,
+    letterSpacing: 0.8
   },
   settingsPageTitle: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 6
+    gap: 9,
+    marginBottom: 10,
+    paddingBottom: 4
   },
   settingsPageIcon: {
     color: "rgba(240,189,118,0.72)",
@@ -7821,30 +7820,37 @@ const baseStyleDefs = ({
     width: 34
   },
   settingsPageCopy: {
-    flex: 1,
-    gap: 3
+    gap: 5
   },
   settingsPageHeading: {
-    color: "#f6efe4",
-    fontFamily: fontUiMedium,
-    fontSize: 17,
-    fontWeight: "700"
+    color: "#F3E6D0",
+    fontFamily: fontSerifJa,
+    fontSize: 24,
+    letterSpacing: 1.2,
+    lineHeight: 34
   },
   settingsCard: {
-    backgroundColor: "rgba(255,255,255,0.048)",
-    borderColor: "rgba(255,255,255,0.14)",
-    borderRadius: 20,
+    backgroundColor: "rgba(46,36,26,0.42)",
+    borderColor: "rgba(217,168,108,0.16)",
+    borderRadius: 14,
     borderWidth: 1,
-    gap: 7,
-    padding: 14
+    gap: 12,
+    overflow: "hidden",
+    paddingHorizontal: 18,
+    paddingVertical: 17,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.28,
+    shadowRadius: 30
   },
   profileEditCard: {
-    backgroundColor: "rgba(255,255,255,0.052)",
-    borderColor: "rgba(255,255,255,0.15)",
-    borderRadius: 22,
+    backgroundColor: "rgba(46,36,26,0.42)",
+    borderColor: "rgba(217,168,108,0.16)",
+    borderRadius: 14,
     borderWidth: 1,
     gap: 14,
-    padding: 16
+    overflow: "hidden",
+    padding: 18
   },
   profileEditTop: {
     alignItems: "center",
@@ -7853,8 +7859,8 @@ const baseStyleDefs = ({
   },
   profileEditAvatar: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(24,18,13,0.64)",
+    borderColor: "rgba(217,168,108,0.2)",
     borderRadius: 999,
     borderWidth: 1,
     height: 78,
@@ -7863,20 +7869,21 @@ const baseStyleDefs = ({
     width: 78
   },
   profileEditAvatarText: {
-    color: "#fbfbfb",
-    fontFamily: fontUiMedium,
+    color: "#F3E6D0",
+    fontFamily: fontSerifEnMedium,
     fontSize: 28,
-    fontWeight: "700"
+    letterSpacing: 0.8
   },
   profileEditCopy: {
     flex: 1,
     gap: 4
   },
   profileEditName: {
-    color: "#f8f8f8",
-    fontFamily: fontUiMedium,
+    color: "#F3E6D0",
+    fontFamily: fontSerifJa,
     fontSize: 24,
-    fontWeight: "700"
+    letterSpacing: 0.8,
+    lineHeight: 33
   },
   profileDataGrid: {
     flexDirection: "row",
@@ -7884,15 +7891,15 @@ const baseStyleDefs = ({
   },
   profileSaveRow: {
     alignItems: "flex-end",
-    borderColor: "rgba(255,255,255,0.075)",
+    borderColor: "rgba(232,226,214,0.07)",
     borderTopWidth: 1,
     marginTop: 4,
     paddingTop: 12
   },
   profileSaveButton: {
     alignItems: "center",
-    backgroundColor: "rgba(236,193,112,0.14)",
-    borderColor: "rgba(236,193,112,0.28)",
+    backgroundColor: "rgba(217,168,108,0.08)",
+    borderColor: "rgba(217,168,108,0.28)",
     borderRadius: 999,
     borderWidth: 1,
     justifyContent: "center",
@@ -7900,36 +7907,37 @@ const baseStyleDefs = ({
     paddingHorizontal: 16
   },
   profileSaveButtonText: {
-    color: "#f8e4b8",
-    fontFamily: fontUiMedium,
+    color: "rgba(228,184,124,0.92)",
+    fontFamily: fontSerifJa,
     fontSize: 13,
-    fontWeight: "800"
+    letterSpacing: 0.7
   },
   authCard: {
-    backgroundColor: "rgba(255,255,255,0.048)",
-    borderColor: "rgba(255,255,255,0.14)",
-    borderRadius: 20,
+    backgroundColor: "rgba(46,36,26,0.42)",
+    borderColor: "rgba(217,168,108,0.16)",
+    borderRadius: 14,
     borderWidth: 1,
     gap: 12,
-    padding: 14
+    overflow: "hidden",
+    padding: 18
   },
   authCopy: {
     gap: 5
   },
   syncStatusPill: {
     alignSelf: "flex-start",
-    backgroundColor: "rgba(236,193,112,0.14)",
-    borderColor: "rgba(236,193,112,0.28)",
+    backgroundColor: "rgba(217,168,108,0.1)",
+    borderColor: "rgba(217,168,108,0.28)",
     borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 7
   },
   syncStatusText: {
-    color: "#f8e4b8",
-    fontFamily: fontUiMedium,
+    color: "rgba(228,184,124,0.92)",
+    fontFamily: fontSerifJa,
     fontSize: 12,
-    fontWeight: "800"
+    letterSpacing: 0.8
   },
   syncSummaryRow: {
     flexDirection: "row",
@@ -7937,26 +7945,29 @@ const baseStyleDefs = ({
     marginVertical: 6
   },
   dangerCard: {
-    backgroundColor: "rgba(255,255,255,0.042)",
-    borderColor: "rgba(255,91,91,0.22)",
-    borderRadius: 20,
+    backgroundColor: "rgba(58,32,26,0.36)",
+    borderColor: "rgba(255,121,94,0.22)",
+    borderRadius: 14,
     borderWidth: 1,
     gap: 12,
-    padding: 16
+    overflow: "hidden",
+    padding: 18
   },
   dangerButton: {
     alignItems: "center",
-    backgroundColor: "rgba(255,74,74,0.86)",
+    backgroundColor: "rgba(166,70,54,0.82)",
+    borderColor: "rgba(255,151,118,0.24)",
     borderRadius: 999,
+    borderWidth: 1,
     justifyContent: "center",
     minHeight: 42,
     paddingHorizontal: 18
   },
   dangerButtonText: {
-    color: "#fff7f7",
-    fontFamily: fontUiMedium,
+    color: "#fff2ea",
+    fontFamily: fontSerifJa,
     fontSize: 14,
-    fontWeight: "800"
+    letterSpacing: 0.7
   },
   errorText: {
     color: "#ffb4a7",
@@ -7983,21 +7994,21 @@ const baseStyleDefs = ({
     lineHeight: 16
   },
   settingLabel: {
-    color: "rgba(255,255,255,0.43)",
-    fontFamily: fontUiMedium,
+    color: "rgba(217,168,108,0.58)",
+    fontFamily: fontSerifJa,
     fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.5
+    letterSpacing: 2.2
   },
   settingValue: {
-    color: "#f7f7f7",
-    fontFamily: fontUiMedium,
+    color: "rgba(236,230,218,0.92)",
+    fontFamily: fontSerifJa,
     fontSize: 16,
-    fontWeight: "700"
+    letterSpacing: 0.7,
+    lineHeight: 24
   },
   soundStatusRow: {
     alignItems: "center",
-    borderColor: "rgba(255,255,255,0.075)",
+    borderColor: "rgba(232,226,214,0.07)",
     borderTopWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
@@ -8005,10 +8016,10 @@ const baseStyleDefs = ({
     paddingTop: 10
   },
   soundStatusText: {
-    color: "rgba(255,255,255,0.58)",
-    fontFamily: fontUiMedium,
+    color: "rgba(190,180,162,0.58)",
+    fontFamily: fontSerifJa,
     fontSize: 12,
-    fontWeight: "700"
+    letterSpacing: 0.7
   },
   soundVolumeRow: {
     alignItems: "center",
@@ -8018,8 +8029,8 @@ const baseStyleDefs = ({
   },
   soundStepButton: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.045)",
-    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(24,18,13,0.45)",
+    borderColor: "rgba(217,168,108,0.18)",
     borderRadius: 999,
     borderWidth: 1,
     height: 34,
@@ -8027,105 +8038,119 @@ const baseStyleDefs = ({
     width: 34
   },
   soundStepText: {
-    color: "rgba(255,255,255,0.76)",
-    fontFamily: fontUiMedium,
+    color: "rgba(232,200,150,0.78)",
+    fontFamily: fontSerifJa,
     fontSize: 19,
-    fontWeight: "800",
     lineHeight: 21
   },
   soundVolumeTrack: {
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(232,226,214,0.08)",
     borderRadius: 999,
     flex: 1,
     height: 7,
     overflow: "hidden"
   },
   soundVolumeFill: {
-    backgroundColor: "rgba(236,193,112,0.72)",
+    backgroundColor: "rgba(232,189,120,0.82)",
     borderRadius: 999,
-    height: "100%"
+    height: "100%",
+    shadowColor: "#d9a86c",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45,
+    shadowRadius: 8
   },
   soundTrackRow: {
     alignItems: "center",
-    borderColor: "rgba(255,255,255,0.08)",
-    borderRadius: 12,
+    borderBottomColor: "rgba(232,226,214,0.07)",
+    borderBottomWidth: 1,
     borderWidth: 1,
+    borderColor: "transparent",
     flexDirection: "row",
     justifyContent: "space-between",
-    padding: 12
+    paddingVertical: 13
   },
   soundTrackRowActive: {
-    backgroundColor: "rgba(236,193,112,0.11)",
-    borderColor: "rgba(236,193,112,0.28)"
+    backgroundColor: "rgba(217,168,108,0.07)",
+    borderColor: "rgba(217,168,108,0.16)",
+    borderRadius: 10,
+    paddingHorizontal: 12
   },
   soundTrackMark: {
-    color: "rgba(236,193,112,0.86)",
-    fontFamily: fontUiMedium,
+    color: "rgba(232,200,150,0.86)",
+    fontFamily: fontSerifEnMedium,
     fontSize: 11,
-    fontWeight: "800"
+    letterSpacing: 1.4
   },
   legalNoticeCard: {
-    backgroundColor: "rgba(255,255,255,0.045)",
-    borderColor: "rgba(255,255,255,0.115)",
-    borderRadius: 20,
-    borderWidth: 1,
-    gap: 7,
-    padding: 14
-  },
-  legalSectionCard: {
-    backgroundColor: "rgba(255,255,255,0.038)",
-    borderColor: "rgba(255,255,255,0.095)",
-    borderRadius: 20,
+    backgroundColor: "rgba(46,36,26,0.38)",
+    borderColor: "rgba(217,168,108,0.14)",
+    borderRadius: 14,
     borderWidth: 1,
     gap: 8,
-    padding: 14
+    overflow: "hidden",
+    padding: 18
+  },
+  legalSectionCard: {
+    backgroundColor: "rgba(46,36,26,0.3)",
+    borderColor: "rgba(232,226,214,0.08)",
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 10,
+    overflow: "hidden",
+    padding: 18
   },
   legalSectionTitle: {
-    color: "#f7f7f7",
-    fontFamily: fontUiMedium,
+    color: "#F3E6D0",
+    fontFamily: fontSerifJa,
     fontSize: 15,
-    fontWeight: "800"
+    letterSpacing: 0.7,
+    lineHeight: 23
   },
   legalBody: {
-    color: "rgba(255,255,255,0.62)",
-    fontFamily: fontUi,
+    color: "rgba(222,206,180,0.64)",
+    fontFamily: fontSerifJa,
     fontSize: 13,
-    lineHeight: 21
+    letterSpacing: 0.4,
+    lineHeight: 24
   },
   settingInput: {
-    backgroundColor: "rgba(255,255,255,0.044)",
-    borderColor: "rgba(255,255,255,0.12)",
-    borderRadius: 16,
+    backgroundColor: "rgba(20,14,10,0.56)",
+    borderColor: "rgba(217,168,108,0.14)",
+    borderRadius: 12,
     borderWidth: 1,
-    color: "#f7f7f7",
-    fontFamily: fontUi,
-    fontSize: 16,
+    color: "#F3E6D0",
+    fontFamily: fontSerifJa,
+    fontSize: 15,
+    letterSpacing: 0.5,
+    lineHeight: 22,
     minHeight: 46,
     paddingHorizontal: 14
   },
   ownershipStatement: {
-    color: "#efd49a",
-    fontFamily: fontUiMedium,
-    fontSize: 16,
+    color: "#F3E6D0",
+    fontFamily: fontSerifJa,
+    fontSize: 18,
+    letterSpacing: 0.8,
+    lineHeight: 28,
     marginBottom: 2
   },
   recoveryKeyText: {
-    backgroundColor: "rgba(2,4,11,0.5)",
-    borderColor: "rgba(234,204,145,0.34)",
+    backgroundColor: "rgba(20,14,10,0.72)",
+    borderColor: "rgba(217,168,108,0.24)",
     borderRadius: 12,
     borderWidth: 1,
-    color: "#efd49a",
-    fontFamily: fontUi,
+    color: "rgba(232,200,150,0.92)",
+    fontFamily: fontSerifJa,
     fontSize: 15,
-    letterSpacing: 0.5,
-    lineHeight: 26,
+    letterSpacing: 0.7,
+    lineHeight: 28,
     padding: 14
   },
   entryRow: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.03)",
-    borderColor: "rgba(255,255,255,0.1)",
-    borderRadius: 12,
+    backgroundColor: "rgba(20,14,10,0.36)",
+    borderColor: "rgba(232,226,214,0.08)",
+    borderRadius: 10,
     borderWidth: 1,
     flexDirection: "row",
     gap: 10,
@@ -8134,14 +8159,15 @@ const baseStyleDefs = ({
     paddingVertical: 10
   },
   entryRowText: {
-    color: "#e8e8e8",
+    color: "rgba(232,226,214,0.78)",
     flex: 1,
-    fontFamily: fontUi,
-    fontSize: 14
+    fontFamily: fontSerifJa,
+    fontSize: 14,
+    lineHeight: 22
   },
   entryRemove: {
     alignItems: "center",
-    borderColor: "rgba(255,255,255,0.18)",
+    borderColor: "rgba(217,168,108,0.22)",
     borderRadius: 999,
     borderWidth: 1,
     height: 28,
@@ -8149,8 +8175,8 @@ const baseStyleDefs = ({
     width: 28
   },
   entryRemoveText: {
-    color: "#c2bbb0",
-    fontFamily: fontUi,
+    color: "rgba(225,190,140,0.72)",
+    fontFamily: fontSerifJa,
     fontSize: 16,
     lineHeight: 18
   },
@@ -8166,8 +8192,8 @@ const baseStyleDefs = ({
   },
   togglePill: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.045)",
-    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(20,14,10,0.56)",
+    borderColor: "rgba(217,168,108,0.16)",
     borderRadius: 999,
     borderWidth: 1,
     minWidth: 58,
@@ -8175,21 +8201,21 @@ const baseStyleDefs = ({
     paddingVertical: 8
   },
   togglePillOn: {
-    backgroundColor: "rgba(236,193,112,0.18)",
-    borderColor: "rgba(236,193,112,0.34)",
-    shadowColor: "#ecc170",
-    shadowOffset: { width: -4, height: -6 },
-    shadowOpacity: 0.12,
+    backgroundColor: "rgba(221,180,111,0.24)",
+    borderColor: "rgba(232,200,150,0.4)",
+    shadowColor: "#d9a86c",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.26,
     shadowRadius: 14
   },
   toggleText: {
-    color: "rgba(255,255,255,0.54)",
-    fontFamily: fontUiMedium,
+    color: "rgba(190,180,162,0.58)",
+    fontFamily: fontSerifEnMedium,
     fontSize: 12,
-    fontWeight: "800"
+    letterSpacing: 1.2
   },
   toggleTextOn: {
-    color: "#f8e4b8"
+    color: "#F3E6D0"
   },
   segmentedRow: {
     flexDirection: "row",
@@ -8197,29 +8223,29 @@ const baseStyleDefs = ({
     gap: 8
   },
   segmentButton: {
-    backgroundColor: "rgba(255,255,255,0.045)",
-    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(20,14,10,0.5)",
+    borderColor: "rgba(217,168,108,0.16)",
     borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 10
   },
   segmentButtonActive: {
-    backgroundColor: "rgba(236,193,112,0.16)",
-    borderColor: "rgba(236,193,112,0.32)",
-    shadowColor: "#ecc170",
-    shadowOffset: { width: -4, height: -6 },
-    shadowOpacity: 0.12,
+    backgroundColor: "rgba(221,180,111,0.24)",
+    borderColor: "rgba(232,200,150,0.42)",
+    shadowColor: "#d9a86c",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.24,
     shadowRadius: 14
   },
   segmentText: {
-    color: "rgba(255,255,255,0.54)",
-    fontFamily: fontUiMedium,
+    color: "rgba(190,180,162,0.58)",
+    fontFamily: fontSerifJa,
     fontSize: 13,
-    fontWeight: "700"
+    letterSpacing: 0.7
   },
   segmentTextActive: {
-    color: "#f8e4b8"
+    color: "#F3E6D0"
   },
 
   background: {
@@ -8601,33 +8627,78 @@ const baseStyleDefs = ({
     lineHeight: 12,
     marginTop: 7
   },
-  questProgress: {
-    color: "rgba(190,180,162,0.6)",
+  questPhilosophy: {
+    color: "rgba(190,180,162,0.5)",
+    fontFamily: fontSerifJa,
+    fontSize: 12,
+    letterSpacing: 0.8,
+    lineHeight: 21,
+    marginTop: 14
+  },
+  questGroupHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 14,
+    marginBottom: 16
+  },
+  questGroupHeaderSpaced: {
+    marginTop: 34
+  },
+  questGroupTitle: {
+    color: "rgba(190,180,162,0.45)",
     fontFamily: fontSerifJa,
     fontSize: 11,
-    letterSpacing: 0.7,
-    lineHeight: 16,
-    marginTop: 4
+    letterSpacing: 3.3
   },
-  questHeaderRule: {
-    backgroundColor: "rgba(217,168,108,0.14)",
-    borderRadius: 2,
-    height: 2,
-    marginTop: 9,
-    overflow: "hidden",
-    width: "100%"
+  questGroupRule: {
+    backgroundColor: "rgba(217,168,108,0.22)",
+    flex: 1,
+    height: 1
   },
-  questHeaderRuleFill: {
-    backgroundColor: "rgba(242,200,142,0.95)",
-    borderRadius: 2,
-    height: "100%",
-    shadowColor: "#d9a86c",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8
+  questProposalObservation: {
+    color: "#E8E2D6",
+    fontFamily: fontSerifJa,
+    fontSize: 17,
+    letterSpacing: 0.5,
+    lineHeight: 29,
+    marginTop: 4,
+    paddingRight: 52
   },
-  questList: {
-    gap: 0
+  questProposalInvitation: {
+    color: "rgba(228,196,142,0.85)",
+    fontFamily: fontSerifJa,
+    fontSize: 14,
+    letterSpacing: 0.4,
+    lineHeight: 24,
+    marginBottom: 20,
+    marginTop: 10
+  },
+  questQuietNote: {
+    color: "rgba(190,180,162,0.45)",
+    fontFamily: fontSerifJa,
+    fontSize: 12,
+    letterSpacing: 0.6,
+    lineHeight: 23,
+    paddingVertical: 8
+  },
+  questOngoingRow: {
+    borderBottomColor: "rgba(232,226,214,0.07)",
+    borderBottomWidth: 1,
+    paddingVertical: 17
+  },
+  questOngoingTheme: {
+    color: "rgba(232,226,214,0.9)",
+    fontFamily: fontSerifJa,
+    fontSize: 16,
+    letterSpacing: 0.4,
+    lineHeight: 27
+  },
+  questOngoingMeta: {
+    color: "rgba(205,176,134,0.55)",
+    fontFamily: fontSerifJa,
+    fontSize: 11,
+    letterSpacing: 0.6,
+    marginTop: 7
   },
   mobileQuestCard: {
     backgroundColor: "rgba(46,36,26,0.54)",
@@ -8737,83 +8808,6 @@ const baseStyleDefs = ({
     color: "rgba(225,218,205,0.78)",
     fontFamily: fontSerifJa,
     fontSize: 13
-  },
-  litQuestionsHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 14,
-    marginTop: 14
-  },
-  litQuestionsTitle: {
-    color: "rgba(190,180,162,0.45)",
-    fontFamily: fontSerifJa,
-    fontSize: 11,
-    letterSpacing: 3.3
-  },
-  litQuestionsRule: {
-    backgroundColor: "rgba(217,168,108,0.22)",
-    flex: 1,
-    height: 1
-  },
-  litQuestionsTimeline: {
-    marginTop: 16,
-    paddingLeft: 22,
-    position: "relative"
-  },
-  litQuestionsLine: {
-    backgroundColor: "rgba(217,168,108,0.24)",
-    bottom: 8,
-    left: 3,
-    position: "absolute",
-    top: 8,
-    width: 1
-  },
-  litQuestionItem: {
-    paddingVertical: 13,
-    position: "relative"
-  },
-  litQuestionDot: {
-    backgroundColor: "rgba(232,196,138,0.9)",
-    borderRadius: 999,
-    height: 7,
-    left: -22,
-    position: "absolute",
-    shadowColor: "#d9a86c",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 9,
-    top: 19,
-    width: 7
-  },
-  litQuestionMetaRow: {
-    alignItems: "baseline",
-    flexDirection: "row",
-    gap: 10
-  },
-  litQuestionDate: {
-    color: "rgba(205,176,134,0.7)",
-    fontFamily: fontSerifEnMedium,
-    fontSize: 10,
-    letterSpacing: 1.4
-  },
-  litQuestionTag: {
-    color: "rgba(190,180,162,0.4)",
-    fontFamily: fontSerifEnMedium,
-    fontSize: 9,
-    letterSpacing: 2
-  },
-  litQuestionText: {
-    color: "rgba(228,222,210,0.82)",
-    fontFamily: fontSerifJa,
-    fontSize: 15,
-    letterSpacing: 0.3,
-    marginTop: 6
-  },
-  litQuestionExcerpt: {
-    color: "rgba(190,180,162,0.5)",
-    fontFamily: fontSerifJa,
-    fontSize: 12,
-    marginTop: 5
   },
   journalScrollContent: {
     paddingBottom: 118,
@@ -9728,7 +9722,7 @@ const baseStyleDefs = ({
     outlineStyle: "none",
     position: "absolute",
     left: 22,
-    top: 46,
+    top: 54,
     width: 38
   },
   modalBackText: {
@@ -9754,14 +9748,11 @@ const baseStyleDefs = ({
     fontSize: 11,
     letterSpacing: 3.7
   },
-  modalHeaderSpacer: {
-    width: 38
-  },
   settingSection: {
-    gap: 20,
+    gap: 24,
     paddingHorizontal: 0,
-    paddingTop: 18,
-    paddingBottom: 54
+    paddingTop: 14,
+    paddingBottom: 64
   },
   simpleSettingsPage: {
     paddingHorizontal: 42
