@@ -38,7 +38,7 @@ npm start
 ## Current Scope
 
 - Expo Go compatible React Native app
-- Home / Journal / Quest / Story / Memory tabs
+- Home / Journal / Quest / Story
 - Night Ritual input flow
 - Square daily quest tiles
 - Settings modal with profile day count

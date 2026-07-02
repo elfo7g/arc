@@ -404,6 +404,7 @@ function AppContent() {
   const [homePromptVisible, setHomePromptVisible] = useState(false);
   const [unlockNotice, setUnlockNotice] = useState("");
   const [sealActive, setSealActive] = useState(false);
+  const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
   const [journal, setJournal] = useState([]);
   const [quests, setQuests] = useState(() => createDailyQuests());
   const [memories, setMemories] = useState([]);
@@ -472,6 +473,10 @@ function AppContent() {
   const pageScrollX = useRef(new Animated.Value(0)).current;
   const tabBarOpacity = useRef(new Animated.Value(1)).current;
   const unlockNoticeOpacity = useRef(new Animated.Value(0)).current;
+  // A hard blackout the instant the ritual begins, held briefly, then faded
+  // away — so the dialogue arrives out of black rather than cross-fading
+  // straight from Home.
+  const ritualBlackout = useRef(new Animated.Value(0)).current;
   const programmaticScroll = useRef(false);
   const programmaticScrollTimer = useRef(null);
   const unlockNoticeTimer = useRef(null);
@@ -484,6 +489,10 @@ function AppContent() {
   const didShowInitialHomePrompt = useRef(false);
   const currentPageIndex = useRef(0);
   const pagePosition = useRef(0);
+  // Tells TabBar whether the current activeTab change came from a tab-button
+  // press (animate the icon lift/scale) or a swipe/momentum settle (snap
+  // instantly, no animation).
+  const lastSwitchWasPress = useRef(true);
   const viewportFraction = 1;
   const pageGap = 0;
   const pageWidth = width * viewportFraction;
@@ -539,6 +548,7 @@ function AppContent() {
     setRitualLocked(false);
     setInputMode(false);
     setHomePromptVisible(false);
+    setExitConfirmOpen(false);
     setInput("");
     setIsSending(false);
     setRitualMessages([{ role: "nilo", text: reflectionQuestions[0] }]);
@@ -550,19 +560,37 @@ function AppContent() {
     Keyboard.dismiss();
   }
 
+  // Same blackout-then-fade the ritual opens with, played in reverse on the
+  // way out — so leaving reads as deliberately as arriving did.
+  function exitNightRitualWithBlackout() {
+    ritualBlackout.setValue(1);
+    exitNightRitual();
+    Animated.sequence([
+      Animated.delay(140),
+      Animated.timing(ritualBlackout, {
+        toValue: 0,
+        duration: 640,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true
+      })
+    ]).start();
+  }
+
   function requestExitNightRitual() {
     if (settings.ritual?.confirmExit === false) {
-      exitNightRitual();
+      exitNightRitualWithBlackout();
       return;
     }
-    Alert.alert(
-      "本当に終了しますか？",
-      "",
-      [
-        { text: "キャンセル", style: "cancel", onPress: keepRitualInputFocused },
-        { text: "終了", style: "destructive", onPress: exitNightRitual }
-      ]
-    );
+    setExitConfirmOpen(true);
+  }
+
+  function confirmExitNightRitual() {
+    exitNightRitualWithBlackout();
+  }
+
+  function cancelExitNightRitual() {
+    setExitConfirmOpen(false);
+    keepRitualInputFocused();
   }
 
   function openEntryDetail(entry) {
@@ -974,6 +1002,7 @@ function AppContent() {
     if (nextIndex < 0) return;
     if (tabId !== activeTab) playUiSound();
     const endX = nextIndex * pageStep;
+    lastSwitchWasPress.current = true;
     setActiveTab(tabId);
     currentPageIndex.current = nextIndex;
     // Let the platform run one smooth native scroll instead of stepping
@@ -994,6 +1023,7 @@ function AppContent() {
         if (ritualLocked) {
           currentPageIndex.current = initialPageIndex;
           pagePosition.current = initialPageIndex * pageStep;
+          lastSwitchWasPress.current = false;
           setActiveTab("home");
           return;
         }
@@ -1006,6 +1036,7 @@ function AppContent() {
         if (!tabUnlocks[tabs[nextIndex].id]) {
           currentPageIndex.current = initialPageIndex;
           pagePosition.current = initialPageIndex * pageStep;
+          lastSwitchWasPress.current = false;
           setActiveTab("home");
           requestAnimationFrame(() => {
             pageScrollRef.current?.scrollTo({ x: initialPageIndex * pageStep, animated: true });
@@ -1014,6 +1045,7 @@ function AppContent() {
         }
         if (nextIndex !== currentPageIndex.current) {
           currentPageIndex.current = nextIndex;
+          lastSwitchWasPress.current = false;
           setActiveTab(tabs[nextIndex].id);
         }
       }
@@ -1030,6 +1062,7 @@ function AppContent() {
       currentPageIndex.current = initialPageIndex;
       pagePosition.current = initialPageIndex * pageStep;
       pageScrollRef.current?.scrollTo({ x: initialPageIndex * pageStep, animated: false });
+      lastSwitchWasPress.current = false;
       setActiveTab("home");
       requestAnimationFrame(() => composerInputRef.current?.focus());
       return;
@@ -1041,10 +1074,12 @@ function AppContent() {
       currentPageIndex.current = initialPageIndex;
       pagePosition.current = initialPageIndex * pageStep;
       pageScrollRef.current?.scrollTo({ x: initialPageIndex * pageStep, animated: true });
+      lastSwitchWasPress.current = false;
       setActiveTab("home");
       return;
     }
     currentPageIndex.current = nextIndex;
+    lastSwitchWasPress.current = false;
     setActiveTab(tabs[nextIndex].id);
   }
 
@@ -1062,6 +1097,16 @@ function AppContent() {
     ritualLockedRef.current = true;
     ritualRunIdRef.current += 1;
     keepRitualInputFocused();
+    ritualBlackout.setValue(1);
+    Animated.sequence([
+      Animated.delay(140),
+      Animated.timing(ritualBlackout, {
+        toValue: 0,
+        duration: 640,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true
+      })
+    ]).start();
   }
 
   function syncInitialPage() {
@@ -1559,8 +1604,14 @@ function AppContent() {
         <Header
           profile={profile}
           session={session}
+          showTitle={activeTab !== "home"}
           onAccount={() => {
             playUiSound();
+            setSettingsOpen(true);
+          }}
+          onNotifications={() => {
+            playUiSound();
+            setSettingsInitialTab("notifications");
             setSettingsOpen(true);
           }}
         />
@@ -1645,11 +1696,10 @@ function AppContent() {
         <TabBar
           activeTab={activeTab}
           setActiveTab={goToTab}
-          scrollX={pageScrollX}
-          pageStep={pageStep}
           hidden={inputMode || keyboardVisible || ritualLocked}
           opacity={tabBarOpacity}
           unlocks={tabUnlocks}
+          lastSwitchWasPress={lastSwitchWasPress}
         />
 
         <NiloDialogScreen
@@ -1665,9 +1715,17 @@ function AppContent() {
           enabled={reflectionInputEnabled}
           onSubmit={submitRitual}
           onExit={requestExitNightRitual}
+          exitConfirmOpen={exitConfirmOpen}
+          onConfirmExit={confirmExitNightRitual}
+          onCancelExit={cancelExitNightRitual}
           onBlur={() => {
             if (ritualLockedRef.current) keepRitualInputFocused();
           }}
+        />
+
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.ritualBlackout, { opacity: ritualBlackout }]}
         />
 
         {!!unlockNotice && (
@@ -1730,7 +1788,40 @@ function AppContent() {
   );
 }
 
+// On web, AppContent lays itself out from useWindowDimensions() (the real
+// browser window). A plain CSS box can't shrink that — the content still
+// thinks it owns the full window and overflows/clips. An iframe gives it its
+// own real `window`, sized to the frame, so layout comes out correct with no
+// changes to AppContent. window.self !== window.top means we're already
+// inside that iframe, so we render straight through instead of nesting again.
+function WebPhoneFrame() {
+  const { width: winW, height: winH } = useWindowDimensions();
+  const aspect = 9 / 19.5;
+  const frameHeight = Math.min(winH, 900);
+  const frameWidth = Math.min(frameHeight * aspect, 430, winW);
+  return (
+    <View style={styles.webPhoneFrameOuter}>
+      <iframe
+        title="Arc preview"
+        src={window.location.href}
+        style={{
+          width: frameWidth,
+          height: frameHeight,
+          border: "none",
+          borderRadius: 36,
+          overflow: "hidden"
+        }}
+      />
+    </View>
+  );
+}
+
 export default function App() {
+  if (Platform.OS === "web") {
+    if (window.self === window.top) {
+      return <WebPhoneFrame />;
+    }
+  }
   return (
     <SafeAreaProvider>
       <AppContent />
@@ -1738,18 +1829,19 @@ export default function App() {
   );
 }
 
-function Header({ onAccount }) {
-  const [clock, setClock] = useState(() => formatClock(new Date()));
-
-  useEffect(() => {
-    const timer = setInterval(() => setClock(formatClock(new Date())), 30000);
-    return () => clearInterval(timer);
-  }, []);
-
+function Header({ onAccount, onNotifications, showTitle }) {
   return (
     <View style={styles.header}>
       <View style={styles.headerSide} />
-      <Text style={styles.headerClock}>{clock}</Text>
+      {showTitle && <Text style={styles.headerTitle}>ARC</Text>}
+      <Pressable
+        accessibilityLabel="通知を開く"
+        onPress={onNotifications}
+        focusable={false}
+        style={({ pressed }) => [styles.notificationButton, pressed && styles.touchPressedTight]}
+      >
+        <NotificationBellGlyph />
+      </Pressable>
       <Pressable
         accessibilityLabel="設定を開く"
         onPress={onAccount}
@@ -1758,6 +1850,16 @@ function Header({ onAccount }) {
       >
         <SettingsSunGlyph />
       </Pressable>
+    </View>
+  );
+}
+
+function NotificationBellGlyph() {
+  return (
+    <View pointerEvents="none" style={styles.notificationBellGlyph}>
+      <View style={styles.notificationBellBody} />
+      <View style={styles.notificationBellBase} />
+      <View style={styles.notificationBellClapper} />
     </View>
   );
 }
@@ -1908,7 +2010,6 @@ function GlassView({ children, style, intensity = 24 }) {
 
 function NiloHomeStage({ question, dimmed, thinking, hideQuestion, compact, sealed }) {
   const opacity = useRef(new Animated.Value(1)).current;
-  const caret = useRef(new Animated.Value(0.9)).current;
   const [typed, setTyped] = useState(question);
   const typeTimers = useRef([]);
 
@@ -1945,22 +2046,6 @@ function NiloHomeStage({ question, dimmed, thinking, hideQuestion, compact, seal
     };
   }, [question, dimmed, hideQuestion]);
 
-  // The caret holds bright, then winks out — a hard ~1.15s blink (caretBlink).
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(caret, { toValue: 0.9, duration: 0, useNativeDriver: true }),
-        Animated.delay(560),
-        Animated.timing(caret, { toValue: 0, duration: 0, useNativeDriver: true }),
-        Animated.delay(590)
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [caret]);
-
-  const showCaret = !hideQuestion && !sealed && !thinking;
-
   return (
     <View style={[styles.niloStage, compact && styles.niloStageCompact]}>
       <View style={[styles.niloStageCopy, compact && styles.niloStageCopyCompact]}>
@@ -1970,9 +2055,6 @@ function NiloHomeStage({ question, dimmed, thinking, hideQuestion, compact, seal
             {sealed && <Animated.Text style={[styles.niloSealMark, { opacity }]}>✦ 今夜を綴じました</Animated.Text>}
             <Animated.Text style={[styles.niloStageQuestion, compact && styles.niloStageQuestionCompact, { opacity }]}>
               {typed}
-              {showCaret && (
-                <Animated.Text style={[styles.niloStageCaret, compact && styles.niloStageCaretCompact, { opacity: caret }]}>▏</Animated.Text>
-              )}
             </Animated.Text>
           </>
         )}
@@ -2294,7 +2376,7 @@ function HomeScreen({
 
   // Keep the question a touch above center, then leave a wide silence below it
   // for the light to sit in.
-  const questionTopInset = compact ? 28 : Math.round(Math.max(210, (screenHeight - 90 - 192) / 2));
+  const questionTopInset = compact ? 28 : Math.round(Math.max(130, (screenHeight - 90 - 192) / 3));
 
   return (
     <View
@@ -2499,20 +2581,27 @@ function NightRitualButton({ enabled, visible, streakDays, onPress, animatedStyl
   );
 }
 
-// Nilo's small breathing mark at the head of the dialogue — a soft amber glow
-// (the pre-rendered orb) with a bright core, the prototype's 46px light.
-function NiloMark() {
+// A slow, looping 0→1→0 value — the same soft breathing rhythm Nilo's mark
+// uses, shared by anything else that should glow like Nilo does.
+function useBreath(duration = 3500) {
   const breath = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(breath, { toValue: 1, duration: 3500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(breath, { toValue: 0, duration: 3500, easing: Easing.inOut(Easing.sin), useNativeDriver: true })
+        Animated.timing(breath, { toValue: 1, duration, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(breath, { toValue: 0, duration, easing: Easing.inOut(Easing.sin), useNativeDriver: true })
       ])
     );
     loop.start();
     return () => loop.stop();
-  }, [breath]);
+  }, [breath, duration]);
+  return breath;
+}
+
+// Nilo's small breathing mark at the head of the dialogue — a soft amber glow
+// (the pre-rendered orb) with a bright core, the prototype's 46px light.
+function NiloMark() {
+  const breath = useBreath();
   const glowOpacity = breath.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0.95] });
   const glowScale = breath.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] });
   return (
@@ -2520,6 +2609,17 @@ function NiloMark() {
       <Animated.Image source={niloOrbTexture} resizeMode="contain" style={[styles.niloMarkGlow, { opacity: glowOpacity, transform: [{ scale: glowScale }] }]} />
       <View style={styles.niloMarkCore} />
     </View>
+  );
+}
+
+// The current chapter's dot breathes the same way Nilo's mark does — the
+// only timeline entry that's still open, so it's the only one that glows.
+function ChapterTimelineDot({ active }) {
+  const breath = useBreath();
+  const scale = breath.interpolate({ inputRange: [0, 1], outputRange: [1, 1.14] });
+  if (!active) return <View style={styles.chapterTimelineDot} />;
+  return (
+    <Animated.View style={[styles.chapterTimelineDot, styles.chapterTimelineDotActive, { transform: [{ scale }] }]} />
   );
 }
 
@@ -2580,7 +2680,7 @@ function NiloDialogQuestion({ question, dimmed, closing }) {
 // reference layout, but the answer is captured with the OS keyboard rather than
 // the prototype's mock 五十音 grid. The save / question-advance / seal logic is
 // the existing night-ritual flow, unchanged.
-function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLabel, inputRef, input, setInput, enabled, onSubmit, onExit, onBlur }) {
+function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLabel, inputRef, input, setInput, enabled, onSubmit, onExit, exitConfirmOpen, onConfirmExit, onCancelExit, onBlur }) {
   const fade = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(fade, { toValue: visible ? 1 : 0, duration: visible ? 520 : 240, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start();
@@ -2647,9 +2747,23 @@ function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLa
                 <Text style={styles.niloSendText}>送信</Text>
               </Pressable>
             )}
-            <Pressable onPress={onExit} style={styles.niloExitLink}>
-              <Text style={styles.niloExitText}>今夜はここまでにする</Text>
-            </Pressable>
+            {exitConfirmOpen ? (
+              <View style={styles.niloExitConfirmRow}>
+                <Text style={styles.niloExitConfirmText}>本当に終了しますか？</Text>
+                <View style={styles.niloExitConfirmActions}>
+                  <Pressable onPress={onCancelExit} style={({ pressed }) => [styles.niloExitConfirmGhost, pressed && styles.touchPressedTight]}>
+                    <Text style={styles.niloExitConfirmGhostText}>いいえ</Text>
+                  </Pressable>
+                  <Pressable onPress={onConfirmExit} style={({ pressed }) => [styles.niloExitConfirmPrimary, pressed && styles.touchPressedTight]}>
+                    <Text style={styles.niloExitConfirmPrimaryText}>はい</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <Pressable onPress={onExit} style={styles.niloExitLink}>
+                <Text style={styles.niloExitText}>今夜はここまでにする</Text>
+              </Pressable>
+            )}
           </KeyboardAvoidingView>
         )}
       </View>
@@ -3016,7 +3130,7 @@ function StoryScreen({ memories, chapters, proposals, eligibleCount, busy, onPro
           <View pointerEvents="none" style={styles.chapterTimelineLine} />
           {chapterTimeline.map((chapter, index) => (
             <RiseIn key={chapter.id} index={index + 1} playToken={token} duration={550} style={styles.chapterTimelineItem}>
-              <View style={[styles.chapterTimelineDot, index === 0 && styles.chapterTimelineDotActive]} />
+              <ChapterTimelineDot active={index === 0} />
               <View style={styles.chapterTimelineCopy}>
                 <View style={styles.chapterMetaRow}>
                   <Text style={styles.chapterOrdinalText}>{chapter.ordinal}</Text>
@@ -3437,8 +3551,7 @@ function EmptyState({ title, body }) {
   );
 }
 
-function TabBar({ activeTab, setActiveTab, scrollX, pageStep, hidden, opacity, unlocks }) {
-  const tabInputRange = tabs.map((_, index) => index * pageStep);
+function TabBar({ activeTab, setActiveTab, hidden, opacity, unlocks, lastSwitchWasPress }) {
   // tabIn: the bar settles up into place once, as the night opens (prototype).
   const entrance = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -3452,6 +3565,27 @@ function TabBar({ activeTab, setActiveTab, scrollX, pageStep, hidden, opacity, u
   const entranceTranslate = entrance.interpolate({ inputRange: [0, 1], outputRange: [12, 0] });
   const composedOpacity = Animated.multiply(opacity, entrance);
 
+  // Each tab's lift/scale is driven by its own Animated.Value rather than the
+  // scroll position, so we can choose whether a given activeTab change
+  // animates (tab-button press) or snaps instantly (swipe/momentum settle).
+  const tabAnim = useRef(tabs.map((tab) => new Animated.Value(tab.id === activeTab ? 1 : 0))).current;
+  useEffect(() => {
+    const isPress = lastSwitchWasPress?.current;
+    tabs.forEach((tab, index) => {
+      const toValue = tab.id === activeTab ? 1 : 0;
+      if (isPress) {
+        Animated.timing(tabAnim[index], {
+          toValue,
+          duration: 180,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true
+        }).start();
+      } else {
+        tabAnim[index].setValue(toValue);
+      }
+    });
+  }, [activeTab, lastSwitchWasPress, tabAnim]);
+
   return (
     <Animated.View
       pointerEvents={hidden ? "none" : "auto"}
@@ -3459,8 +3593,8 @@ function TabBar({ activeTab, setActiveTab, scrollX, pageStep, hidden, opacity, u
     >
       <LinearGradient
         pointerEvents="none"
-        colors={["rgba(8,6,4,0)", "rgba(8,6,4,0.62)", "rgba(6,4,3,0.86)"]}
-        locations={[0, 0.45, 1]}
+        colors={["rgba(6,4,3,0)", "rgba(4,3,2,0.92)", "#000000"]}
+        locations={[0, 0.28, 1]}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
         style={StyleSheet.absoluteFillObject}
@@ -3468,16 +3602,11 @@ function TabBar({ activeTab, setActiveTab, scrollX, pageStep, hidden, opacity, u
       {tabs.map((tab, index) => {
         const isActive = activeTab === tab.id;
         const isUnlocked = unlocks?.[tab.id] !== false;
-        const tabPresence = scrollX.interpolate({
-          inputRange: tabInputRange,
-          outputRange: tabs.map((_, activeIndex) => activeIndex === index ? 1 : 0),
-          extrapolate: "clamp"
-        });
-        const tabLift = tabPresence.interpolate({
+        const tabLift = tabAnim[index].interpolate({
           inputRange: [0, 1],
           outputRange: [0, -2]
         });
-        const tabScale = tabPresence.interpolate({
+        const tabScale = tabAnim[index].interpolate({
           inputRange: [0, 1],
           outputRange: [0.98, 1.015]
         });
@@ -3563,7 +3692,6 @@ function TabIcon({ id, active, locked }) {
 
   return (
     <View style={styles.tabIconCanvas}>
-      <View pointerEvents="none" style={[styles.tabIconGlow, active && styles.tabIconGlowOn]} />
       {glyph}
     </View>
   );
@@ -4943,12 +5071,6 @@ function SettingToggleRow({ title, body, value, onPress }) {
       </View>
     </View>
   );
-}
-
-function formatClock(date) {
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${hours}:${minutes}`.split("").join(" ");
 }
 
 function getQuestCategory(quest) {
@@ -6775,22 +6897,6 @@ const styles = StyleSheet.create({
     position: "relative",
     width: 24
   },
-  tabIconGlow: {
-    backgroundColor: "transparent",
-    borderRadius: 999,
-    height: 44,
-    left: -10,
-    position: "absolute",
-    top: -11,
-    width: 44
-  },
-  tabIconGlowOn: {
-    backgroundColor: "rgba(232,196,138,0.4)",
-    shadowColor: "#e8bd78",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 18
-  },
   tabIconLine: {
     backgroundColor: "rgba(246,239,228,0.62)",
     borderRadius: 999,
@@ -8139,12 +8245,12 @@ const styles = StyleSheet.create({
   headerSide: {
     display: "none"
   },
-  headerClock: {
-    color: "rgba(232,226,214,0.24)",
-    fontFamily: fontSerifEn,
-    fontSize: 12,
+  headerTitle: {
+    color: "rgba(217,168,108,0.3)",
+    fontFamily: fontSerifEnLight,
+    fontSize: 26,
     left: 0,
-    letterSpacing: 2.6,
+    letterSpacing: 11,
     position: "absolute",
     right: 0,
     textAlign: "center",
@@ -8152,13 +8258,67 @@ const styles = StyleSheet.create({
   },
   settingsSunButton: {
     alignItems: "center",
+    backgroundColor: "rgba(255,254,244,0.06)",
+    borderColor: "rgba(255,254,244,0.14)",
+    borderRadius: 12,
+    borderWidth: 1,
     height: 34,
     justifyContent: "center",
     outlineStyle: "none",
     position: "absolute",
-    right: 22,
-    top: 46,
+    right: 28,
+    top: 52,
     width: 34
+  },
+  notificationButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,254,244,0.06)",
+    borderColor: "rgba(255,254,244,0.14)",
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: "center",
+    outlineStyle: "none",
+    position: "absolute",
+    right: 72,
+    top: 52,
+    width: 34
+  },
+  notificationBellGlyph: {
+    height: 19,
+    position: "relative",
+    width: 19
+  },
+  notificationBellBody: {
+    borderBottomLeftRadius: 2,
+    borderBottomRightRadius: 2,
+    borderColor: "rgba(225,205,170,0.5)",
+    borderTopLeftRadius: 7,
+    borderTopRightRadius: 7,
+    borderWidth: 1.3,
+    height: 10,
+    left: 4.5,
+    position: "absolute",
+    top: 3,
+    width: 10
+  },
+  notificationBellBase: {
+    backgroundColor: "rgba(225,205,170,0.5)",
+    borderRadius: 999,
+    height: 1.3,
+    left: 3,
+    position: "absolute",
+    top: 13,
+    width: 13
+  },
+  notificationBellClapper: {
+    backgroundColor: "rgba(225,205,170,0.5)",
+    borderRadius: 999,
+    height: 2.6,
+    left: 8.2,
+    position: "absolute",
+    top: 15,
+    width: 2.6
   },
   settingsSunGlyph: {
     height: 19,
@@ -8240,7 +8400,7 @@ const styles = StyleSheet.create({
     flex: 1
   },
   composerAvoider: {
-    bottom: 70,
+    bottom: 92,
     left: 0,
     position: "absolute",
     right: 0
@@ -8356,10 +8516,11 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     flexDirection: "row",
     justifyContent: "center",
-    minHeight: 32,
+    minHeight: 52,
+    minWidth: 220,
     outlineStyle: "none",
-    paddingHorizontal: 16,
-    paddingVertical: 6
+    paddingHorizontal: 28,
+    paddingVertical: 16
   },
   ritualStartButtonDisabled: {
     opacity: 0.34
@@ -8801,7 +8962,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(238,224,202,0.22)",
     borderRadius: 999,
     height: 8,
-    left: -31,
+    left: -28.6,
     position: "absolute",
     top: 11,
     width: 8
@@ -8809,7 +8970,7 @@ const styles = StyleSheet.create({
   chapterTimelineDotActive: {
     backgroundColor: "#e8bd78",
     height: 14,
-    left: -34,
+    left: -31.6,
     top: 8,
     shadowColor: "#e8bd78",
     shadowOpacity: 0.68,
@@ -8922,7 +9083,7 @@ const styles = StyleSheet.create({
     borderStyle: "dashed",
     borderWidth: 1,
     height: 9,
-    left: -23,
+    left: -29,
     position: "absolute",
     top: 24,
     width: 9
@@ -9114,8 +9275,9 @@ const styles = StyleSheet.create({
     left: -22,
     position: "absolute",
     shadowColor: "#d9a86c",
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.75,
+    shadowRadius: 14,
     top: 19,
     width: 7
   },
@@ -9285,6 +9447,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     height: 46,
     justifyContent: "center",
+    marginTop: 10,
     width: 46
   },
   niloMarkGlow: {
@@ -9416,6 +9579,50 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 1.44
   },
+  niloExitConfirmRow: {
+    alignItems: "center",
+    gap: 10,
+    marginTop: 10,
+    paddingVertical: 8
+  },
+  niloExitConfirmText: {
+    color: "rgba(238,224,202,0.6)",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    letterSpacing: 1.2
+  },
+  niloExitConfirmActions: {
+    flexDirection: "row",
+    gap: 10
+  },
+  niloExitConfirmGhost: {
+    borderColor: "rgba(255,254,244,0.2)",
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 22,
+    paddingVertical: 9
+  },
+  niloExitConfirmGhostText: {
+    color: "rgba(238,224,202,0.7)",
+    fontFamily: fontSerifJa,
+    fontSize: 13
+  },
+  niloExitConfirmPrimary: {
+    backgroundColor: "rgba(236,190,128,0.95)",
+    borderRadius: 999,
+    paddingHorizontal: 22,
+    paddingVertical: 9,
+    shadowColor: "#d9a86c",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.42,
+    shadowRadius: 16
+  },
+  niloExitConfirmPrimaryText: {
+    color: "#2a1d10",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    fontWeight: "600"
+  },
   screenBottomFade: {
     bottom: 60,
     height: 220,
@@ -9423,6 +9630,15 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 0,
     zIndex: 20
+  },
+  ritualBlackout: {
+    backgroundColor: "#000000",
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    zIndex: 100
   },
   tabBar: {
     alignSelf: "center",
@@ -9616,5 +9832,13 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 2.2,
     marginTop: 8
+  },
+  webPhoneFrameOuter: {
+    alignItems: "center",
+    backgroundColor: "#0a0806",
+    flex: 1,
+    justifyContent: "center",
+    minHeight: "100vh",
+    width: "100%"
   }
 });
