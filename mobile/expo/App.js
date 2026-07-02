@@ -74,12 +74,32 @@ const tabs = [
   { id: "story", label: "章" }
 ];
 
-const accountRootTabs = [
-  { id: "account", label: "アカウント", sub: "データと所有権" },
-  { id: "settings", label: "設定", sub: "アプリの操作" }
-];
-
-const appSettingsDetailTabIds = new Set(["bgm", "language", "notifications", "ritual"]);
+// 詳細設定画面のタイトル定義。中身はUIリニューアルまで一時的にプレースホルダー表示。
+const settingsDetailScreens = {
+  ownershipPolicy: { icon: "data", title: "所有権ポリシー" },
+  ownershipExport: { icon: "data", title: "データエクスポート" },
+  ownershipDelete: { icon: "data", title: "アーカイブの削除" },
+  inheritanceContacts: { icon: "policy", title: "継承先の管理" },
+  inheritanceDefault: { icon: "policy", title: "未設定時のデフォルト処理" },
+  inheritanceDisclosure: { icon: "policy", title: "アクセス権の予約公開" },
+  securityEncryption: { icon: "privacy", title: "暗号化ステータス" },
+  securityRecovery: { icon: "privacy", title: "リカバリーキー" },
+  securityWitness: { icon: "privacy", title: "緊急連絡先（証人）" },
+  archiveStyle: { icon: "ritual", title: "Niloの対話スタイル" },
+  archiveFrequency: { icon: "ritual", title: "振り返り頻度" },
+  archiveSummary: { icon: "ritual", title: "要約スタイル" },
+  archiveTone: { icon: "notifications", title: "通知のトーン" },
+  bgm: { icon: "sound", title: "サウンド" },
+  notifications: { icon: "notifications", title: "夜のささやき" },
+  ritual: { icon: "ritual", title: "夜の対話" },
+  language: { icon: "language", title: "言語" },
+  data: { icon: "data", title: "記録を書き出す" },
+  profile: { icon: "profile", title: "プロフィール" },
+  sync: { icon: "sync", title: "データ同期" },
+  logout: { icon: "logout", title: "ログアウト" },
+  terms: { icon: "terms", title: "ARC について" },
+  privacyPolicy: { icon: "policy", title: "プライバシーポリシー" }
+};
 
 const bgmTracks = [
   {
@@ -96,52 +116,6 @@ try {
 } catch {
   optionalAudio = null;
 }
-
-const termsSections = [
-  {
-    title: "1. ARCについて",
-    body: "ARCは、Niloとの夜の振り返り、日記、クエスト、記憶を通じて日々を記録するためのアプリです。医療、法律、金融、心理療法などの専門的助言を提供するものではありません。"
-  },
-  {
-    title: "2. アカウントと利用",
-    body: "ユーザーは、自分の責任でアカウント情報を管理し、第三者になりすました利用、不正アクセス、サービスの妨害、法令や公序良俗に反する利用を行わないものとします。"
-  },
-  {
-    title: "3. 記録内容",
-    body: "ユーザーが入力した振り返り、日記、クエスト、プロフィール情報は、ARC内の体験を提供するために利用されます。大切な情報や緊急性のある内容は、必要に応じて信頼できる人や専門機関にも共有してください。"
-  },
-  {
-    title: "4. AI応答について",
-    body: "Niloの応答は、ユーザーの入力をもとに生成される補助的な文章です。内容の正確性、完全性、有用性を保証するものではなく、最終的な判断はユーザー自身の責任で行うものとします。"
-  },
-  {
-    title: "5. 変更と停止",
-    body: "ARCは、機能改善、保守、仕様変更のため、予告なく一部機能を変更または停止する場合があります。重要な記録は、必要に応じてユーザー自身でも控えを保存してください。"
-  }
-];
-
-const privacyPolicySections = [
-  {
-    title: "1. 取得する情報",
-    body: "ARCは、メールアドレス、認証情報、名前、生年月日、日記、振り返り回答、クエスト、設定情報など、ユーザーが入力または利用時に生成した情報を扱います。"
-  },
-  {
-    title: "2. 利用目的",
-    body: "取得した情報は、ログイン、日数表示、日記保存、Niloの応答生成、クエストや記憶の作成、設定の反映、サービス改善、不正利用の防止のために利用します。"
-  },
-  {
-    title: "3. 外部サービス",
-    body: "ARCは、認証やデータ保存のために Supabase を利用します。また、AI応答生成などの機能で外部APIを利用する場合があります。外部サービスには、機能提供に必要な範囲の情報が送信されることがあります。"
-  },
-  {
-    title: "4. ユーザーの選択",
-    body: "設定のプライバシー画面から、日記内容をクエスト生成、記憶候補、プロフィール反映に利用するかを切り替えられます。ログアウトや開発モードでは、利用できる同期機能が変わる場合があります。"
-  },
-  {
-    title: "5. 保管と削除",
-    body: "保存された情報は、サービス提供に必要な期間保管されます。削除やエクスポートなどの操作は、今後の機能として整備していきます。"
-  }
-];
 
 const dailyBank = [
   "水を一杯飲む",
@@ -3733,15 +3707,12 @@ function SettingsModal({
   onClose
 }) {
   const [activeSettingsTab, setActiveSettingsTab] = useState("base");
-  const [activeRootTab, setActiveRootTab] = useState("account");
   const [name, setName] = useState(profile.name);
   const [birthdate, setBirthdate] = useState(profile.birthdate);
 
   useEffect(() => {
     if (visible) {
-      const nextTab = initialTab || "base";
-      setActiveSettingsTab(nextTab);
-      setActiveRootTab(appSettingsDetailTabIds.has(nextTab) ? "settings" : "account");
+      setActiveSettingsTab(initialTab || "base");
     }
   }, [visible, initialTab]);
 
@@ -3755,246 +3726,7 @@ function SettingsModal({
     setSettings((current) => ({ ...current, ...patch }));
   }
 
-  function updateBgmVolume(delta) {
-    onUiSound?.();
-    setSettings((current) => ({
-      ...current,
-      bgmVolume: Math.max(0, Math.min(1, Number((current.bgmVolume + delta).toFixed(2))))
-    }));
-  }
-
-  function updatePrivacy(key) {
-    setSettings((current) => ({
-      ...current,
-      privacy: {
-        ...current.privacy,
-        [key]: !current.privacy[key]
-      }
-    }));
-  }
-
-  function updateRitualSettings(patch) {
-    onUiSound?.();
-    setSettings((current) => ({
-      ...current,
-      ritual: {
-        ...(current.ritual || {}),
-        ...patch
-      }
-    }));
-  }
-
-  function confirmClearData(kind) {
-    onUiSound?.();
-    const actions = {
-      journal: {
-        title: "日記を削除しますか？",
-        body: "保存された日記だけをこの端末から削除します。",
-        run: () => setJournal([])
-      },
-      memories: {
-        title: "記憶を削除しますか？",
-        body: "保存された記憶と章をこの端末から削除します。",
-        run: () => {
-          setMemories([]);
-          setChapters([]);
-        }
-      },
-      quests: {
-        title: "クエストをリセットしますか？",
-        body: "現在のクエストを消して、デイリークエストを作り直します。",
-        run: () => setQuests(createDailyQuests())
-      },
-      all: {
-        title: "すべての記録を削除しますか？",
-        body: "日記、クエスト、記憶、章をこの端末から削除します。この操作は元に戻せません。",
-        run: () => {
-          setJournal([]);
-          setQuests(createDailyQuests());
-          setMemories([]);
-          setChapters([]);
-        }
-      }
-    };
-    const target = actions[kind];
-    if (!target) return;
-    Alert.alert(target.title, target.body, [
-      { text: "キャンセル", style: "cancel" },
-      { text: "削除", style: "destructive", onPress: target.run }
-    ]);
-  }
-
-  const displayName = name || profile.name || session?.user?.user_metadata?.name || session?.user?.email?.split("@")[0] || "あなた";
-  const profileInitial = displayName.slice(0, 1).toUpperCase();
-  const profileDay = daysSince(birthdate) || daysSince(profile.birthdate) || daysSince(arcStartDate) + 1;
-  const completedQuestCount = quests.filter((quest) => quest.completed).length;
-  const syncStatus = authLoading ? "確認中" : session ? "接続済み" : "未接続";
-  const accountLabel = authLoading ? "確認中..." : session?.user?.email || "Googleアカウント未接続";
-  const ritualConfig = settings.ritual || {};
-  const reflectionConfig = settings.reflection || {};
-
-  function updateReflectionSettings(patch) {
-    onUiSound?.();
-    setSettings((current) => ({
-      ...current,
-      reflection: { ...(current.reflection || {}), ...patch }
-    }));
-  }
-
-  // ---- 01 人生の所有権 ----
-  const securityConfig = settings.security || {};
-  const inheritanceConfig = settings.inheritance || {};
-  const [exportFormat, setExportFormat] = useState("json");
-  const [exportPassphrase, setExportPassphrase] = useState("");
-  const [exportStatus, setExportStatus] = useState("");
-  const [recoveryKey, setRecoveryKey] = useState("");
-  const [recoveryStatus, setRecoveryStatus] = useState("");
-  const [emergencyEmail, setEmergencyEmail] = useState("");
-  const [heirEmail, setHeirEmail] = useState("");
-  const [disclosureTarget, setDisclosureTarget] = useState("");
-  const [disclosureDate, setDisclosureDate] = useState("");
-  const [disclosureRecipient, setDisclosureRecipient] = useState("");
-  const [inheritanceStatus, setInheritanceStatus] = useState("");
-
-  function updateSecurity(patch) {
-    setSettings((current) => ({ ...current, security: { ...(current.security || {}), ...patch } }));
-  }
-  function updateInheritance(patch) {
-    setSettings((current) => ({ ...current, inheritance: { ...(current.inheritance || {}), ...patch } }));
-  }
-
-  async function runExport() {
-    onUiSound?.();
-    setExportStatus("書き出しています…");
-    try {
-      const isMarkdown = exportFormat === "markdown";
-      const content = isMarkdown
-        ? buildExportMarkdown({ journal, memories, chapters })
-        : buildExportJson({ journal, memories, quests, chapters, profile, settings });
-      const passphrase = exportPassphrase.trim();
-      const dateKey = toDateKey(new Date());
-      if (passphrase) {
-        const encrypted = encryptExportPayload(content, passphrase);
-        await saveTextFile(encrypted, `arc-archive-${dateKey}.encrypted.json`, "application/json");
-        setExportStatus("暗号化して書き出しました。パスフレーズは大切に保管してください。");
-      } else {
-        await saveTextFile(
-          content,
-          `arc-archive-${dateKey}.${isMarkdown ? "md" : "json"}`,
-          isMarkdown ? "text/markdown" : "application/json"
-        );
-        setExportStatus("記録を書き出しました。");
-      }
-      setExportPassphrase("");
-    } catch {
-      setExportStatus("うまく書き出せませんでした。もう一度お試しください。");
-    }
-  }
-
-  function confirmDeleteAll() {
-    onUiSound?.();
-    Alert.alert(
-      "アーカイブを削除しますか？",
-      "この端末のすべての記録が消去されます。取り消せません。続ける前に書き出しをおすすめします。",
-      [
-        { text: "やめておく", style: "cancel" },
-        {
-          text: "削除する",
-          style: "destructive",
-          onPress: () => Alert.alert("最終確認", "本当に削除しますか？", [
-            { text: "やめておく", style: "cancel" },
-            { text: "削除する", style: "destructive", onPress: () => { setJournal([]); setMemories([]); setQuests([]); setChapters([]); } }
-          ])
-        }
-      ]
-    );
-  }
-
-  // ---- 03 聖域のセキュリティ ----
-  async function issueRecoveryKey() {
-    onUiSound?.();
-    try {
-      const key = await generateRecoveryKey();
-      setRecoveryKey(key);
-      updateSecurity({ recoveryKeyIssued: true, recoveryKeyIssuedAt: new Date().toISOString() });
-      setRecoveryStatus("このキーを安全な場所に。画面を離れると、もう一度は表示できません。");
-    } catch {
-      setRecoveryStatus("キーを発行できませんでした。もう一度お試しください。");
-    }
-  }
-  async function copyRecoveryKey() {
-    if (!recoveryKey) return;
-    try {
-      await Clipboard.setStringAsync(recoveryKey);
-      setRecoveryStatus("コピーしました。安全な場所に貼り付けてください。");
-    } catch {
-      setRecoveryStatus("コピーできませんでした。手で書き写してください。");
-    }
-  }
-  function addEmergencyContact() {
-    if (!isEmailLike(emergencyEmail)) { setRecoveryStatus("メールアドレスをご確認ください。"); return; }
-    updateSecurity({ emergencyContacts: [...(securityConfig.emergencyContacts || []), { id: createId("witness"), email: emergencyEmail.trim() }] });
-    setEmergencyEmail("");
-    setRecoveryStatus("緊急連絡先を追加しました。");
-  }
-  function removeEmergencyContact(id) {
-    updateSecurity({ emergencyContacts: (securityConfig.emergencyContacts || []).filter((c) => c.id !== id) });
-  }
-
-  // ---- 02 未来への継承 ----
-  function addHeir() {
-    if (!isEmailLike(heirEmail)) { setInheritanceStatus("メールアドレスをご確認ください。"); return; }
-    updateInheritance({ contacts: [...(inheritanceConfig.contacts || []), { id: createId("heir"), email: heirEmail.trim() }] });
-    setHeirEmail("");
-    setInheritanceStatus("継承先を追加しました。");
-  }
-  function removeHeir(id) {
-    updateInheritance({ contacts: (inheritanceConfig.contacts || []).filter((c) => c.id !== id) });
-  }
-  function setDefaultAction(next) {
-    if ((inheritanceConfig.defaultAction || "delete") === next) return;
-    onUiSound?.();
-    Alert.alert(
-      "継承設定を変更しますか？",
-      next === "delete" ? "未設定のまま「その日」を迎えた場合、アーカイブは完全に削除されます。" : "未設定のまま「その日」を迎えた場合、アーカイブは継承先へ移管されます。",
-      [
-        { text: "やめておく", style: "cancel" },
-        { text: "変更する", onPress: () => { updateInheritance({ defaultAction: next }); setInheritanceStatus("継承設定を変更しました。いつでも変えられます。"); } }
-      ]
-    );
-  }
-  function addDisclosure() {
-    if (!disclosureTarget.trim()) { setInheritanceStatus("公開する対象を入力してください。"); return; }
-    if (!isEmailLike(disclosureRecipient)) { setInheritanceStatus("受取人のメールアドレスをご確認ください。"); return; }
-    updateInheritance({
-      reservedDisclosures: [...(inheritanceConfig.reservedDisclosures || []), {
-        id: createId("disclosure"), target: disclosureTarget.trim(), recipient: disclosureRecipient.trim(), date: disclosureDate.trim()
-      }]
-    });
-    setDisclosureTarget(""); setDisclosureDate(""); setDisclosureRecipient("");
-    setInheritanceStatus("予約公開を追加しました。いつでも取り消せます。");
-  }
-  function removeDisclosure(id) {
-    updateInheritance({ reservedDisclosures: (inheritanceConfig.reservedDisclosures || []).filter((d) => d.id !== id) });
-  }
-
-  function renderEntryRow(id, label, onRemove) {
-    return (
-      <View key={id} style={styles.entryRow}>
-        <Text style={styles.entryRowText}>{label}</Text>
-        <Pressable onPress={onRemove} style={({ pressed }) => [styles.entryRemove, pressed && styles.touchPressedTight]}>
-          <Text style={styles.entryRemoveText}>×</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
-  function confirmSignOut() {
-    Alert.alert("ログアウトしますか？", "このデバイスのログイン状態を解除します。記録データは端末内に残ります。", [
-      { text: "キャンセル", style: "cancel" },
-      { text: "ログアウト", style: "destructive", onPress: onSignOut }
-    ]);
-  }
+  const detailMeta = settingsDetailScreens[activeSettingsTab] || {};
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
@@ -4018,23 +3750,8 @@ function SettingsModal({
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.settingSection}>
             {activeSettingsTab === "base" && (
               <SettingsBase
-                rootTab={activeRootTab}
-                profile={profile}
-                session={session}
-                authLoading={authLoading}
-                authBusy={authBusy}
                 settings={settings}
-                activeBgmTrack={activeBgmTrack}
-                journal={journal}
-                quests={quests}
-                memories={memories}
-                onPickProfileImage={onPickProfileImage}
                 updateSettings={updateSettings}
-                updatePrivacy={updatePrivacy}
-                onRootTabChange={(tab) => {
-                  onUiSound?.();
-                  setActiveRootTab(tab);
-                }}
                 onSelect={(tab) => {
                   onUiSound?.();
                   setActiveSettingsTab(tab);
@@ -4050,560 +3767,18 @@ function SettingsModal({
                 }}
                 style={styles.backToBase}
               >
-                <Text style={styles.backToBaseText}>{activeRootTab === "settings" ? "‹ 設定へ戻る" : "‹ アカウントへ戻る"}</Text>
+                <Text style={styles.backToBaseText}>‹ 設定へ戻る</Text>
               </Pressable>
             )}
 
-            {activeSettingsTab === "bgm" && (
+            {activeSettingsTab !== "base" && (
               <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="sound" title="サウンド" body="流す曲と音量を選びます。オン・オフは設定トップから。" />
-                <SettingToggleRow
-                  title="BGM"
-                  body="夜のサウンドトラックを流します。"
-                  value={settings.bgmEnabled}
-                  onPress={() => updateSettings({ bgmEnabled: !settings.bgmEnabled })}
+                <SettingsPageTitle
+                  icon={detailMeta.icon || "settings"}
+                  title={detailMeta.title || "設定"}
+                  body="この画面の詳細設定は、UIリニューアルに向けて準備中です。"
                 />
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>現在のBGM</Text>
-                  <Text style={styles.settingValue}>{activeBgmTrack.title}</Text>
-                  <Text style={styles.mutedText}>{activeBgmTrack.subtitle}</Text>
-                  <View style={styles.soundStatusRow}>
-                    <Text style={styles.soundStatusText}>
-                      {settings.bgmEnabled ? (bgmStatus?.playing ? "再生中" : "読み込み中") : "停止中"}
-                    </Text>
-                    <Text style={styles.soundStatusText}>{Math.round(settings.bgmVolume * 100)}%</Text>
-                  </View>
-                  <View style={styles.soundVolumeRow}>
-                    <Pressable onPress={() => updateBgmVolume(-0.1)} style={({ pressed }) => [styles.soundStepButton, pressed && styles.touchPressedTight]}>
-                      <Text style={styles.soundStepText}>−</Text>
-                    </Pressable>
-                    <View style={styles.soundVolumeTrack}>
-                      <View style={[styles.soundVolumeFill, { width: `${Math.round(settings.bgmVolume * 100)}%` }]} />
-                    </View>
-                    <Pressable onPress={() => updateBgmVolume(0.1)} style={({ pressed }) => [styles.soundStepButton, pressed && styles.touchPressedTight]}>
-                      <Text style={styles.soundStepText}>＋</Text>
-                    </Pressable>
-                  </View>
-                </View>
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>サウンドトラック</Text>
-                  {bgmTracks.map((track) => (
-                    <Pressable
-                      key={track.id}
-                      onPress={() => updateSettings({ bgmTrackId: track.id, bgmEnabled: true })}
-                      style={({ pressed }) => [styles.soundTrackRow, settings.bgmTrackId === track.id && styles.soundTrackRowActive, pressed && styles.touchPressedSubtle]}
-                    >
-                      <View>
-                        <Text style={styles.settingValue}>{track.title}</Text>
-                        <Text style={styles.mutedText}>{track.subtitle}</Text>
-                      </View>
-                      <Text style={styles.soundTrackMark}>{settings.bgmTrackId === track.id ? "ON" : "選択"}</Text>
-                    </Pressable>
-                  ))}
-                </View>
               </View>
-            )}
-
-            {activeSettingsTab === "profile" && (
-              <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="profile" title="プロフィール" body="Arcに表示するあなたの情報を整えます。" />
-                <View style={styles.profileEditCard}>
-                  <GlassBackdrop intensity={24} />
-                  <View style={styles.profileEditTop}>
-                    <Pressable onPress={onPickProfileImage} style={({ pressed }) => [styles.profileEditAvatar, pressed && styles.touchPressedTight]}>
-                      {profile.imageUri ? (
-                        <Image source={{ uri: profile.imageUri }} style={styles.baseAvatarImage} />
-                      ) : (
-                        <Text style={styles.profileEditAvatarText}>{profileInitial}</Text>
-                      )}
-                    </Pressable>
-                    <View style={styles.profileEditCopy}>
-                      <Text style={styles.settingLabel}>表示プロフィール</Text>
-                      <Text style={styles.profileEditName}>{displayName}</Text>
-                      <Text style={styles.mutedText}>{profileDay}日目の記録者</Text>
-                    </View>
-                  </View>
-                  <Pressable onPress={onPickProfileImage} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
-                    <Text style={styles.secondaryButtonText}>プロフィール画像を変更</Text>
-                  </Pressable>
-                </View>
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>基本情報</Text>
-                  <TextInput value={name} onChangeText={setName} placeholder="名前" placeholderTextColor="#777" style={styles.settingInput} />
-                  <TextInput value={birthdate} onChangeText={setBirthdate} placeholder="YYYY-MM-DD" placeholderTextColor="#777" style={styles.settingInput} />
-                  <Text style={styles.mutedText}>生年月日または開始日から、Journey Dayを表示します。</Text>
-                  <View style={styles.profileSaveRow}>
-                    <Pressable
-                      onPress={() => {
-                        onUiSound?.();
-                        setProfile((current) => ({ ...current, name, birthdate }));
-                        onClose();
-                      }}
-                      style={({ pressed }) => [styles.profileSaveButton, pressed && styles.touchPressedSoft]}
-                    >
-                      <Text style={styles.profileSaveButtonText}>プロフィールを保存</Text>
-                    </Pressable>
-                  </View>
-                </View>
-                <View style={styles.profileDataGrid}>
-                  <BaseStat label="日記" value={`${journal.length}`} />
-                  <BaseStat label="完了" value={`${completedQuestCount}`} />
-                  <BaseStat label="記憶" value={`${memories.length}`} />
-                </View>
-              </View>
-            )}
-
-            {activeSettingsTab === "sync" && (
-              <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="sync" title="データ同期" body="アカウント接続と保存状態を確認します。" />
-                <View style={styles.authCard}>
-                  <GlassBackdrop intensity={24} />
-                  <View style={styles.authCopy}>
-                    <Text style={styles.settingLabel}>Googleアカウント</Text>
-                    <Text style={styles.settingValue}>{accountLabel}</Text>
-                    <Text style={styles.mutedText}>
-                      接続すると、この端末の記録をあなたのアカウントに紐づける準備ができます。
-                    </Text>
-                  </View>
-                  {session ? (
-                    <View style={styles.syncStatusPill}>
-                      <Text style={styles.syncStatusText}>{syncStatus}</Text>
-                    </View>
-                  ) : (
-                    <Pressable disabled={authBusy} onPress={onGoogleSignIn} style={({ pressed }) => [styles.primaryButton, authBusy && styles.disabledButton, pressed && !authBusy && styles.touchPressedSoft]}>
-                      <Text style={styles.primaryButtonText}>{authBusy ? "接続中..." : "Googleでログイン"}</Text>
-                    </Pressable>
-                  )}
-                  {!!authError && <Text style={styles.errorText}>{authError}</Text>}
-                </View>
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>同期対象</Text>
-                  <View style={styles.syncSummaryRow}>
-                    <BaseStat label="日記" value={`${journal.length}`} />
-                    <BaseStat label="クエスト" value={`${quests.length}`} />
-                    <BaseStat label="記憶" value={`${memories.length}`} />
-                  </View>
-                  <Text style={styles.mutedText}>現在は端末内保存をベースに、アカウント接続状態を先に整えています。</Text>
-                </View>
-                <View style={styles.redirectBox}>
-                  <Text style={styles.settingLabel}>Redirect URI</Text>
-                  <Text style={styles.redirectText}>{redirectUri}</Text>
-                </View>
-              </View>
-            )}
-
-            {activeSettingsTab === "logout" && (
-              <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="logout" title="ログアウト" body="このデバイスのログイン状態を解除します。" />
-                <View style={styles.dangerCard}>
-                  <GlassBackdrop intensity={20} />
-                  <Text style={styles.settingLabel}>現在のアカウント</Text>
-                  <Text style={styles.settingValue}>{accountLabel}</Text>
-                  <Text style={styles.mutedText}>ログアウトしても、端末内に保存された記録は削除されません。</Text>
-                  <Pressable
-                    disabled={!session || authBusy}
-                    onPress={confirmSignOut}
-                    style={({ pressed }) => [styles.dangerButton, (!session || authBusy) && styles.disabledButton, pressed && session && !authBusy && styles.touchPressedSoft]}
-                  >
-                    <Text style={styles.dangerButtonText}>{authBusy ? "処理中..." : "ログアウト"}</Text>
-                  </Pressable>
-                </View>
-              </View>
-            )}
-
-            {activeSettingsTab === "language" && (
-              <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="language" title="言語" body="アプリで使う言語を選びます。" />
-                <View style={styles.segmentedRow}>
-                  {[
-                    ["ja", "日本語"],
-                    ["en", "English"],
-                    ["es", "Español"],
-                    ["zh", "中文"]
-                  ].map(([value, label]) => (
-                    <Pressable
-                      key={value}
-                      onPress={() => updateSettings({ language: value })}
-                      style={({ pressed }) => [styles.segmentButton, settings.language === value && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
-                    >
-                      <Text style={[styles.segmentText, settings.language === value && styles.segmentTextActive]}>{label}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-                <Text style={styles.mutedText}>選んだ言語はこれから順次、表示に反映されます。</Text>
-              </View>
-            )}
-
-            {activeSettingsTab === "notifications" && (
-              <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="notifications" title="夜の呼びかけ" body="Niloからのリマインドを整えます。" />
-                <SettingToggleRow
-                  title="通知"
-                  body="夜の記録の時間に知らせます。"
-                  value={settings.notificationsEnabled}
-                  onPress={() => updateSettings({ notificationsEnabled: !settings.notificationsEnabled })}
-                />
-                <Text style={styles.settingLabel}>合図の時刻</Text>
-                <View style={styles.segmentedRow}>
-                  {["21:00", "22:00", "23:00"].map((time) => (
-                    <Pressable
-                      key={time}
-                      onPress={() => updateSettings({ notificationTime: time })}
-                      style={({ pressed }) => [styles.segmentButton, settings.notificationTime === time && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
-                    >
-                      <Text style={[styles.segmentText, settings.notificationTime === time && styles.segmentTextActive]}>{time}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-                <TextInput
-                  value={settings.notificationTime}
-                  onChangeText={(notificationTime) => updateSettings({ notificationTime })}
-                  placeholder="22:00"
-                  placeholderTextColor="#777"
-                  style={styles.settingInput}
-                />
-                <Text style={styles.mutedText}>実機での通知スケジュールはこの後の実装で繋ぎます（時刻はいま保存されます）。</Text>
-              </View>
-            )}
-
-            {activeSettingsTab === "ritual" && (
-              <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="ritual" title="振り返り" body="あなたのリズムで、記録の深さと頻度を整えます。" />
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>振り返り頻度</Text>
-                  <View style={styles.segmentedRow}>
-                    {["daily", "weekly", "monthly", "seasonal", "off"].map((freq) => (
-                      <Pressable
-                        key={freq}
-                        onPress={() => updateReflectionSettings({ frequency: freq })}
-                        style={({ pressed }) => [styles.segmentButton, (reflectionConfig.frequency || "daily") === freq && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
-                      >
-                        <Text style={[styles.segmentText, (reflectionConfig.frequency || "daily") === freq && styles.segmentTextActive]}>{REFLECTION_FREQUENCY_LABELS[freq]}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <Text style={styles.mutedText}>毎日に縛られず、あなたのペースで。時間帯の制限はありません。オフにすると、いつでも書けます。</Text>
-                </View>
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>質問数</Text>
-                  <View style={styles.segmentedRow}>
-                    {[3, 4, 5].map((count) => (
-                      <Pressable
-                        key={count}
-                        onPress={() => updateRitualSettings({ questionCount: count })}
-                        style={({ pressed }) => [styles.segmentButton, (ritualConfig.questionCount || 5) === count && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
-                      >
-                        <Text style={[styles.segmentText, (ritualConfig.questionCount || 5) === count && styles.segmentTextActive]}>{count}問</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <Text style={styles.mutedText}>短く終えたい時は3問、深く残したい時は5問にできます。</Text>
-                </View>
-                <SettingToggleRow
-                  title="終了後に日記へ保存"
-                  body="OFFにすると、会話を閉じても日記・記憶・クエストを作りません。"
-                  value={ritualConfig.autoSaveJournal !== false}
-                  onPress={() => updateRitualSettings({ autoSaveJournal: ritualConfig.autoSaveJournal === false })}
-                />
-                <SettingToggleRow
-                  title="途中退出の確認"
-                  body="振り返り中に×を押したとき、確認を表示します。"
-                  value={ritualConfig.confirmExit !== false}
-                  onPress={() => updateRitualSettings({ confirmExit: ritualConfig.confirmExit === false })}
-                />
-
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>Niloの対話スタイル</Text>
-                  <View style={styles.segmentedRow}>
-                    {[
-                      ["empathetic", "共感型"],
-                      ["questioning", "問いかけ型"],
-                      ["organizing", "整理型"],
-                      ["silent", "沈黙型"]
-                    ].map(([value, label]) => (
-                      <Pressable
-                        key={value}
-                        onPress={() => updateSettings({ niloStyle: value })}
-                        style={({ pressed }) => [styles.segmentButton, (settings.niloStyle || "empathetic") === value && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
-                      >
-                        <Text style={[styles.segmentText, (settings.niloStyle || "empathetic") === value && styles.segmentTextActive]}>{label}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <Text style={styles.mutedText}>{NILO_STYLE_HINTS[settings.niloStyle || "empathetic"]}</Text>
-                </View>
-
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>要約スタイル</Text>
-                  <View style={styles.segmentedRow}>
-                    {[
-                      ["narrative", "物語形式"],
-                      ["keyword", "キーワード形式"],
-                      ["timeline", "年表形式"]
-                    ].map(([value, label]) => (
-                      <Pressable
-                        key={value}
-                        onPress={() => updateReflectionSettings({ summaryStyle: value })}
-                        style={({ pressed }) => [styles.segmentButton, (reflectionConfig.summaryStyle || "narrative") === value && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
-                      >
-                        <Text style={[styles.segmentText, (reflectionConfig.summaryStyle || "narrative") === value && styles.segmentTextActive]}>{label}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <Text style={styles.mutedText}>振り返りで過去の自分と出会うときの、まとめ方です。</Text>
-                </View>
-
-                <SettingToggleRow
-                  title="1年前と比べる"
-                  body="価値観・感情・キーワードの変化を、そっと並べて見せます。"
-                  value={reflectionConfig.compareLastYear !== false}
-                  onPress={() => updateReflectionSettings({ compareLastYear: reflectionConfig.compareLastYear === false })}
-                />
-
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>通知のトーン</Text>
-                  <View style={styles.segmentedRow}>
-                    {[
-                      ["quiet", "静かな促し"],
-                      ["active", "積極的なリマインド"]
-                    ].map(([value, label]) => (
-                      <Pressable
-                        key={value}
-                        onPress={() => updateReflectionSettings({ tone: value })}
-                        style={({ pressed }) => [styles.segmentButton, (reflectionConfig.tone || "quiet") === value && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
-                      >
-                        <Text style={[styles.segmentText, (reflectionConfig.tone || "quiet") === value && styles.segmentTextActive]}>{label}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <Text style={styles.mutedText}>「いつでも来てください」か「待っています」か。促しの温度です。</Text>
-                </View>
-              </View>
-            )}
-
-            {activeSettingsTab === "data" && (
-              <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="data" title="データ管理" body="端末内に残る記録を確認・整理します。" />
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>端末内データ</Text>
-                  <View style={styles.syncSummaryRow}>
-                    <BaseStat label="日記" value={`${journal.length}`} />
-                    <BaseStat label="クエスト" value={`${quests.length}`} />
-                    <BaseStat label="記憶" value={`${memories.length}`} />
-                    <BaseStat label="章" value={`${chapters.length}`} />
-                  </View>
-                  <Pressable
-                    onPress={() => Alert.alert("エクスポート準備中", "日記・記憶・クエストを書き出す導線です。ファイル保存は次の実装で接続します。")}
-                    style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}
-                  >
-                    <Text style={styles.secondaryButtonText}>エクスポート</Text>
-                  </Pressable>
-                </View>
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>個別に整理</Text>
-                  <Pressable onPress={() => confirmClearData("journal")} style={({ pressed }) => [styles.soundTrackRow, pressed && styles.touchPressedSubtle]}>
-                    <Text style={styles.settingValue}>日記を削除</Text>
-                    <Text style={styles.baseChevron}>›</Text>
-                  </Pressable>
-                  <Pressable onPress={() => confirmClearData("memories")} style={({ pressed }) => [styles.soundTrackRow, pressed && styles.touchPressedSubtle]}>
-                    <Text style={styles.settingValue}>記憶と章を削除</Text>
-                    <Text style={styles.baseChevron}>›</Text>
-                  </Pressable>
-                  <Pressable onPress={() => confirmClearData("quests")} style={({ pressed }) => [styles.soundTrackRow, pressed && styles.touchPressedSubtle]}>
-                    <Text style={styles.settingValue}>クエストをリセット</Text>
-                    <Text style={styles.baseChevron}>›</Text>
-                  </Pressable>
-                </View>
-                <View style={styles.dangerCard}>
-                  <GlassBackdrop intensity={20} />
-                  <Text style={styles.settingLabel}>危険な操作</Text>
-                  <Text style={styles.mutedText}>Arcの端末内記録をまとめて削除します。アカウント接続は解除されません。</Text>
-                  <Pressable onPress={() => confirmClearData("all")} style={({ pressed }) => [styles.dangerButton, pressed && styles.touchPressedSoft]}>
-                    <Text style={styles.dangerButtonText}>すべての記録を削除</Text>
-                  </Pressable>
-                </View>
-              </View>
-            )}
-
-            {activeSettingsTab === "ownership" && (
-              <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="data" title="人生の所有権" body="データはあなたのものです。ARCはそれを証明し、守ります。" />
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.ownershipStatement}>このデータは、あなたのものです。</Text>
-                  <Text style={styles.mutedText}>ARCはあなたの記録を販売・学習・広告に利用しません。あなたの記録は、あなただけのものです。このポリシーは設定のどこからでも確認できます。</Text>
-                </View>
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>データエクスポート</Text>
-                  <Text style={styles.mutedText}>すべての記録を、意味が損なわれない構造化フォーマットで書き出せます。</Text>
-                  <View style={styles.segmentedRow}>
-                    {[["json", "JSON"], ["markdown", "Markdown"]].map(([value, label]) => (
-                      <Pressable
-                        key={value}
-                        onPress={() => setExportFormat(value)}
-                        style={({ pressed }) => [styles.segmentButton, exportFormat === value && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
-                      >
-                        <Text style={[styles.segmentText, exportFormat === value && styles.segmentTextActive]}>{label}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <Text style={styles.settingLabel}>暗号化（任意）</Text>
-                  <TextInput
-                    value={exportPassphrase}
-                    onChangeText={setExportPassphrase}
-                    secureTextEntry
-                    autoCapitalize="none"
-                    placeholder="パスフレーズを設定するとAES-256で保護"
-                    placeholderTextColor="#777"
-                    style={styles.settingInput}
-                  />
-                  <Pressable onPress={runExport} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
-                    <Text style={styles.secondaryButtonText}>記録を書き出す</Text>
-                  </Pressable>
-                  {!!exportStatus && <Text style={styles.mutedText}>{exportStatus}</Text>}
-                </View>
-                <View style={styles.dangerCard}>
-                  <GlassBackdrop intensity={20} />
-                  <Text style={styles.settingLabel}>アーカイブの削除</Text>
-                  <Text style={styles.mutedText}>この端末のすべての記録を消去します。取り消せません。</Text>
-                  <Pressable onPress={confirmDeleteAll} style={({ pressed }) => [styles.dangerButton, pressed && styles.touchPressedSoft]}>
-                    <Text style={styles.dangerButtonText}>アーカイブを削除する</Text>
-                  </Pressable>
-                </View>
-              </View>
-            )}
-
-            {activeSettingsTab === "inheritance" && (
-              <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="policy" title="未来への継承" body="いつか訪れる「その日」のために、静かに準備する場所。" />
-                <Text style={styles.mutedText}>重要な設定です。落ち着いて操作できる時に行ってください。</Text>
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>継承先（信頼できる連絡先）</Text>
-                  <TextInput
-                    value={heirEmail}
-                    onChangeText={setHeirEmail}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    placeholder="example@mail.com"
-                    placeholderTextColor="#777"
-                    style={styles.settingInput}
-                  />
-                  <Pressable onPress={addHeir} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
-                    <Text style={styles.secondaryButtonText}>継承先を追加</Text>
-                  </Pressable>
-                  {(inheritanceConfig.contacts || []).length
-                    ? (inheritanceConfig.contacts || []).map((c) => renderEntryRow(c.id, c.email, () => removeHeir(c.id)))
-                    : <Text style={styles.mutedText}>継承先はまだ登録されていません。</Text>}
-                  <Text style={styles.settingLabel}>未設定時のデフォルト処理</Text>
-                  <View style={styles.segmentedRow}>
-                    {[["delete", "完全削除"], ["transfer", "継承先へ移管"]].map(([value, label]) => (
-                      <Pressable
-                        key={value}
-                        onPress={() => setDefaultAction(value)}
-                        style={({ pressed }) => [styles.segmentButton, (inheritanceConfig.defaultAction || "delete") === value && styles.segmentButtonActive, pressed && styles.touchPressedTight]}
-                      >
-                        <Text style={[styles.segmentText, (inheritanceConfig.defaultAction || "delete") === value && styles.segmentTextActive]}>{label}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <Text style={styles.mutedText}>継承先が本人確認（公証人証明）を提出し、サービス側の審査を経て移管されます。</Text>
-                </View>
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>アクセス権の予約公開</Text>
-                  <Text style={styles.mutedText}>時間と相手を指定して、特定の章を段階的に公開します。いつでも取り消せます。</Text>
-                  <TextInput value={disclosureTarget} onChangeText={setDisclosureTarget} placeholder="公開対象（例：2024年の章 / 旅行タグ）" placeholderTextColor="#777" style={styles.settingInput} />
-                  <TextInput value={disclosureDate} onChangeText={setDisclosureDate} placeholder="公開日（例：2030-05-01）" placeholderTextColor="#777" style={styles.settingInput} />
-                  <TextInput value={disclosureRecipient} onChangeText={setDisclosureRecipient} autoCapitalize="none" keyboardType="email-address" placeholder="受取人のメール" placeholderTextColor="#777" style={styles.settingInput} />
-                  <Pressable onPress={addDisclosure} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
-                    <Text style={styles.secondaryButtonText}>予約公開を追加</Text>
-                  </Pressable>
-                  {(inheritanceConfig.reservedDisclosures || []).length
-                    ? (inheritanceConfig.reservedDisclosures || []).map((d) => renderEntryRow(d.id, `${d.target} → ${d.recipient}（${d.date || "日付未定"}）`, () => removeDisclosure(d.id)))
-                    : <Text style={styles.mutedText}>予約公開はまだありません。</Text>}
-                  {!!inheritanceStatus && <Text style={styles.mutedText}>{inheritanceStatus}</Text>}
-                </View>
-              </View>
-            )}
-
-            {activeSettingsTab === "security" && (
-              <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="privacy" title="聖域のセキュリティ" body="技術的な安全を、人間の言葉で届けます。" />
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>🔒 あなた以外には読めない構造</Text>
-                  <Text style={styles.mutedText}>記録の鍵はこの端末で生成・管理されます。ARCのサーバーでも、記録の内容は見えません。あなた以外には読めない形で守られています。</Text>
-                </View>
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>緊急時のリカバリー</Text>
-                  <Text style={styles.mutedText}>リカバリーキー（24語）は、オフラインの安全な場所に保管してください。これを失うと記録を取り戻せません。</Text>
-                  <Pressable onPress={issueRecoveryKey} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
-                    <Text style={styles.secondaryButtonText}>リカバリーキーを発行</Text>
-                  </Pressable>
-                  {!!recoveryKey && <Text style={styles.recoveryKeyText}>{recoveryKey}</Text>}
-                  {!!recoveryKey && (
-                    <Pressable onPress={copyRecoveryKey} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
-                      <Text style={styles.secondaryButtonText}>コピー</Text>
-                    </Pressable>
-                  )}
-                  {!!recoveryStatus && <Text style={styles.mutedText}>{recoveryStatus}</Text>}
-                </View>
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>緊急連絡先（証人）</Text>
-                  <Text style={styles.mutedText}>復旧の際、事前登録した連絡先が証人になります。</Text>
-                  <TextInput
-                    value={emergencyEmail}
-                    onChangeText={setEmergencyEmail}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    placeholder="trusted@mail.com"
-                    placeholderTextColor="#777"
-                    style={styles.settingInput}
-                  />
-                  <Pressable onPress={addEmergencyContact} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
-                    <Text style={styles.secondaryButtonText}>緊急連絡先を追加</Text>
-                  </Pressable>
-                  {(securityConfig.emergencyContacts || []).length
-                    ? (securityConfig.emergencyContacts || []).map((c) => renderEntryRow(c.id, c.email, () => removeEmergencyContact(c.id)))
-                    : <Text style={styles.mutedText}>緊急連絡先はまだ登録されていません。</Text>}
-                  <Text style={styles.mutedText}>リカバリーには72時間の審査期間があります。「あなたが本当にあなたである」ことを確かめるための時間です。</Text>
-                </View>
-              </View>
-            )}
-
-            {activeSettingsTab === "terms" && (
-              <LegalPage
-                icon="terms"
-                title="利用規約"
-                body="ARCを安心して使うための基本ルールです。"
-                updatedAt="2026.06.06"
-                sections={termsSections}
-              />
-            )}
-
-            {activeSettingsTab === "privacyPolicy" && (
-              <LegalPage
-                icon="policy"
-                title="プライバシーポリシー"
-                body="ARCが扱うデータと、その使い方について。"
-                updatedAt="2026.06.06"
-                sections={privacyPolicySections}
-              />
             )}
           </ScrollView>
         </View>
@@ -4624,65 +3799,87 @@ function SettingsPageTitle({ icon, title, body }) {
   );
 }
 
-function LegalPage({ icon, title, body, updatedAt, sections }) {
-  return (
-    <View style={styles.settingsPage}>
-      <SettingsPageTitle icon={icon} title={title} body={body} />
-      <View style={styles.legalNoticeCard}>
-        <GlassBackdrop intensity={22} />
-        <Text style={styles.settingLabel}>最終更新</Text>
-        <Text style={styles.settingValue}>{updatedAt}</Text>
-        <Text style={styles.mutedText}>
-          この文面はアプリ内表示用のドラフトです。公開前には必要に応じて専門家の確認を行ってください。
-        </Text>
-      </View>
-      {sections.map((section) => (
-        <View key={section.title} style={styles.legalSectionCard}>
-          <GlassBackdrop intensity={20} />
-          <Text style={styles.legalSectionTitle}>{section.title}</Text>
-          <Text style={styles.legalBody}>{section.body}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
 function SettingsBase({
-  rootTab,
-  profile,
-  session,
-  authLoading,
-  authBusy,
   settings,
-  activeBgmTrack,
-  journal,
-  quests,
-  memories,
-  onPickProfileImage,
   onSelect,
-  updateSettings,
-  updatePrivacy,
-  onRootTabChange
+  updateSettings
 }) {
-  const displayName = profile.name || session?.user?.user_metadata?.name || session?.user?.email?.split("@")[0] || "あなた";
-  const journeyDay = daysSince(profile.birthdate) || daysSince(arcStartDate) + 1;
-  const journalCount = journal.length;
-  const completedQuestCount = quests.filter((quest) => quest.completed).length;
-  const activeQuestCount = quests.filter((quest) => !quest.completed).length;
-  const memoryCount = memories.length;
-  const recordScore = journalCount * 2 + completedQuestCount + memoryCount * 3;
-  const visibleLevel = Math.max(1, Math.floor(recordScore / 5) + 1);
-  const levelProgress = Math.min(100, (recordScore % 5) * 20 || (recordScore > 0 ? 100 : 8));
-  const profileInitial = displayName.slice(0, 1).toUpperCase();
-  const syncText = authLoading ? "同期状態を確認中" : session ? "Googleで同期中" : "未接続";
-  const privacy = settings.privacy || {};
-  const reflection = settings.reflection || {};
-  const ritual = settings.ritual || {};
-  const summaryStyleLabels = { narrative: "物語形式", keyword: "キーワード形式", timeline: "年表形式" };
-  const toneLabels = { quiet: "静かな促し", active: "積極的な促し" };
-
   return (
     <View style={styles.simpleSettingsPage}>
+      <Text style={styles.arcGroupLabel}>人生の所有権</Text>
+      <ArcSettingRow
+        title="所有権ポリシー"
+        body="このデータは、あなたのものです"
+        onPress={() => onSelect("ownershipPolicy")}
+      />
+      <ArcSettingRow
+        title="データエクスポート"
+        body="JSON / Markdownで書き出す"
+        onPress={() => onSelect("ownershipExport")}
+      />
+      <ArcSettingRow
+        title="アーカイブの削除"
+        body="端末内の記録を消去する"
+        onPress={() => onSelect("ownershipDelete")}
+      />
+
+      <Text style={[styles.arcGroupLabel, styles.arcGroupLabelSpaced]}>未来への継承</Text>
+      <ArcSettingRow
+        title="継承先の管理"
+        body="信頼できる連絡先を登録する"
+        onPress={() => onSelect("inheritanceContacts")}
+      />
+      <ArcSettingRow
+        title="未設定時のデフォルト処理"
+        body="完全削除、または継承先へ移管"
+        onPress={() => onSelect("inheritanceDefault")}
+      />
+      <ArcSettingRow
+        title="アクセス権の予約公開"
+        body="時間と相手を指定して公開する"
+        onPress={() => onSelect("inheritanceDisclosure")}
+      />
+
+      <Text style={[styles.arcGroupLabel, styles.arcGroupLabelSpaced]}>聖域のセキュリティ</Text>
+      <ArcSettingRow
+        title="暗号化ステータス"
+        body="あなた以外には読めない構造"
+        onPress={() => onSelect("securityEncryption")}
+      />
+      <ArcSettingRow
+        title="リカバリーキー"
+        body="緊急時の復旧手段"
+        onPress={() => onSelect("securityRecovery")}
+      />
+      <ArcSettingRow
+        title="緊急連絡先（証人）"
+        body="復旧の際の証人を登録する"
+        onPress={() => onSelect("securityWitness")}
+      />
+
+      <Text style={[styles.arcGroupLabel, styles.arcGroupLabelSpaced]}>アーカイブの質</Text>
+      <ArcSettingRow
+        title="Niloの対話スタイル"
+        body="寄り添い方のトーン"
+        onPress={() => onSelect("archiveStyle")}
+      />
+      <ArcSettingRow
+        title="振り返り頻度"
+        body="毎日から季節ごとまで、あなたのペースで"
+        onPress={() => onSelect("archiveFrequency")}
+      />
+      <ArcSettingRow
+        title="要約スタイル"
+        body="過去の自分と出会うときの、まとめ方"
+        onPress={() => onSelect("archiveSummary")}
+      />
+      <ArcSettingRow
+        title="通知のトーン"
+        body="静かな促しか、積極的なリマインドか"
+        onPress={() => onSelect("archiveTone")}
+      />
+
+      <Text style={[styles.arcGroupLabel, styles.arcGroupLabelSpaced]}>アプリ設定</Text>
       <ArcSettingRow
         title="ニロの灯り"
         body="そばにいる、ひとつの光"
@@ -4694,6 +3891,16 @@ function SettingsBase({
         body="そっと問いが灯る時刻"
         value={settings.notificationTime || "23:00"}
         onPress={() => onSelect("notifications")}
+      />
+      <ArcSettingRow
+        title="夜の対話"
+        body="質問の数と、終わり方"
+        onPress={() => onSelect("ritual")}
+      />
+      <ArcSettingRow
+        title="サウンド"
+        body="曲の選択と音量"
+        onPress={() => onSelect("bgm")}
       />
       <ArcSettingRow
         title="この場所を守る"
@@ -4721,119 +3928,6 @@ function SettingsBase({
     </View>
   );
 
-  return (
-    <View style={styles.basePage}>
-      <AccountRootTabs activeTab={rootTab} onChange={onRootTabChange} />
-
-      {rootTab === "account" ? (
-        <>
-          <View style={styles.baseProfileCard}>
-            <GlassBackdrop intensity={22} />
-            <View pointerEvents="none" style={styles.baseProfileSheen} />
-            <View pointerEvents="none" style={styles.baseProfileGlow} />
-            <View style={styles.baseProfileTop}>
-              <Pressable onPress={onPickProfileImage} style={styles.baseAvatar}>
-                {profile.imageUri ? (
-                  <Image source={{ uri: profile.imageUri }} style={styles.baseAvatarImage} />
-                ) : (
-                  <Text style={styles.baseAvatarText}>{profileInitial}</Text>
-                )}
-              </Pressable>
-              <View style={styles.baseProfileInfo}>
-                <Text style={styles.baseName}>{displayName}</Text>
-                <Text style={styles.baseLevel}>Lv.{visibleLevel} 記録者</Text>
-                <View style={styles.baseLevelBar}>
-                  <View style={[styles.baseLevelFill, { width: `${levelProgress}%` }]} />
-                </View>
-                <Text style={styles.baseXpText}>夜の記録から少しずつ育っています</Text>
-              </View>
-            </View>
-            <View style={styles.baseMetaRow}>
-              <View style={[styles.baseMetaItem, styles.baseMetaItemStart]}>
-                <Text style={styles.baseMetaIcon}>✺</Text>
-                <View>
-                  <Text style={styles.baseMetaLabel}>ARC開始日</Text>
-                  <Text style={styles.baseMetaValue}>{formatDotDate(arcStartDate)}</Text>
-                </View>
-              </View>
-              <View style={styles.baseMetaDivider} />
-              <View style={styles.baseMetaItem}>
-                <Text style={styles.baseMetaIcon}>♨</Text>
-                <View>
-                  <Text style={styles.baseMetaLabel}>Journey Day</Text>
-                  <Text style={styles.baseMetaValue}>{journeyDay}日目</Text>
-                </View>
-              </View>
-            </View>
-            <View style={styles.baseStatGrid}>
-              <BaseStat label="日記" value={`${journalCount}`} />
-              <BaseStat label="進行中" value={`${activeQuestCount}`} />
-              <BaseStat label="完了" value={`${completedQuestCount}`} />
-              <BaseStat label="記憶" value={`${memoryCount}`} />
-            </View>
-          </View>
-
-          <SettingsSection title="アカウント情報">
-            <BaseSettingRow icon="profile" title="プロフィール" body={`${displayName} / ${journeyDay}日目`} value="編集" onPress={() => onSelect("profile")} />
-            <BaseSettingRow icon="sync" title="データ同期" body={syncText} value={session ? "接続済み" : "未接続"} onPress={() => onSelect("sync")} />
-            {!!session && (
-              <BaseSettingRow icon="logout" title="ログアウト" body="このデバイスからサインアウト" value={authBusy ? "処理中" : "開く"} onPress={() => onSelect("logout")} />
-            )}
-          </SettingsSection>
-
-          <SettingsSection title="データ操作">
-            <BaseSettingRow icon="data" title="人生の所有権" body="構造化エクスポート・所有権の確認" value="開く" onPress={() => onSelect("ownership")} />
-            <BaseSettingRow icon="data" title="データ管理" body={`日記 ${journalCount} / 記憶 ${memoryCount} / クエスト ${quests.length}`} value="整理" onPress={() => onSelect("data")} />
-          </SettingsSection>
-
-          <SettingsSection title="未来と安全">
-            <BaseSettingRow icon="policy" title="未来への継承" body="デジタル遺言・アクセス権の予約公開" value="設定" onPress={() => onSelect("inheritance")} />
-            <BaseSettingRow icon="privacy" title="聖域のセキュリティ" body="暗号化・リカバリーキー" value="開く" onPress={() => onSelect("security")} />
-          </SettingsSection>
-
-          <SettingsSection title="データ利用">
-            <BaseSettingRow icon="privacy" title="日記からクエストを作る" body="夜の会話をクエスト生成に使う" toggle={!!privacy.questLink} onPress={() => updatePrivacy("questLink")} />
-            <BaseSettingRow icon="privacy" title="Niloの記憶に保存する" body="大事な場面の候補に使う" toggle={!!privacy.memoryLink} onPress={() => updatePrivacy("memoryLink")} />
-            <BaseSettingRow icon="profile" title="プロフィールを反映する" body="名前や日数を表示に使う" toggle={!!privacy.profileUse} onPress={() => updatePrivacy("profileUse")} />
-          </SettingsSection>
-
-          <SettingsSection title="規約とポリシー">
-            <BaseSettingRow icon="terms" title="利用規約" body="ARCの利用条件" value="表示" onPress={() => onSelect("terms")} />
-            <BaseSettingRow icon="policy" title="プライバシーポリシー" body="データの取り扱いについて" value="表示" onPress={() => onSelect("privacyPolicy")} />
-          </SettingsSection>
-        </>
-      ) : (
-        <>
-          <SettingsSection title="リチュアル">
-            <BaseSettingRow icon="ritual" title="Night Ritual" body={`${REFLECTION_FREQUENCY_LABELS[reflection.frequency || "daily"]} / ${ritual.questionCount || 5}問`} value="詳細" onPress={() => onSelect("ritual")} />
-            <BaseSettingRow icon="notifications" title="夜の合図" body="記録の時間にそっと知らせます" toggle={!!settings.notificationsEnabled} onPress={() => updateSettings({ notificationsEnabled: !settings.notificationsEnabled })} />
-            <BaseSettingRow icon="notifications" title="合図の時刻" body={settings.notificationsEnabled ? "Niloが呼びかける時間" : "通知をオンにすると設定できます"} value={settings.notificationTime || "22:00"} onPress={() => onSelect("notifications")} />
-          </SettingsSection>
-
-          <SettingsSection title="アーカイブ品質">
-            <BaseSettingRow icon="ritual" title="Niloの対話スタイル" body={NILO_STYLE_HINTS[settings.niloStyle || "empathetic"]} value="調整" onPress={() => onSelect("ritual")} />
-            <BaseSettingRow icon="ritual" title="振り返り要約" body={`${summaryStyleLabels[reflection.summaryStyle || "narrative"]} / ${toneLabels[reflection.tone || "quiet"]}`} value="調整" onPress={() => onSelect("ritual")} />
-          </SettingsSection>
-
-          <SettingsSection title="見た目">
-            <BaseSettingRow icon="language" title="言語" body={`表示言語 ${languageLabel(settings.language)}`} value={(settings.language || "ja").toUpperCase()} onPress={() => onSelect("language")} />
-          </SettingsSection>
-
-          <SettingsSection title="音と触覚">
-            <BaseSettingRow icon="sound" title="BGM" body={settings.bgmEnabled ? `${activeBgmTrack.title} / ${Math.round(settings.bgmVolume * 100)}%` : "夜のサウンドトラック"} toggle={!!settings.bgmEnabled} onPress={() => updateSettings({ bgmEnabled: !settings.bgmEnabled })} />
-            <BaseSettingRow icon="sound" title="操作音" body="ボタンや記録の小さな音" toggle={!!settings.soundEffectsEnabled} onPress={() => updateSettings({ soundEffectsEnabled: !settings.soundEffectsEnabled })} />
-            <BaseSettingRow icon="sound" title="触覚" body="人生の節目で、そっと手に残す" toggle={!!settings.hapticsEnabled} onPress={() => updateSettings({ hapticsEnabled: !settings.hapticsEnabled })} />
-            <BaseSettingRow icon="sound" title="サウンド詳細" body="曲の選択と音量" value="開く" onPress={() => onSelect("bgm")} />
-          </SettingsSection>
-
-          <SettingsSection title="アプリについて">
-            <BaseSettingRow icon="feedback" title="フィードバック" body="ご意見・ご要望をお聞かせください" value="準備中" disabled />
-            <BaseSettingRow icon="contact" title="お問い合わせ" body="サポートへ連絡する" value="準備中" disabled />
-          </SettingsSection>
-        </>
-      )}
-    </View>
-  );
 }
 
 function ArcSettingRow({ title, body, value, toggle, onPress }) {
@@ -4853,81 +3947,6 @@ function ArcSettingRow({ title, body, value, toggle, onPress }) {
           {!!value && <Text style={styles.arcSettingValue}>{value}</Text>}
           <Text style={styles.arcSettingChevron}>›</Text>
         </View>
-      )}
-    </Pressable>
-  );
-}
-
-function AccountRootTabs({ activeTab, onChange }) {
-  return (
-    <View style={styles.accountRootTabs}>
-      {accountRootTabs.map((tab) => {
-        const active = activeTab === tab.id;
-        return (
-          <Pressable
-            key={tab.id}
-            onPress={() => onChange(tab.id)}
-            style={({ pressed }) => [styles.accountRootTab, active && styles.accountRootTabActive, pressed && styles.touchPressedTight]}
-          >
-            <Text style={[styles.accountRootTabLabel, active && styles.accountRootTabLabelActive]}>{tab.label}</Text>
-            <Text numberOfLines={1} style={[styles.accountRootTabSub, active && styles.accountRootTabSubActive]}>{tab.sub}</Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
-function BaseStat({ label, value }) {
-  return (
-    <View style={styles.baseStat}>
-      <Text style={styles.baseStatValue}>{value}</Text>
-      <Text style={styles.baseStatLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function SettingsSection({ title, children }) {
-  return (
-    <View style={styles.baseSection}>
-      <Text style={styles.baseSectionTitle}>{title}</Text>
-      <View style={styles.baseList}>
-        <GlassBackdrop intensity={18} />
-        {children}
-      </View>
-    </View>
-  );
-}
-
-function BaseSettingRow({ icon, title, body, badge, value, toggle, disabled = false, onPress }) {
-  const isToggle = typeof toggle === "boolean";
-  return (
-    <Pressable
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [styles.baseRow, disabled && styles.baseRowDisabled, pressed && !disabled && styles.touchPressedSubtle]}
-    >
-      <View style={[styles.baseRowIcon, disabled && styles.baseRowIconDisabled]}>
-        <SettingsIcon id={icon} locked={disabled} />
-      </View>
-      <View style={styles.baseRowCopy}>
-        <Text style={[styles.baseRowTitle, disabled && styles.baseTextDisabled]}>{title}</Text>
-        <Text style={[styles.baseRowBody, disabled && styles.baseTextDisabled]}>{body}</Text>
-      </View>
-      {!!badge && (
-        <View style={styles.baseBadge}>
-          <Text style={styles.baseBadgeText}>{badge}</Text>
-        </View>
-      )}
-      {isToggle ? (
-        <View style={[styles.togglePill, toggle && styles.togglePillOn]}>
-          <Text style={[styles.toggleText, toggle && styles.toggleTextOn]}>{toggle ? "ON" : "OFF"}</Text>
-        </View>
-      ) : (
-        <>
-          {!!value && !badge && <Text style={[styles.baseRowValue, disabled && styles.baseTextDisabled]}>{value}</Text>}
-          {!disabled && <Text style={styles.baseChevron}>›</Text>}
-        </>
       )}
     </Pressable>
   );
@@ -9815,6 +8834,40 @@ const styles = StyleSheet.create({
   arcSwitchKnobOn: {
     alignSelf: "flex-end",
     backgroundColor: "#ffd08a"
+  },
+  arcGroupLabel: {
+    color: "rgba(217,168,108,0.42)",
+    fontFamily: fontSerifJa,
+    fontSize: 11,
+    letterSpacing: 2.6,
+    marginBottom: 2,
+    marginTop: 6
+  },
+  arcGroupLabelSpaced: {
+    marginTop: 44
+  },
+  arcSectionIndex: {
+    color: "rgba(217,168,108,0.5)",
+    fontFamily: fontSerifEnLight,
+    fontSize: 15,
+    letterSpacing: 1.6,
+    marginRight: 16
+  },
+  inlineConfirmBlock: {
+    borderColor: "rgba(255,254,244,0.1)",
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 10,
+    marginTop: 12,
+    padding: 14
+  },
+  dangerConfirmRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 4
+  },
+  dangerConfirmButton: {
+    flex: 1
   },
   settingsWordmark: {
     alignItems: "center",
