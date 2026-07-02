@@ -313,11 +313,16 @@ const demoChapters = [
   }
 ];
 
-const demoLifeQuest = {
-  title: "航空大学校に合格する",
-  start: "2024年4月 から",
-  recordCount: 12,
+// The former Life Quest, folded into Quest as a future-facing exploration per
+// the integration memo: motivation comes from the visible weight of time and
+// words spent (経過時間・言葉の積み重ね), never from completion metrics.
+const demoFutureQuest = {
+  id: "future-pilot",
+  theme: "航空大学校に合格する",
+  since: "2024年4月から",
+  duration: "2年3ヶ月",
   latestLine: "落ちても、この時間は無駄じゃない。",
+  niloLine: "これだけ長く、この夢と一緒にいますね。",
   records: [
     { date: "6月20日", text: "数学の過去問、ようやく7割。少しだけ、光が見えた。" },
     { date: "6月8日", text: "模試の結果に落ち込んだ。でも、やめる気はない。" },
@@ -2842,6 +2847,7 @@ function QuestScreen({ onUiSound, active }) {
   const token = useEntrancePlay(active);
   const [proposals, setProposals] = useState(demoQuestProposals);
   const [ongoing, setOngoing] = useState(demoOngoingQuests);
+  const [futureQuestOpen, setFutureQuestOpen] = useState(false);
 
   function acceptProposal(proposal) {
     onUiSound?.();
@@ -2858,6 +2864,7 @@ function QuestScreen({ onUiSound, active }) {
   }
 
   return (
+    <>
     <ScrollView contentContainerStyle={styles.questScrollContent} showsVerticalScrollIndicator={false}>
       <RiseIn index={0} playToken={token} style={styles.questHeader}>
         <Text style={styles.questScreenTitle}>クエスト</Text>
@@ -2902,7 +2909,7 @@ function QuestScreen({ onUiSound, active }) {
       )}
 
       <RiseIn index={proposals.length + 2} playToken={token} style={[styles.questGroupHeader, styles.questGroupHeaderSpaced]}>
-        <Text style={styles.questGroupTitle}>進行中の探求</Text>
+        <Text style={styles.questGroupTitle}>過去を辿る探求</Text>
         <View style={styles.questGroupRule} />
       </RiseIn>
       {ongoing.map((quest, index) => (
@@ -2915,7 +2922,26 @@ function QuestScreen({ onUiSound, active }) {
           </View>
         </RiseIn>
       ))}
+
+      <RiseIn index={proposals.length + ongoing.length + 3} playToken={token} style={[styles.questGroupHeader, styles.questGroupHeaderSpaced]}>
+        <Text style={styles.questGroupTitle}>未来に向かう探求</Text>
+        <View style={styles.questGroupRule} />
+      </RiseIn>
+      <RiseIn index={proposals.length + ongoing.length + 4} playToken={token} duration={500}>
+        <Pressable
+          onPress={() => {
+            onUiSound?.();
+            setFutureQuestOpen(true);
+          }}
+          style={({ pressed }) => [styles.questOngoingRow, pressed && styles.touchPressedSubtle]}
+        >
+          <Text style={styles.questOngoingTheme}>{demoFutureQuest.theme}</Text>
+          <Text style={styles.questOngoingMeta}>{demoFutureQuest.since}　・　{demoFutureQuest.duration}</Text>
+        </Pressable>
+      </RiseIn>
     </ScrollView>
+    <FutureQuestDetailModal visible={futureQuestOpen} onClose={() => setFutureQuestOpen(false)} quest={demoFutureQuest} />
+    </>
   );
 }
 
@@ -3119,7 +3145,6 @@ function JournalScreen({ journal, active, onOpenDetail }) {
 }
 
 function StoryScreen({ memories, chapters, proposals, eligibleCount, busy, onPropose, onConfirm, onDefer, onSplit, onRename, active }) {
-  const [lifeQuestOpen, setLifeQuestOpen] = useState(false);
   const token = useEntrancePlay(active);
   const chapterTimeline = getChapterTimelineEntries(chapters);
   const hasProposals = (proposals?.length || 0) > 0;
@@ -3144,21 +3169,7 @@ function StoryScreen({ memories, chapters, proposals, eligibleCount, busy, onPro
                 </View>
                 <Text style={[styles.chapterTimelineTitle, index > 0 && styles.chapterPastTitle]}>{chapter.title}</Text>
                 <Text style={[styles.chapterTimelineSummary, index > 0 && styles.chapterPastSummary]}>{chapter.summary}</Text>
-                {index === 0 && (
-                  <>
-                    <Text style={styles.chapterNowNote}>—— いま、この章の中に</Text>
-                    <Pressable onPress={() => setLifeQuestOpen(true)} style={({ pressed }) => [styles.lifeQuestCard, pressed && styles.touchPressedSubtle]}>
-                      <Text style={styles.lifeQuestLabel}>LIFE QUEST</Text>
-                      <Text style={styles.lifeQuestTitle}>{demoLifeQuest.title}</Text>
-                      <View style={styles.lifeQuestMetaRow}>
-                        <Text style={styles.lifeQuestMeta}>記録 {demoLifeQuest.recordCount}回</Text>
-                        <Text style={styles.lifeQuestMeta}>・</Text>
-                        <Text style={styles.lifeQuestMeta}>最終 6月20日</Text>
-                        <Text style={styles.lifeQuestChevron}>›</Text>
-                      </View>
-                    </Pressable>
-                  </>
-                )}
+                {index === 0 && <Text style={styles.chapterNowNote}>—— いま、この章の中に</Text>}
               </View>
             </RiseIn>
           ))}
@@ -3191,12 +3202,15 @@ function StoryScreen({ memories, chapters, proposals, eligibleCount, busy, onPro
           />
         ))}
       </ScrollView>
-      <LifeQuestDetailModal visible={lifeQuestOpen} onClose={() => setLifeQuestOpen(false)} quest={demoLifeQuest} />
     </>
   );
 }
 
-function LifeQuestDetailModal({ visible, onClose, quest }) {
+// Detail view for a future-facing exploration (the former Life Quest). Per the
+// integration memo, what it makes visible is spent heat, not progress: the
+// words exchanged over time, the thickness of elapsed time, and Nilo
+// reflecting that back in words — never in numbers.
+function FutureQuestDetailModal({ visible, onClose, quest }) {
   const token = useEntrancePlay(visible);
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
@@ -3211,9 +3225,10 @@ function LifeQuestDetailModal({ visible, onClose, quest }) {
           </Pressable>
           <ScrollView contentContainerStyle={styles.lifeQuestDetailScroll} showsVerticalScrollIndicator={false}>
             <RiseIn index={0} playToken={token}>
-              <Text style={styles.lifeQuestDetailLabel}>LIFE QUEST</Text>
-              <Text style={styles.lifeQuestDetailTitle}>{quest.title}</Text>
-              <Text style={styles.lifeQuestDetailMeta}>{quest.start}　・　記録 {quest.recordCount} 回</Text>
+              <Text style={styles.lifeQuestDetailLabel}>未来に向かう探求</Text>
+              <Text style={styles.lifeQuestDetailTitle}>{quest.theme}</Text>
+              <Text style={styles.lifeQuestDetailMeta}>{quest.since}　・　{quest.duration}</Text>
+              {!!quest.niloLine && <Text style={styles.futureQuestNiloLine}>{quest.niloLine}</Text>}
             </RiseIn>
 
             <RiseIn index={1} playToken={token} style={styles.latestWordCard}>
@@ -3222,7 +3237,7 @@ function LifeQuestDetailModal({ visible, onClose, quest }) {
             </RiseIn>
 
             <RiseIn index={2} playToken={token} style={styles.recordTrailHeader}>
-              <Text style={styles.recordTrailLabel}>記録の軌跡</Text>
+              <Text style={styles.recordTrailLabel}>言葉の軌跡</Text>
               <View style={styles.recordTrailRule} />
             </RiseIn>
             <View style={styles.lifeQuestRecordTimeline}>
@@ -3240,17 +3255,9 @@ function LifeQuestDetailModal({ visible, onClose, quest }) {
 
             <View style={styles.lifeQuestActions}>
               <Pressable onPress={onClose} style={({ pressed }) => [styles.lifeQuestTalkButton, pressed && styles.touchPressedTight]}>
-                <Text style={styles.lifeQuestTalkText}>Niloと今日の進捗を話す</Text>
+                <Text style={styles.lifeQuestTalkText}>Niloとこの願いを話す</Text>
               </Pressable>
-              <View style={styles.lifeQuestGhostRow}>
-                <Pressable onPress={onClose} style={({ pressed }) => [styles.lifeQuestGhostButton, pressed && styles.touchPressedSubtle]}>
-                  <Text style={styles.lifeQuestGhostText}>この章を完了する</Text>
-                </Pressable>
-                <Pressable onPress={onClose} style={({ pressed }) => [styles.lifeQuestGhostButton, pressed && styles.touchPressedSubtle]}>
-                  <Text style={styles.lifeQuestGhostText}>この章を閉じる</Text>
-                </Pressable>
-              </View>
-              <Text style={styles.lifeQuestPhilosophy}>達成より、道のりを残す。{"\n"}どちらも同じ重さで、章になる。</Text>
+              <Text style={styles.lifeQuestPhilosophy}>達成より、道のりを残す。{"\n"}願いが叶っても、かたちを変えても、{"\n"}この時間は消えない。</Text>
             </View>
           </ScrollView>
           <StatusBar barStyle="light-content" />
@@ -9047,51 +9054,6 @@ const baseStyleDefs = ({
     letterSpacing: 2.2,
     marginTop: 13
   },
-  lifeQuestCard: {
-    backgroundColor: "rgba(48,37,26,0.56)",
-    borderColor: "rgba(217,168,108,0.18)",
-    borderRadius: 14,
-    borderWidth: 1,
-    marginTop: 18,
-    outlineStyle: "none",
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.34,
-    shadowRadius: 30
-  },
-  lifeQuestLabel: {
-    color: "rgba(225,190,140,0.85)",
-    fontFamily: fontSerifEnMedium,
-    fontSize: 9,
-    letterSpacing: 2.6,
-    marginBottom: 9
-  },
-  lifeQuestTitle: {
-    color: "#EDE3D2",
-    fontFamily: fontSerifJa,
-    fontSize: 18,
-    letterSpacing: 0.5,
-    lineHeight: 26
-  },
-  lifeQuestMetaRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 14
-  },
-  lifeQuestMeta: {
-    color: "rgba(190,180,162,0.6)",
-    fontFamily: fontSerifJa,
-    fontSize: 11
-  },
-  lifeQuestChevron: {
-    color: "rgba(225,180,120,0.7)",
-    flex: 1,
-    fontSize: 18,
-    textAlign: "right"
-  },
   chapterNewItem: {
     paddingBottom: 8,
     paddingTop: 18,
@@ -9181,6 +9143,14 @@ const baseStyleDefs = ({
     letterSpacing: 0.7,
     marginTop: 14
   },
+  futureQuestNiloLine: {
+    color: "rgba(228,196,142,0.7)",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    lineHeight: 23,
+    marginTop: 18
+  },
   latestWordCard: {
     backgroundColor: "rgba(255,243,225,0.07)",
     borderColor: "rgba(240,224,198,0.18)",
@@ -9242,24 +9212,6 @@ const baseStyleDefs = ({
     fontFamily: fontSerifJa,
     fontSize: 14,
     letterSpacing: 0.6
-  },
-  lifeQuestGhostRow: {
-    flexDirection: "row",
-    gap: 12
-  },
-  lifeQuestGhostButton: {
-    alignItems: "center",
-    backgroundColor: "rgba(232,226,214,0.03)",
-    borderColor: "rgba(232,226,214,0.12)",
-    borderRadius: 12,
-    borderWidth: 1,
-    flex: 1,
-    paddingVertical: 13
-  },
-  lifeQuestGhostText: {
-    color: "rgba(225,218,205,0.7)",
-    fontFamily: fontSerifJa,
-    fontSize: 13
   },
   lifeQuestPhilosophy: {
     color: "rgba(190,180,162,0.4)",
