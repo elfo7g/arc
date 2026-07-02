@@ -1579,6 +1579,7 @@ function AppContent() {
           profile={profile}
           session={session}
           showTitle={activeTab !== "home"}
+          showSettings={activeTab === "home"}
           onAccount={() => {
             playUiSound();
             setSettingsOpen(true);
@@ -1803,7 +1804,7 @@ export default function App() {
   );
 }
 
-function Header({ onAccount, onNotifications, showTitle }) {
+function Header({ onAccount, onNotifications, showTitle, showSettings = true }) {
   return (
     <View style={styles.header}>
       <View style={styles.headerSide} />
@@ -1816,14 +1817,16 @@ function Header({ onAccount, onNotifications, showTitle }) {
       >
         <NotificationBellGlyph />
       </Pressable>
-      <Pressable
-        accessibilityLabel="設定を開く"
-        onPress={onAccount}
-        focusable={false}
-        style={({ pressed }) => [styles.settingsSunButton, pressed && styles.touchPressedTight]}
-      >
-        <SettingsSunGlyph />
-      </Pressable>
+      {showSettings && (
+        <Pressable
+          accessibilityLabel="設定を開く"
+          onPress={onAccount}
+          focusable={false}
+          style={({ pressed }) => [styles.settingsSunButton, pressed && styles.touchPressedTight]}
+        >
+          <SettingsSunGlyph />
+        </Pressable>
+      )}
     </View>
   );
 }
