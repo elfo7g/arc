@@ -1634,6 +1634,7 @@ function AppContent() {
           session={session}
           showTitle={activeTab !== "home"}
           showSettings={activeTab === "home"}
+          showNotifications={activeTab === "home"}
           onAccount={() => {
             playUiSound();
             setSettingsOpen(true);
@@ -1858,19 +1859,21 @@ export default function App() {
   );
 }
 
-function Header({ onAccount, onNotifications, showTitle, showSettings = true }) {
+function Header({ onAccount, onNotifications, showTitle, showSettings = true, showNotifications = true }) {
   return (
     <View style={styles.header}>
       <View style={styles.headerSide} />
       {showTitle && <Text style={styles.headerTitle}>ARC</Text>}
-      <Pressable
-        accessibilityLabel="通知を開く"
-        onPress={onNotifications}
-        focusable={false}
-        style={({ pressed }) => [styles.notificationButton, pressed && styles.touchPressedTight]}
-      >
-        <NotificationBellGlyph />
-      </Pressable>
+      {showNotifications && (
+        <Pressable
+          accessibilityLabel="通知を開く"
+          onPress={onNotifications}
+          focusable={false}
+          style={({ pressed }) => [styles.notificationButton, pressed && styles.touchPressedTight]}
+        >
+          <NotificationBellGlyph />
+        </Pressable>
+      )}
       {showSettings && (
         <Pressable
           accessibilityLabel="設定を開く"
@@ -7797,7 +7800,7 @@ const baseStyleDefs = ({
     borderColor: "rgba(217,168,108,0.18)",
     borderRadius: 999,
     borderWidth: 1,
-    marginLeft: -2,
+    marginLeft: 40,
     paddingHorizontal: 13,
     paddingVertical: 8
   },
