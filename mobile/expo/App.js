@@ -288,6 +288,9 @@ const demoJournalEntries = [
   }
 ];
 
+// Chapters carry no data of their own — each page is diary entries re-read at
+// a larger scale (per the Chapter spec: a meta-layer over the diary, never a
+// replacement). Numbers appear only as accumulated weight, never as progress.
 const demoChapters = [
   {
     id: "demo-chapter-recovery",
@@ -295,21 +298,80 @@ const demoChapters = [
     ordinal: "第二章",
     period: "2023 — いま",
     summary: "波が引くように、痛みが遠ざかる。",
-    current: true
+    current: true,
+    tint: "rgba(214,168,106,0.16)",
+    recordCount: 34,
+    excerpts: [
+      { date: "6月28日", text: "夕方、ひとりで長い散歩をした。川沿いの道を、ただ歩いていた。" },
+      { date: "6月21日", text: "母に電話した。短い会話だったけど、声が聞けてよかった。" },
+      { date: "2月3日", text: "久しぶりに、朝が怖くなかった。" }
+    ],
+    reunion: {
+      fromLabel: "序章 ・ はじまりの場所",
+      quote: "何も知らないことが、あんなに強かったなんて。"
+    },
+    wish: {
+      theme: "航空大学校に合格する",
+      line: "この章のあいだに、12回この願いに触れてきた。"
+    },
+    words: [
+      { text: "呼吸", weight: 3 },
+      { text: "散歩", weight: 2 },
+      { text: "母", weight: 3 },
+      { text: "雨の音", weight: 1 },
+      { text: "ゆっくり", weight: 2 },
+      { text: "手放す", weight: 1 }
+    ],
+    figures: ["母", "川沿いの道", "実家の台所"],
+    niloLetter: "この章のあなたは、急がなくなりましたね。遠くを見る代わりに、足元の言葉が増えました。それは戻ることではなく、深くなることだと、私は思っています。",
+    stats: { records: "34の記録", span: "1年と6ヶ月", emotion: "中心にあった感情 ・ 安心" }
   },
   {
     id: "demo-chapter-detour",
     title: "遠回りの年",
     ordinal: "第一章",
     period: "2021 — 2023",
-    summary: "迷いながら、それでも歩いていた。"
+    summary: "迷いながら、それでも歩いていた。",
+    tint: "rgba(122,140,168,0.14)",
+    recordCount: 58,
+    excerpts: [
+      { date: "2022年11月", text: "また進路を変えた。誰にも言えなかった。" },
+      { date: "2022年6月", text: "眠れない夜が続く。でも書くことだけはやめていない。" },
+      { date: "2021年9月", text: "全部を疑った日。それでも朝は来た。" }
+    ],
+    reunion: {
+      fromLabel: "第二章 ・ 静かな回復",
+      quote: "あの遠回りがなければ、この静けさに気づけなかった。"
+    },
+    words: [
+      { text: "夜", weight: 3 },
+      { text: "進路", weight: 2 },
+      { text: "ひとり", weight: 2 },
+      { text: "それでも", weight: 3 },
+      { text: "書く", weight: 1 }
+    ],
+    figures: ["深夜の机", "駅までの坂道"],
+    niloLetter: "遠回りと呼んでいた道を、あなたはいちども止まらずに歩いていました。迷いの言葉の奥に、進み続けた記録だけが残っています。",
+    stats: { records: "58の記録", span: "2年", emotion: "中心にあった感情 ・ 揺らぎ" }
   },
   {
     id: "demo-chapter-origin",
     title: "はじまりの場所",
     ordinal: "序章",
     period: "2019 — 2021",
-    summary: "何も知らずに、ただ眩しかった。"
+    summary: "何も知らずに、ただ眩しかった。",
+    tint: "rgba(196,142,142,0.12)",
+    recordCount: 1,
+    excerpts: [
+      { date: "2019年4月", text: "空を見上げて、パイロットになりたいと思った日。" }
+    ],
+    wish: {
+      theme: "航空大学校に合格する",
+      line: "この願いが、はじめて言葉になった章。"
+    },
+    figures: ["春の空港", "はじめてのノート"],
+    niloLetter: "この章に残っている言葉は、ひとつだけ。でもその一行から、いまに続くすべてが始まっています。",
+    stats: { records: "1つの記録", span: "2年", emotion: "中心にあった感情 ・ 憧れ" }
   }
 ];
 
@@ -386,7 +448,7 @@ function getEmailOtpErrorMessage(error) {
 }
 
 function AppContent() {
-  const { width, height } = useWindowDimensions();
+  const { height } = useWindowDimensions();
   const [fontsLoaded] = useFonts({
     CormorantGaramond_300Light,
     CormorantGaramond_400Regular,
@@ -500,51 +562,19 @@ function AppContent() {
   const [bgmStatus, setBgmStatus] = useState({ playing: false, isLoaded: false });
   const bgmPlayerRef = useRef(null);
   const sfxPlayerRef = useRef(null);
-  const pageScrollX = useRef(new Animated.Value(0)).current;
   const tabBarOpacity = useRef(new Animated.Value(1)).current;
   const unlockNoticeOpacity = useRef(new Animated.Value(0)).current;
   // A hard blackout the instant the ritual begins, held briefly, then faded
   // away — so the dialogue arrives out of black rather than cross-fading
   // straight from Home.
   const ritualBlackout = useRef(new Animated.Value(0)).current;
-  const programmaticScroll = useRef(false);
-  const programmaticScrollTimer = useRef(null);
   const unlockNoticeTimer = useRef(null);
   const sealTimer = useRef(null);
-  const pageScrollRef = useRef(null);
   const composerInputRef = useRef(null);
   const ritualLockedRef = useRef(false);
   const ritualFocusTimers = useRef([]);
   const ritualRunIdRef = useRef(0);
   const didShowInitialHomePrompt = useRef(false);
-  const currentPageIndex = useRef(0);
-  const pagePosition = useRef(0);
-  // Tells TabBar whether the current activeTab change came from a tab-button
-  // press (animate the icon lift/scale) or a swipe/momentum settle (snap
-  // instantly, no animation).
-  const lastSwitchWasPress = useRef(true);
-  const viewportFraction = 1;
-  const pageGap = 0;
-  const pageWidth = width * viewportFraction;
-  const pageStep = pageWidth + pageGap;
-  const sidePeek = Math.max(0, (width - pageWidth) / 2);
-  const initialPageIndex = tabs.findIndex((tab) => tab.id === "home");
-  const didSetInitialPage = useRef(false);
-  const composerOpacity = pageScrollX.interpolate({
-    inputRange: [(initialPageIndex - 0.7) * pageStep, initialPageIndex * pageStep, (initialPageIndex + 0.7) * pageStep],
-    outputRange: [0, 1, 0],
-    extrapolate: "clamp"
-  });
-  const composerTranslateY = pageScrollX.interpolate({
-    inputRange: [(initialPageIndex - 1) * pageStep, initialPageIndex * pageStep, (initialPageIndex + 1) * pageStep],
-    outputRange: [18, 0, 18],
-    extrapolate: "clamp"
-  });
-  const composerScale = pageScrollX.interpolate({
-    inputRange: [(initialPageIndex - 1) * pageStep, initialPageIndex * pageStep, (initialPageIndex + 1) * pageStep],
-    outputRange: [0.985, 1, 0.985],
-    extrapolate: "clamp"
-  });
   const redirectUri = Linking.createURL("auth/callback");
   // English month-day label for Nilo's header ("JUNE 28 · 今夜"), like the reference.
   const niloEnDate = useMemo(() => {
@@ -644,7 +674,6 @@ function AppContent() {
     ritualFocusTimers.current = [];
     if (unlockNoticeTimer.current) clearTimeout(unlockNoticeTimer.current);
     if (sealTimer.current) clearTimeout(sealTimer.current);
-    if (programmaticScrollTimer.current) clearTimeout(programmaticScrollTimer.current);
   }, []);
 
   useEffect(() => {
@@ -1031,98 +1060,17 @@ function AppContent() {
       showUnlockNotice(tabId);
       return;
     }
-    const nextIndex = tabs.findIndex((tab) => tab.id === tabId);
-    if (nextIndex < 0) return;
     if (tabId !== activeTab) playUiSound();
-    const endX = nextIndex * pageStep;
-    lastSwitchWasPress.current = true;
     setActiveTab(tabId);
-    currentPageIndex.current = nextIndex;
-    // Let the platform run one smooth native scroll instead of stepping
-    // scrollTo every frame on the JS thread (which fought snap + re-renders).
-    programmaticScroll.current = true;
-    if (programmaticScrollTimer.current) clearTimeout(programmaticScrollTimer.current);
-    programmaticScrollTimer.current = setTimeout(() => {
-      programmaticScroll.current = false;
-    }, 480);
-    pageScrollRef.current?.scrollTo({ x: endX, animated: true });
   }
 
-  const handlePageScroll = useMemo(() => Animated.event(
-    [{ nativeEvent: { contentOffset: { x: pageScrollX } } }],
-    {
-      useNativeDriver: false,
-      listener: (event) => {
-        if (ritualLocked) {
-          currentPageIndex.current = initialPageIndex;
-          pagePosition.current = initialPageIndex * pageStep;
-          lastSwitchWasPress.current = false;
-          setActiveTab("home");
-          return;
-        }
-        const offsetX = event.nativeEvent.contentOffset.x;
-        pagePosition.current = offsetX;
-        // While we drive a tab-tap scroll, let pageScrollX track the glide
-        // (for scale/indicator) but don't churn activeTab through passed tabs.
-        if (programmaticScroll.current) return;
-        const nextIndex = Math.max(0, Math.min(tabs.length - 1, Math.round(offsetX / pageStep)));
-        if (!tabUnlocks[tabs[nextIndex].id]) {
-          currentPageIndex.current = initialPageIndex;
-          pagePosition.current = initialPageIndex * pageStep;
-          lastSwitchWasPress.current = false;
-          setActiveTab("home");
-          requestAnimationFrame(() => {
-            pageScrollRef.current?.scrollTo({ x: initialPageIndex * pageStep, animated: true });
-          });
-          return;
-        }
-        if (nextIndex !== currentPageIndex.current) {
-          currentPageIndex.current = nextIndex;
-          lastSwitchWasPress.current = false;
-          setActiveTab(tabs[nextIndex].id);
-        }
-      }
-    }
-  ), [initialPageIndex, pageScrollX, pageStep, ritualLocked, tabUnlocks]);
-
-  function settlePage(event) {
-    programmaticScroll.current = false;
-    if (programmaticScrollTimer.current) {
-      clearTimeout(programmaticScrollTimer.current);
-      programmaticScrollTimer.current = null;
-    }
-    if (ritualLocked) {
-      currentPageIndex.current = initialPageIndex;
-      pagePosition.current = initialPageIndex * pageStep;
-      pageScrollRef.current?.scrollTo({ x: initialPageIndex * pageStep, animated: false });
-      lastSwitchWasPress.current = false;
-      setActiveTab("home");
-      requestAnimationFrame(() => composerInputRef.current?.focus());
-      return;
-    }
-    const offsetX = event.nativeEvent.contentOffset.x;
-    pagePosition.current = offsetX;
-    const nextIndex = Math.max(0, Math.min(tabs.length - 1, Math.round(offsetX / pageStep)));
-    if (!tabUnlocks[tabs[nextIndex].id]) {
-      currentPageIndex.current = initialPageIndex;
-      pagePosition.current = initialPageIndex * pageStep;
-      pageScrollRef.current?.scrollTo({ x: initialPageIndex * pageStep, animated: true });
-      lastSwitchWasPress.current = false;
-      setActiveTab("home");
-      return;
-    }
-    currentPageIndex.current = nextIndex;
-    lastSwitchWasPress.current = false;
-    setActiveTab(tabs[nextIndex].id);
-  }
+  useEffect(() => {
+    if (ritualLocked) setActiveTab("home");
+  }, [ritualLocked]);
 
   function beginReflectionInput() {
     if (activeTab !== "home" || !reflectionInputEnabled || isSending) return;
     playUiSound();
-    currentPageIndex.current = initialPageIndex;
-    pagePosition.current = initialPageIndex * pageStep;
-    pageScrollX.setValue(initialPageIndex * pageStep);
-    pageScrollRef.current?.scrollTo({ x: initialPageIndex * pageStep, animated: false });
     setActiveTab("home");
     setRitualLocked(true);
     setInputMode(true);
@@ -1140,17 +1088,6 @@ function AppContent() {
         useNativeDriver: true
       })
     ]).start();
-  }
-
-  function syncInitialPage() {
-    if (didSetInitialPage.current || !pageStep) return;
-    didSetInitialPage.current = true;
-    currentPageIndex.current = initialPageIndex;
-    pagePosition.current = initialPageIndex * pageStep;
-    pageScrollX.setValue(initialPageIndex * pageStep);
-    requestAnimationFrame(() => {
-      pageScrollRef.current?.scrollTo({ x: initialPageIndex * pageStep, animated: false });
-    });
   }
 
   const pageViews = [
@@ -1192,7 +1129,6 @@ function AppContent() {
       node: (
         <StoryScreen
           active={activeTab === "story"}
-          memories={memories}
           chapters={chapters}
           proposals={chapterProposals}
           eligibleCount={eligibleChapterMemories().length}
@@ -1201,7 +1137,6 @@ function AppContent() {
           onConfirm={confirmChapterProposal}
           onDefer={deferChapterProposal}
           onSplit={splitChapterProposal}
-          onRename={renameChapter}
         />
       )
     }
@@ -1651,55 +1586,11 @@ function AppContent() {
           }}
         />
 
-        <Animated.ScrollView
-          ref={pageScrollRef}
-          horizontal
-          decelerationRate="fast"
-          disableIntervalMomentum
-          showsHorizontalScrollIndicator={false}
-          snapToInterval={pageStep}
-          snapToAlignment="start"
-          scrollEventThrottle={16}
-          onScroll={handlePageScroll}
-          onMomentumScrollEnd={settlePage}
-          onScrollEndDrag={settlePage}
-          scrollEnabled={!ritualLocked}
-          contentContainerStyle={[
-            styles.pageRail,
-            { paddingLeft: sidePeek, paddingRight: sidePeek }
-          ]}
-          onLayout={syncInitialPage}
-          style={styles.content}
-        >
-          {pageViews.map((page, index) => {
-            const scale = pageScrollX.interpolate({
-              inputRange: [(index - 1) * pageStep, index * pageStep, (index + 1) * pageStep],
-              outputRange: [0.965, 1, 0.965],
-              extrapolate: "clamp"
-            });
-            const opacity = pageScrollX.interpolate({
-              inputRange: [(index - 1) * pageStep, index * pageStep, (index + 1) * pageStep],
-              outputRange: [0.74, 1, 0.74],
-              extrapolate: "clamp"
-            });
-            return (
-              <Animated.View
-                key={page.id}
-                style={[
-                  styles.pageFrame,
-                  {
-                    width: pageWidth,
-                    marginRight: index === pageViews.length - 1 ? 0 : pageGap,
-                    opacity,
-                    transform: [{ scale }]
-                  }
-                ]}
-              >
-                {page.node}
-              </Animated.View>
-            );
-          })}
-        </Animated.ScrollView>
+        <View style={styles.content}>
+          <View style={styles.pageFrame}>
+            {pageViews.find((page) => page.id === activeTab)?.node}
+          </View>
+        </View>
 
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -1712,9 +1603,6 @@ function AppContent() {
               visible={activeTab === "home" && homePromptVisible && !sealActive}
               streakDays={journalStreakDays}
               onPress={beginReflectionInput}
-              animatedStyle={{
-                transform: [{ scale: composerScale }]
-              }}
             />
           )}
         </KeyboardAvoidingView>
@@ -1734,7 +1622,6 @@ function AppContent() {
           hidden={inputMode || keyboardVisible || ritualLocked}
           opacity={tabBarOpacity}
           unlocks={tabUnlocks}
-          lastSwitchWasPress={lastSwitchWasPress}
         />
 
         <NiloDialogScreen
@@ -2653,15 +2540,6 @@ function NiloMark() {
 
 // The current chapter's dot breathes the same way Nilo's mark does — the
 // only timeline entry that's still open, so it's the only one that glows.
-function ChapterTimelineDot({ active }) {
-  const breath = useBreath();
-  const scale = breath.interpolate({ inputRange: [0, 1], outputRange: [1, 1.14] });
-  if (!active) return <View style={styles.chapterTimelineDot} />;
-  return (
-    <Animated.View style={[styles.chapterTimelineDot, styles.chapterTimelineDotActive, { transform: [{ scale }] }]} />
-  );
-}
-
 // Nilo's question, written glyph by glyph (writeQuestion: 340ms breath, then a
 // character every 52ms), fading as it changes between questions.
 function NiloDialogQuestion({ question, dimmed, closing }) {
@@ -2865,6 +2743,8 @@ function QuestScreen({ onUiSound, active }) {
 
   return (
     <>
+    <BackgroundTexture />
+    <NightGrain />
     <ScrollView contentContainerStyle={styles.questScrollContent} showsVerticalScrollIndicator={false}>
       <RiseIn index={0} playToken={token} style={styles.questHeader}>
         <Text style={styles.questScreenTitle}>クエスト</Text>
@@ -3144,65 +3024,232 @@ function JournalScreen({ journal, active, onOpenDetail }) {
   );
 }
 
-function StoryScreen({ memories, chapters, proposals, eligibleCount, busy, onPropose, onConfirm, onDefer, onSplit, onRename, active }) {
+// 章タブ (per the Chapter spec): the primary experience is immersion — one
+// chapter fills one screen, and scrolling turns pages like the BeReal Recap
+// card stack, slowed to match the weight of years: the outgoing chapter
+// shrinks, sinks and dims while the next slides over it. A thin thread at the
+// right edge keeps the overview alive — each segment's length is the
+// chapter's record weight, and the current one glows gold.
+function StoryScreen({ chapters, proposals, eligibleCount, busy, onPropose, onConfirm, onDefer, onSplit, active }) {
   const token = useEntrancePlay(active);
-  const chapterTimeline = getChapterTimelineEntries(chapters);
-  const hasProposals = (proposals?.length || 0) > 0;
+  const pages = getChapterPages(chapters);
+  const [pageH, setPageH] = useState(0);
+  const [pageIndex, setPageIndex] = useState(0);
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const pageCount = pages.length + 1;
+
+  const handleScroll = useMemo(() => Animated.event(
+    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+    {
+      useNativeDriver: false,
+      listener: (event) => {
+        if (!pageH) return;
+        const next = Math.max(0, Math.min(pageCount - 1, Math.round(event.nativeEvent.contentOffset.y / pageH)));
+        setPageIndex((value) => (value === next ? value : next));
+      }
+    }
+  ), [pageCount, pageH, scrollY]);
+
+  return (
+    <View style={styles.chpContainer} onLayout={(event) => setPageH(event.nativeEvent.layout.height)}>
+      {pageH > 0 && (
+        <Animated.ScrollView
+          showsVerticalScrollIndicator={false}
+          snapToInterval={pageH}
+          snapToAlignment="start"
+          decelerationRate="fast"
+          disableIntervalMomentum
+          scrollEventThrottle={16}
+          onScroll={handleScroll}
+        >
+          {pages.map((chapter, index) => {
+            // While scrolling one page forward, this (outgoing) page lags
+            // behind the scroll, shrinking and dimming, so the next chapter
+            // appears to rise over it from behind.
+            const range = [index * pageH, (index + 1) * pageH];
+            const sink = scrollY.interpolate({ inputRange: range, outputRange: [0, pageH * 0.42], extrapolate: "clamp" });
+            const scale = scrollY.interpolate({ inputRange: range, outputRange: [1, 0.93], extrapolate: "clamp" });
+            // Mid-transition the outgoing page lingers dimly behind the
+            // incoming one (depth), but it must be fully gone at rest —
+            // pages have no opaque background to cover it otherwise.
+            const dim = scrollY.interpolate({ inputRange: range, outputRange: [1, 0], extrapolate: "clamp" });
+            return (
+              <View key={chapter.id} style={{ height: pageH }}>
+                <Animated.View style={[styles.chpPage, { opacity: dim, transform: [{ translateY: sink }, { scale }] }]}>
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={[chapter.tint || "rgba(214,168,106,0.10)", "rgba(0,0,0,0)"]}
+                    locations={[0, 0.72]}
+                    style={StyleSheet.absoluteFillObject}
+                  />
+                  <ScrollView
+                    nestedScrollEnabled
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.chpPageScroll}
+                  >
+                    <ChapterPageBody chapter={chapter} playToken={index === 0 ? token : 0} />
+                  </ScrollView>
+                </Animated.View>
+              </View>
+            );
+          })}
+
+          <View style={{ height: pageH }}>
+            <View style={styles.chpPage}>
+              <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={styles.chpPageScroll}>
+                <Text style={styles.chpEndLabel}>この先の章</Text>
+                <Text style={styles.chpEndNote}>日々の記録の中に意味の変化が見えたら、{"\n"}Niloが次の章の区切りを、そっと差し出します。</Text>
+                {eligibleCount > 0 && (
+                  <Pressable
+                    disabled={busy}
+                    onPress={() => onPropose()}
+                    style={({ pressed }) => [styles.chapterFindButton, pressed && !busy && styles.touchPressedTight, busy && styles.disabledButton]}
+                  >
+                    <Text style={styles.chapterFindButtonText}>{busy ? "見つめています…" : proposals?.length ? "もう一度、章を探す" : "章を探す"}</Text>
+                  </Pressable>
+                )}
+                {(proposals || []).map((proposal) => (
+                  <ProposalCard
+                    key={proposal.id}
+                    proposal={proposal}
+                    busy={busy}
+                    onConfirm={onConfirm}
+                    onDefer={onDefer}
+                    onSplit={onSplit}
+                  />
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Animated.ScrollView>
+      )}
+
+      <View pointerEvents="none" style={styles.chpThread}>
+        {pages.map((chapter, index) => (
+          <View
+            key={chapter.id}
+            style={[
+              styles.chpThreadSegment,
+              { height: 16 + Math.min(64, Math.round((chapter.recordCount || 1) * 1.2)) },
+              index === pageIndex && styles.chpThreadSegmentActive
+            ]}
+          />
+        ))}
+        <View style={[styles.chpThreadSegment, styles.chpThreadSegmentEnd, pageIndex === pages.length && styles.chpThreadSegmentActive]} />
+      </View>
+    </View>
+  );
+}
+
+// The contents of one chapter page, in the spec's order: title and symbolic
+// line, diary excerpts (the lead role), a reunion with another chapter, the
+// chapter's wish (times touched, never a percentage), frequent words sized by
+// weight alone, recurring people and places, Nilo's letter, the single
+// writing field, and stats offered as thickness rather than achievement.
+function ChapterPageBody({ chapter, playToken }) {
+  const [selfNote, setSelfNote] = useState("");
+  const excerpts = chapter.excerpts || [];
+  const words = chapter.words || [];
+  const figures = chapter.figures || [];
 
   return (
     <>
-      <Text pointerEvents="none" style={styles.chapterWatermark}>章</Text>
-      <ScrollView contentContainerStyle={styles.storyScrollContent} showsVerticalScrollIndicator={false}>
-        <RiseIn index={0} playToken={token} style={styles.storyHeader}>
-          <Text style={styles.mobileScreenTitle}>章</Text>
-          <Text style={styles.mobileGoldLabel}>YOUR STORY ・ 全三章</Text>
-        </RiseIn>
-        <View style={styles.chapterTimeline}>
-          <View pointerEvents="none" style={styles.chapterTimelineLine} />
-          {chapterTimeline.map((chapter, index) => (
-            <RiseIn key={chapter.id} index={index + 1} playToken={token} duration={550} style={styles.chapterTimelineItem}>
-              <ChapterTimelineDot active={index === 0} />
-              <View style={styles.chapterTimelineCopy}>
-                <View style={styles.chapterMetaRow}>
-                  <Text style={styles.chapterOrdinalText}>{chapter.ordinal}</Text>
-                  <Text style={styles.chapterPeriodText}>{chapter.period}</Text>
-                </View>
-                <Text style={[styles.chapterTimelineTitle, index > 0 && styles.chapterPastTitle]}>{chapter.title}</Text>
-                <Text style={[styles.chapterTimelineSummary, index > 0 && styles.chapterPastSummary]}>{chapter.summary}</Text>
-                {index === 0 && <Text style={styles.chapterNowNote}>—— いま、この章の中に</Text>}
-              </View>
-            </RiseIn>
-          ))}
-          <RiseIn index={chapterTimeline.length + 1} playToken={token} style={styles.chapterNewItem}>
-            <View style={styles.chapterNewDot} />
-            <View style={styles.chapterNewCard}>
-              <Text style={styles.chapterNewText}>＋　新しい章を始める</Text>
-            </View>
-          </RiseIn>
+      <RiseIn index={0} playToken={playToken}>
+        <View style={styles.chpMetaRow}>
+          <Text style={styles.chpOrdinal}>{chapter.ordinal}</Text>
+          <Text style={styles.chpPeriod}>{chapter.period}</Text>
         </View>
+        <Text style={styles.chpTitle}>{chapter.title}</Text>
+        <Text style={styles.chpSummary}>{chapter.summary}</Text>
+        {chapter.current && <Text style={styles.chpNowNote}>—— いま、この章の中に</Text>}
+      </RiseIn>
 
-        {eligibleCount > 0 && (
-          <Pressable
-            disabled={busy}
-            onPress={() => onPropose()}
-            style={({ pressed }) => [styles.chapterFindButton, pressed && !busy && styles.touchPressedTight, busy && styles.disabledButton]}
-          >
-            <Text style={styles.chapterFindButtonText}>{busy ? "見つめています…" : hasProposals ? "もう一度、章を探す" : "章を探す"}</Text>
-          </Pressable>
-        )}
+      {excerpts.length > 0 && (
+        <RiseIn index={1} playToken={playToken}>
+          <ChpSectionHeader label="この章の記録" note={chapter.recordCount > excerpts.length ? `${chapter.recordCount}の記録から` : ""} />
+          {excerpts.map((excerpt, index) => (
+            <View key={`${excerpt.date}-${index}`} style={styles.chpExcerpt}>
+              <Text style={styles.chpExcerptDate}>{excerpt.date}</Text>
+              <Text style={styles.chpExcerptText}>{excerpt.text}</Text>
+            </View>
+          ))}
+        </RiseIn>
+      )}
 
-        {hasProposals && proposals.map((proposal) => (
-          <ProposalCard
-            key={proposal.id}
-            proposal={proposal}
-            busy={busy}
-            onConfirm={onConfirm}
-            onDefer={onDefer}
-            onSplit={onSplit}
-          />
-        ))}
-      </ScrollView>
+      {!!chapter.reunion && (
+        <RiseIn index={2} playToken={playToken}>
+          <ChpSectionHeader label="過去との再会" note={chapter.reunion.fromLabel} />
+          <Text style={styles.chpReunionQuote}>「{chapter.reunion.quote}」</Text>
+        </RiseIn>
+      )}
+
+      {!!chapter.wish && (
+        <RiseIn index={3} playToken={playToken}>
+          <ChpSectionHeader label="この章の願い" />
+          <Text style={styles.chpWishTheme}>{chapter.wish.theme}</Text>
+          <Text style={styles.chpWishLine}>{chapter.wish.line}</Text>
+        </RiseIn>
+      )}
+
+      {words.length > 0 && (
+        <RiseIn index={4} playToken={playToken}>
+          <ChpSectionHeader label="よく現れた言葉" />
+          <View style={styles.chpWordsWrap}>
+            {words.map((word) => (
+              <Text
+                key={word.text}
+                style={[styles.chpWord, { fontSize: 12 + (word.weight || 1) * 3, opacity: 0.42 + (word.weight || 1) * 0.18 }]}
+              >
+                {word.text}
+              </Text>
+            ))}
+          </View>
+        </RiseIn>
+      )}
+
+      {figures.length > 0 && (
+        <RiseIn index={5} playToken={playToken}>
+          <ChpSectionHeader label="この章の登場" />
+          <Text style={styles.chpFigures}>{figures.join("　・　")}</Text>
+        </RiseIn>
+      )}
+
+      {!!chapter.niloLetter && (
+        <RiseIn index={6} playToken={playToken}>
+          <ChpSectionHeader label="NILOより" />
+          <Text style={styles.chpNiloLetter}>{chapter.niloLetter}</Text>
+        </RiseIn>
+      )}
+
+      <RiseIn index={7} playToken={playToken}>
+        <ChpSectionHeader label="あの日の自分へ" />
+        <TextInput
+          value={selfNote}
+          onChangeText={setSelfNote}
+          multiline
+          placeholder="いまのあなたから、この頃の自分へ"
+          placeholderTextColor="rgba(196,176,148,0.4)"
+          style={styles.chpSelfNoteInput}
+        />
+      </RiseIn>
+
+      {!!chapter.stats && (
+        <RiseIn index={8} playToken={playToken}>
+          <Text style={styles.chpStats}>{chapter.stats.records}　・　{chapter.stats.span}</Text>
+          <Text style={styles.chpStatsEmotion}>{chapter.stats.emotion}</Text>
+        </RiseIn>
+      )}
     </>
+  );
+}
+
+function ChpSectionHeader({ label, note }) {
+  return (
+    <View style={styles.chpSectionHeader}>
+      <Text style={styles.chpSectionLabel}>{label}</Text>
+      <View style={styles.chpSectionRule} />
+      {!!note && <Text style={styles.chpSectionNote}>{note}</Text>}
+    </View>
   );
 }
 
@@ -3564,7 +3611,7 @@ function EmptyState({ title, body }) {
   );
 }
 
-function TabBar({ activeTab, setActiveTab, hidden, opacity, unlocks, lastSwitchWasPress }) {
+function TabBar({ activeTab, setActiveTab, hidden, opacity, unlocks }) {
   // tabIn: the bar settles up into place once, as the night opens (prototype).
   const entrance = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -3578,26 +3625,19 @@ function TabBar({ activeTab, setActiveTab, hidden, opacity, unlocks, lastSwitchW
   const entranceTranslate = entrance.interpolate({ inputRange: [0, 1], outputRange: [12, 0] });
   const composedOpacity = Animated.multiply(opacity, entrance);
 
-  // Each tab's lift/scale is driven by its own Animated.Value rather than the
-  // scroll position, so we can choose whether a given activeTab change
-  // animates (tab-button press) or snaps instantly (swipe/momentum settle).
+  // Each tab's lift/scale animates in on every tab-button press.
   const tabAnim = useRef(tabs.map((tab) => new Animated.Value(tab.id === activeTab ? 1 : 0))).current;
   useEffect(() => {
-    const isPress = lastSwitchWasPress?.current;
     tabs.forEach((tab, index) => {
       const toValue = tab.id === activeTab ? 1 : 0;
-      if (isPress) {
-        Animated.timing(tabAnim[index], {
-          toValue,
-          duration: 180,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true
-        }).start();
-      } else {
-        tabAnim[index].setValue(toValue);
-      }
+      Animated.timing(tabAnim[index], {
+        toValue,
+        duration: 180,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true
+      }).start();
     });
-  }, [activeTab, lastSwitchWasPress, tabAnim]);
+  }, [activeTab, tabAnim]);
 
   return (
     <Animated.View
@@ -5102,7 +5142,10 @@ function getJournalTimelineEntries(journal) {
     }));
 }
 
-function getChapterTimelineEntries(chapters) {
+// Chapters become full pages (1章＝1画面). Confirmed chapters from Nilo carry
+// only period/observation/people/emotions — every richer element renders only
+// when its data exists, so a sparse chapter stays quiet instead of empty.
+function getChapterPages(chapters) {
   if (!chapters?.length) return demoChapters;
   const total = chapters.length;
   return chapters.map((chapter, index) => ({
@@ -5110,7 +5153,20 @@ function getChapterTimelineEntries(chapters) {
     title: chapter.title || "名前のない章",
     ordinal: `第${toJapaneseNumber(total - index)}章`,
     period: chapter.period || "いま",
-    summary: chapter.observation || chapter.summary || "過ぎた時間の輪郭が、少しずつ見えてくる。"
+    summary: chapter.observation || chapter.summary || "過ぎた時間の輪郭が、少しずつ見えてくる。",
+    current: index === 0,
+    tint: chapter.tint || "rgba(214,168,106,0.10)",
+    recordCount: chapter.recordCount || chapter.memoryIds?.length || 1,
+    excerpts: chapter.excerpts || (chapter.episodes || []).slice(0, 3).map((episode) => ({
+      date: episode.period || "",
+      text: episode.observation || ""
+    })).filter((item) => item.text),
+    reunion: chapter.reunion,
+    wish: chapter.wish,
+    words: chapter.words || (chapter.emotions || []).map((emotion) => ({ text: String(emotion).replace(/^#/, ""), weight: 2 })),
+    figures: chapter.figures || chapter.people || [],
+    niloLetter: chapter.niloLetter || "",
+    stats: chapter.stats
   }));
 }
 
@@ -9843,6 +9899,225 @@ const baseStyleDefs = ({
     justifyContent: "center",
     minHeight: "100vh",
     width: "100%"
+  },
+  chpContainer: {
+    flex: 1
+  },
+  chpPage: {
+    borderRadius: 22,
+    flex: 1,
+    overflow: "hidden"
+  },
+  chpPageScroll: {
+    paddingBottom: 120,
+    paddingHorizontal: 26,
+    paddingTop: 64
+  },
+  chpMetaRow: {
+    alignItems: "baseline",
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  chpOrdinal: {
+    color: "#c9a86c",
+    fontFamily: fontSerifJa,
+    fontSize: 11,
+    letterSpacing: 4
+  },
+  chpPeriod: {
+    color: "rgba(196,176,148,0.55)",
+    fontFamily: fontSerifEn,
+    fontSize: 10,
+    letterSpacing: 2.4
+  },
+  chpTitle: {
+    color: "#f4ead8",
+    fontFamily: fontSerifJa,
+    fontSize: 30,
+    letterSpacing: 3,
+    lineHeight: 44,
+    marginTop: 14
+  },
+  chpSummary: {
+    color: "rgba(216,202,178,0.72)",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    letterSpacing: 1.4,
+    lineHeight: 24,
+    marginTop: 8
+  },
+  chpNowNote: {
+    color: "rgba(217,168,108,0.66)",
+    fontFamily: fontSerifJa,
+    fontSize: 11,
+    letterSpacing: 2,
+    marginTop: 10
+  },
+  chpSectionHeader: {
+    alignItems: "baseline",
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 14,
+    marginTop: 34
+  },
+  chpSectionLabel: {
+    color: "rgba(201,168,108,0.8)",
+    fontFamily: fontSerifJa,
+    fontSize: 11,
+    letterSpacing: 3
+  },
+  chpSectionRule: {
+    backgroundColor: "rgba(217,168,108,0.16)",
+    flex: 1,
+    height: 1
+  },
+  chpSectionNote: {
+    color: "rgba(196,176,148,0.42)",
+    fontFamily: fontSerifJa,
+    fontSize: 10,
+    letterSpacing: 1.6
+  },
+  chpExcerpt: {
+    borderLeftColor: "rgba(217,168,108,0.22)",
+    borderLeftWidth: 1,
+    marginBottom: 14,
+    paddingLeft: 14
+  },
+  chpExcerptDate: {
+    color: "rgba(196,176,148,0.5)",
+    fontFamily: fontSerifJa,
+    fontSize: 10,
+    letterSpacing: 1.8,
+    marginBottom: 4
+  },
+  chpExcerptText: {
+    color: "rgba(233,222,202,0.88)",
+    fontFamily: fontSerifJa,
+    fontSize: 14,
+    letterSpacing: 0.8,
+    lineHeight: 25
+  },
+  chpReunionQuote: {
+    color: "rgba(224,210,188,0.8)",
+    fontFamily: fontSerifJa,
+    fontSize: 14,
+    letterSpacing: 1,
+    lineHeight: 26
+  },
+  chpWishTheme: {
+    color: "rgba(238,226,204,0.9)",
+    fontFamily: fontSerifJa,
+    fontSize: 16,
+    letterSpacing: 1.4,
+    lineHeight: 27
+  },
+  chpWishLine: {
+    color: "rgba(201,168,108,0.7)",
+    fontFamily: fontSerifJa,
+    fontSize: 12,
+    letterSpacing: 1,
+    lineHeight: 21,
+    marginTop: 6
+  },
+  chpWordsWrap: {
+    alignItems: "baseline",
+    columnGap: 18,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    rowGap: 10
+  },
+  chpWord: {
+    color: "#e6d8bc",
+    fontFamily: fontSerifJa,
+    letterSpacing: 1.6
+  },
+  chpFigures: {
+    color: "rgba(224,210,188,0.72)",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    letterSpacing: 1.4,
+    lineHeight: 24
+  },
+  chpNiloLetter: {
+    color: "rgba(216,202,178,0.78)",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    letterSpacing: 1,
+    lineHeight: 26
+  },
+  chpSelfNoteInput: {
+    backgroundColor: "rgba(255,254,244,0.03)",
+    borderColor: "rgba(217,168,108,0.18)",
+    borderRadius: 14,
+    borderWidth: 1,
+    color: "#efe6d4",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    letterSpacing: 0.8,
+    lineHeight: 22,
+    minHeight: 88,
+    padding: 14,
+    textAlignVertical: "top"
+  },
+  chpStats: {
+    color: "rgba(196,176,148,0.5)",
+    fontFamily: fontSerifJa,
+    fontSize: 11,
+    letterSpacing: 2,
+    marginTop: 40,
+    textAlign: "center"
+  },
+  chpStatsEmotion: {
+    color: "rgba(196,176,148,0.38)",
+    fontFamily: fontSerifJa,
+    fontSize: 10,
+    letterSpacing: 1.8,
+    marginTop: 6,
+    textAlign: "center"
+  },
+  chpEndLabel: {
+    color: "rgba(201,168,108,0.8)",
+    fontFamily: fontSerifJa,
+    fontSize: 12,
+    letterSpacing: 3.4,
+    marginTop: 46,
+    textAlign: "center"
+  },
+  chpEndNote: {
+    color: "rgba(196,176,148,0.5)",
+    fontFamily: fontSerifJa,
+    fontSize: 12,
+    letterSpacing: 1.2,
+    lineHeight: 24,
+    marginBottom: 26,
+    marginTop: 16,
+    textAlign: "center"
+  },
+  chpThread: {
+    alignItems: "flex-end",
+    bottom: 0,
+    gap: 5,
+    justifyContent: "center",
+    position: "absolute",
+    right: 7,
+    top: 0
+  },
+  chpThreadSegment: {
+    backgroundColor: "rgba(196,176,148,0.22)",
+    borderRadius: 1,
+    width: 2
+  },
+  chpThreadSegmentEnd: {
+    backgroundColor: "rgba(196,176,148,0.14)",
+    height: 12
+  },
+  chpThreadSegmentActive: {
+    backgroundColor: "#d9a86c",
+    shadowColor: "#d9a86c",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 6,
+    width: 3
   }
 });
 
