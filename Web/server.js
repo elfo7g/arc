@@ -587,6 +587,64 @@ ${safeMemories || "なし"}
 `.trim();
 }
 
+// Nilo proposes QUEST candidates — weeks-to-months explorations sensed from
+// themes that keep returning across recent memories (悩み・人間関係・価値観・
+// 成長の兆し). Nilo only offers ("〜ですね" + "〜てみますか"); the user decides.
+// A quest is never a task or a goal — no completion states exist.
+function normalizeQuestProposals(value) {
+  const proposals = Array.isArray(value?.proposals)
+    ? value.proposals.slice(0, 3).map((p) => ({
+      theme: String(p.theme || "").slice(0, 80),
+      observation: String(p.observation || "").slice(0, 160),
+      invitation: String(p.invitation || "").slice(0, 120),
+      keywords: toStrList(p.keywords, 6, 16)
+    })).filter((p) => p.theme && p.observation && p.invitation)
+    : [];
+  return { proposals };
+}
+
+function buildQuestProposalPrompt({ memories, declinedThemes, ongoingThemes }) {
+  const safeMemories = Array.isArray(memories)
+    ? memories.slice(0, 120).map((memory, index) => {
+      const date = String(memory.dateKey || memory.dateLabel || "").slice(0, 10);
+      const essence = String(memory.essence || "").slice(0, 120);
+      const kept = String(memory.keptPhrase || "").slice(0, 80);
+      const mood = String(memory.moodLabel || "").slice(0, 16);
+      return `- ${date || "日付不明"} / 意味:${essence}${kept ? ` / 言葉:「${kept}」` : ""}${mood ? ` / 気分:${mood}` : ""}`;
+    }).join("\n")
+    : "";
+  const avoid = [
+    ...toStrList(declinedThemes, 12, 80),
+    ...toStrList(ongoingThemes, 12, 80)
+  ];
+
+  return `
+あなたは人生アプリ ARC の Nilo です。
+ユーザーが夜ごとに残してきた記録を読み、「クエスト」——数週間から数ヶ月かけて掘り下げる探求——の候補をそっと差し出します。
+
+クエストはタスクでも目標でもありません。達成や完了は存在しません。
+あなたが見るのは、記録の中に繰り返し現れているもの——同じ悩み、揺れる人間関係、問い直されている価値観、静かな成長の兆し——です。
+同じテーマがおよそ5回以上、違う夜に現れているときだけ候補にしてください。閾値のことはユーザーに伝えません。
+
+文法は固定です:
+- observation: 気づきの共有。「〜ですね」で終わる静かな一文。断定・評価・助言はしない。
+- invitation: 誘い。「〜てみますか。」で終わる一文。命令やタスク化はしない。
+
+記録一覧（古い順）:
+${safeMemories || "なし"}
+${avoid.length ? `\n次のテーマは既に差し出したか、いま探求の途中です。重複する候補は出さないでください:\n${avoid.map((theme) => `- ${theme}`).join("\n")}` : ""}
+
+繰り返しが弱ければ候補は0個でかまいません。多くても2個までにしてください。
+各候補について:
+- theme: 探求の主題（例「母との関係が、どう変わってきたか」）。
+- observation / invitation: 上の文法どおり。
+- keywords: そのテーマが日記に現れるときの手がかりになる語（最大6、短い名詞や言い回し）。
+
+次のJSONだけを返してください。Markdownは不要です。
+{ "proposals": [ { "theme": "主題", "observation": "〜ですね", "invitation": "〜てみますか。", "keywords": ["語"] } ] }
+`.trim();
+}
+
 async function callGeminiJson(prompt, options = {}) {
   const temperature = Number.isFinite(Number(options.temperature)) ? Number(options.temperature) : 0.7;
   let lastDetail = "";
@@ -714,6 +772,32 @@ async function handleChapters(req, res) {
   }
 }
 
+async function handleQuestProposals(req, res) {
+  if (!process.env.GEMINI_API_KEY) {
+    sendJson(res, 500, { message: "GEMINI_API_KEY が設定されていません。" });
+    return;
+  }
+
+  try {
+    const body = JSON.parse(await readBody(req) || "{}");
+    const memories = Array.isArray(body.memories) ? body.memories : [];
+    // A theme needs roughly five recurrences before Nilo would ever speak up,
+    // so with fewer records than that there is nothing to sense yet.
+    if (memories.length < 5) {
+      sendJson(res, 200, { proposals: [] });
+      return;
+    }
+
+    const json = await callGeminiJson(buildQuestProposalPrompt(body), { temperature: 0.7 });
+    sendJson(res, 200, normalizeQuestProposals(json));
+  } catch (error) {
+    sendJson(res, error.detail ? 502 : 500, {
+      message: error.message || "クエスト候補の生成でエラーが発生しました。",
+      detail: error.detail
+    });
+  }
+}
+
 async function handleEveningMessage(req, res) {
   if (!process.env.GEMINI_API_KEY) {
     sendJson(res, 500, { message: "GEMINI_API_KEY is not set." });
@@ -790,6 +874,11 @@ function routeRequest(req, res) {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/api/nilo/quest-proposals") {
+    handleQuestProposals(req, res);
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/api/nilo/evening-message") {
     handleEveningMessage(req, res);
     return;
@@ -816,4 +905,5 @@ module.exports.handleNiloReflection = handleNiloReflection;
 module.exports.handleTomorrowQuests = handleTomorrowQuests;
 module.exports.handleNightRitual = handleNightRitual;
 module.exports.handleChapters = handleChapters;
+module.exports.handleQuestProposals = handleQuestProposals;
 module.exports.routeRequest = routeRequest;

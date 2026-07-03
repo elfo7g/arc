@@ -425,17 +425,28 @@ const demoQuestProposals = [
 const demoOngoingQuests = [
   {
     id: "quest-mother",
+    demo: true,
     theme: "母との関係が、どう変わってきたか",
     since: "5月26日から",
     duration: "5週間",
-    sessions: 6
+    sessions: 6,
+    records: [
+      { date: "6月21日", text: "母に電話した。短い会話だったけど、声が聞けてよかった。" },
+      { date: "6月8日", text: "母の口癖を、自分も使っていることに気づいた。" },
+      { date: "5月26日", text: "実家の台所の隅。母が料理していた音がする場所。" }
+    ]
   },
   {
     id: "quest-release",
+    demo: true,
     theme: "完璧じゃない自分を責める癖は、どこから来たのか",
     since: "6月14日から",
     duration: "2週間",
-    sessions: 3
+    sessions: 3,
+    records: [
+      { date: "6月25日", text: "できなかったことより、やったことを数えた夜。" },
+      { date: "6月14日", text: "完璧じゃない自分を、責めてしまう癖。" }
+    ]
   }
 ];
 
@@ -489,6 +500,17 @@ function AppContent() {
   const [chapters, setChapters] = useState([]);
   const [chaptersBusy, setChaptersBusy] = useState(false);
   const [chapterProposals, setChapterProposals] = useState([]);
+  // 章の「あの日の自分へ」— one note per chapter id, kept across sessions.
+  const [chapterNotes, setChapterNotes] = useState({});
+  // クエスト (explorations): Nilo's pending proposals, the ongoing/closed
+  // explorations the user accepted, declined themes Nilo must not re-offer,
+  // and the dateKey of the last scan so Nilo looks at most once a day.
+  const [questProposals, setQuestProposals] = useState([]);
+  const [explorations, setExplorations] = useState([]);
+  const [declinedQuestThemes, setDeclinedQuestThemes] = useState([]);
+  const [questScanDateKey, setQuestScanDateKey] = useState("");
+  const questScanRef = useRef(false);
+  const notificationPromptRef = useRef(false);
   const [hydrated, setHydrated] = useState(false);
   const [profile, setProfile] = useState(() => DEV_MODE ? DEV_PROFILE : { name: "", birthdate: "" });
   const [settings, setSettings] = useState({
@@ -501,6 +523,7 @@ function AppContent() {
     language: "ja",
     notificationsEnabled: false,
     notificationTime: "22:00",
+    lastNotificationDateKey: "",
     ritual: {
       questionCount: 5,
       autoSaveJournal: true,
@@ -717,6 +740,11 @@ function AppContent() {
             if (Array.isArray(saved.quests) && saved.quests.length) setQuests(saved.quests);
             if (Array.isArray(saved.memories)) setMemories(saved.memories);
             if (Array.isArray(saved.chapters)) setChapters(saved.chapters);
+            if (saved.chapterNotes && typeof saved.chapterNotes === "object") setChapterNotes(saved.chapterNotes);
+            if (Array.isArray(saved.questProposals)) setQuestProposals(saved.questProposals);
+            if (Array.isArray(saved.explorations)) setExplorations(saved.explorations);
+            if (Array.isArray(saved.declinedQuestThemes)) setDeclinedQuestThemes(saved.declinedQuestThemes);
+            if (typeof saved.questScanDateKey === "string") setQuestScanDateKey(saved.questScanDateKey);
             if (saved.profile) setProfile((current) => ({ ...current, ...saved.profile }));
             if (saved.settings) {
               setSettings((current) => ({
@@ -749,9 +777,65 @@ function AppContent() {
     if (!hydrated) return;
     AsyncStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ journal, quests, memories, chapters, profile, settings })
+      JSON.stringify({
+        journal, quests, memories, chapters, chapterNotes, profile, settings,
+        questProposals, explorations, declinedQuestThemes, questScanDateKey
+      })
     ).catch(() => undefined);
-  }, [hydrated, journal, quests, memories, chapters, profile, settings]);
+  }, [hydrated, journal, quests, memories, chapters, chapterNotes, profile, settings, questProposals, explorations, declinedQuestThemes, questScanDateKey]);
+
+  useEffect(() => {
+    // Opening the quest tab is when Nilo glances over the recent records —
+    // at most once a day, and only after saved state has loaded.
+    if (hydrated && activeTab === "quests") scanForQuestProposals();
+  }, [hydrated, activeTab]);
+
+  useEffect(() => {
+    if (!hydrated || !profileComplete || !settings.notificationsEnabled) return undefined;
+
+    const checkNightWhisper = () => {
+      if (notificationPromptRef.current || settingsOpen || isSending || ritualLockedRef.current) return;
+      if (!shouldShowNightWhisper({ settings, journal, frequency: reflectionFrequency })) return;
+
+      notificationPromptRef.current = true;
+      const today = getJournalDateKey();
+      setSettings((current) => ({ ...current, lastNotificationDateKey: today }));
+      confirmDialog(
+        "夜のささやき",
+        "そろそろ、今夜の問いを灯す時間です。",
+        [
+          {
+            text: "あとで",
+            style: "cancel",
+            onPress: () => {
+              notificationPromptRef.current = false;
+            }
+          },
+          {
+            text: "灯す",
+            onPress: () => {
+              notificationPromptRef.current = false;
+              setActiveTab("home");
+              requestAnimationFrame(() => beginReflectionInput());
+            }
+          }
+        ]
+      );
+
+      if (Platform.OS === "web") notificationPromptRef.current = false;
+    };
+
+    const initialTimer = setTimeout(checkNightWhisper, 1200);
+    const interval = setInterval(checkNightWhisper, 60000);
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, [hydrated, profileComplete, settings, settingsOpen, isSending, journal, reflectionFrequency]);
+
+  useEffect(() => {
+    if (settings.privacy?.questLink === false) setQuestProposals([]);
+  }, [settings.privacy?.questLink]);
 
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
@@ -1070,7 +1154,7 @@ function AppContent() {
   }, [ritualLocked]);
 
   function beginReflectionInput() {
-    if (activeTab !== "home" || !reflectionInputEnabled || isSending) return;
+    if (!reflectionInputEnabled || isSending) return;
     playUiSound();
     setActiveTab("home");
     setRitualLocked(true);
@@ -1119,7 +1203,17 @@ function AppContent() {
     },
     {
       id: "quests",
-      node: <QuestScreen onUiSound={playUiSound} active={activeTab === "quests"} />
+      node: (
+        <QuestScreen
+          onUiSound={playUiSound}
+          active={activeTab === "quests"}
+          proposals={questProposals}
+          explorations={explorations}
+          onAccept={acceptQuestProposal}
+          onDecline={declineQuestProposal}
+          onCloseExploration={closeExploration}
+        />
+      )
     },
     {
       id: "journal",
@@ -1138,6 +1232,8 @@ function AppContent() {
           onConfirm={confirmChapterProposal}
           onDefer={deferChapterProposal}
           onSplit={splitChapterProposal}
+          chapterNotes={chapterNotes}
+          onChangeNote={setChapterNote}
         />
       )
     }
@@ -1241,6 +1337,7 @@ function AppContent() {
         ...items
       ]);
       addRitualMemory({ messages: finalMessages, journalId, entryDateKey, essence: result.niloLine, closing, result });
+      touchExplorations({ messages: finalMessages, entryDateKey });
       addGeneratedQuests(result);
       sealRitual(closing);
       return;
@@ -1297,6 +1394,7 @@ function AppContent() {
       ...items
     ]);
     addRitualMemory({ messages: finalMessages, journalId, entryDateKey, essence: "", closing });
+    touchExplorations({ messages: finalMessages, entryDateKey });
     setRitualMessages([{ role: "nilo", text: reflectionQuestions[0] }]);
     setQuestionCount(1);
     sealRitual(closing);
@@ -1315,6 +1413,8 @@ function AppContent() {
   }
 
   function addGeneratedQuests(result) {
+    if (settings.privacy?.questLink === false) return;
+
     const generatedQuests = [
       ...(result.quests || []),
       result.questSuggestion ? { title: result.questSuggestion, scope: "life" } : null
@@ -1487,6 +1587,105 @@ function AppContent() {
     setChapters((current) => current.map((chapter) => {
       if (chapter.id !== id || chapter.title === clean) return chapter;
       return { ...chapter, title: clean, titleHistory: [...(chapter.titleHistory || []), { title: clean, at: Date.now() }] };
+    }));
+  }
+
+  function setChapterNote(chapterId, text) {
+    setChapterNotes((notes) => ({ ...notes, [chapterId]: text }));
+  }
+
+  // --- クエスト (explorations) ---
+
+  // Nilo looks for recurring themes at most once a day, and only when enough
+  // recorded life exists for a repetition to be sensed at all. Offline it
+  // simply stays quiet — no proposal is ever fabricated locally.
+  async function scanForQuestProposals() {
+    if (questScanRef.current) return;
+    if (settings.privacy?.questLink === false) {
+      setQuestProposals([]);
+      return;
+    }
+    const today = getJournalDateKey();
+    if (questScanDateKey === today) return;
+    if (memories.length < 5) return;
+    questScanRef.current = true;
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/nilo/quest-proposals`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memories: memories.slice(0, 120).map((memory) => ({
+            dateKey: memory.dateKey,
+            essence: memory.essence,
+            keptPhrase: memory.keptPhrase,
+            moodLabel: memory.moodLabel
+          })),
+          declinedThemes: declinedQuestThemes,
+          ongoingThemes: explorations.filter((item) => item.status !== "closed").map((item) => item.theme)
+        })
+      });
+      if (!response.ok) throw new Error("request failed");
+      const result = await response.json();
+      const next = (result.proposals || [])
+        .filter((proposal) => proposal.theme && proposal.observation && proposal.invitation)
+        .map((proposal) => ({ id: createId("questprop"), ...proposal }));
+      setQuestProposals(next);
+      setQuestScanDateKey(today);
+    } catch {
+      // Keep whatever proposals were already on the table.
+    } finally {
+      questScanRef.current = false;
+    }
+  }
+
+  function acceptQuestProposal(proposal) {
+    setQuestProposals((items) => items.filter((item) => item.id !== proposal.id));
+    setExplorations((items) => [
+      {
+        id: createId("exploration"),
+        theme: proposal.theme,
+        keywords: proposal.keywords || [],
+        sinceDateKey: getJournalDateKey(),
+        status: "ongoing",
+        sessions: 0,
+        records: []
+      },
+      ...items
+    ]);
+  }
+
+  function declineQuestProposal(proposal) {
+    setQuestProposals((items) => items.filter((item) => item.id !== proposal.id));
+    // Remember the theme so Nilo doesn't offer the same one again.
+    setDeclinedQuestThemes((themes) => themes.includes(proposal.theme)
+      ? themes
+      : [...themes, proposal.theme].slice(-24));
+  }
+
+  // 一区切り — never completion: the records and the time spent all remain.
+  function closeExploration(id) {
+    setExplorations((items) => items.map((item) => item.id === id
+      ? { ...item, status: "closed", closedDateKey: getJournalDateKey() }
+      : item));
+  }
+
+  // When tonight's ritual brushes an ongoing exploration's theme, the night
+  // counts as one more question laid on it, and its words join the trail.
+  function touchExplorations({ messages, entryDateKey }) {
+    const userLines = (messages || [])
+      .filter((message) => message.role === "user")
+      .map((message) => String(message.text || "").trim())
+      .filter(Boolean);
+    if (!userLines.length) return;
+    const joined = userLines.join("\n");
+    setExplorations((items) => items.map((item) => {
+      if (item.status === "closed" || !questMatchesText(item, joined)) return item;
+      const line = userLines.find((text) => questMatchesText(item, text)) || userLines[0];
+      return {
+        ...item,
+        sessions: (item.sessions || 0) + 1,
+        records: [{ date: formatDotDate(entryDateKey), text: line.slice(0, 80) }, ...(item.records || [])].slice(0, 12)
+      };
     }));
   }
 
@@ -2730,24 +2929,36 @@ function FirstRunCard({ session, needsProfile, authBusy, onGoogleSignIn, onOpenP
 // Quest tab per the Quest Spec: only Nilo's proposals and ongoing explorations
 // live here. No completion counts, progress bars, or clear states — a quest is
 // a weeks-to-months exploration, not a task.
-function QuestScreen({ onUiSound, active }) {
+function QuestScreen({ onUiSound, active, proposals, explorations, onAccept, onDecline, onCloseExploration }) {
   const token = useEntrancePlay(active);
-  const [proposals, setProposals] = useState(demoQuestProposals);
-  const [ongoing, setOngoing] = useState(demoOngoingQuests);
   const [futureQuestOpen, setFutureQuestOpen] = useState(false);
+  const [openExploration, setOpenExploration] = useState(null);
+
+  // Real explorations wear their computed time-thickness; until any exist,
+  // the demo set keeps the screen inhabited (same fallback pattern as the
+  // chapter pages).
+  const real = explorations || [];
+  const ongoing = real.filter((item) => item.status !== "closed").map((item) => ({
+    ...item,
+    since: formatQuestSince(item.sinceDateKey),
+    duration: formatQuestDuration(item.sinceDateKey)
+  }));
+  const closed = real.filter((item) => item.status === "closed").map((item) => ({
+    ...item,
+    since: formatQuestSince(item.sinceDateKey),
+    duration: formatQuestDuration(item.sinceDateKey, new Date(`${item.closedDateKey}T00:00:00`))
+  }));
+  const displayProposals = (proposals && proposals.length) ? proposals : (real.length ? [] : demoQuestProposals);
+  const displayOngoing = real.length ? ongoing : demoOngoingQuests;
 
   function acceptProposal(proposal) {
     onUiSound?.();
-    setProposals((items) => items.filter((item) => item.id !== proposal.id));
-    setOngoing((items) => [
-      { id: proposal.id, theme: proposal.theme, since: "今日から", duration: "はじまったばかり", sessions: 0 },
-      ...items
-    ]);
+    onAccept?.(proposal);
   }
 
   function declineProposal(proposal) {
     onUiSound?.();
-    setProposals((items) => items.filter((item) => item.id !== proposal.id));
+    onDecline?.(proposal);
   }
 
   return (
@@ -2765,8 +2976,8 @@ function QuestScreen({ onUiSound, active }) {
         <Text style={styles.questGroupTitle}>Niloからの提案</Text>
         <View style={styles.questGroupRule} />
       </RiseIn>
-      {proposals.length ? (
-        proposals.map((proposal, index) => (
+      {displayProposals.length ? (
+        displayProposals.map((proposal, index) => (
           <RiseIn key={proposal.id} index={index + 2} playToken={token} duration={500}>
             <View style={styles.mobileQuestCard}>
               <LinearGradient
@@ -2797,26 +3008,38 @@ function QuestScreen({ onUiSound, active }) {
         </RiseIn>
       )}
 
-      <RiseIn index={proposals.length + 2} playToken={token} style={[styles.questGroupHeader, styles.questGroupHeaderSpaced]}>
+      <RiseIn index={displayProposals.length + 2} playToken={token} style={[styles.questGroupHeader, styles.questGroupHeaderSpaced]}>
         <Text style={styles.questGroupTitle}>過去を辿る探求</Text>
         <View style={styles.questGroupRule} />
       </RiseIn>
-      {ongoing.map((quest, index) => (
-        <RiseIn key={quest.id} index={proposals.length + 3 + index} playToken={token} duration={500}>
-          <View style={styles.questOngoingRow}>
-            <Text style={styles.questOngoingTheme}>{quest.theme}</Text>
-            <Text style={styles.questOngoingMeta}>
-              {quest.since}　・　{quest.duration}{quest.sessions ? `　・　重ねた問い ${quest.sessions}回` : ""}
-            </Text>
-          </View>
+      {displayOngoing.length ? (
+        displayOngoing.map((quest, index) => (
+          <RiseIn key={quest.id} index={displayProposals.length + 3 + index} playToken={token} duration={500}>
+            <Pressable
+              onPress={() => {
+                onUiSound?.();
+                setOpenExploration(quest);
+              }}
+              style={({ pressed }) => [styles.questOngoingRow, pressed && styles.touchPressedSubtle]}
+            >
+              <Text style={styles.questOngoingTheme}>{quest.theme}</Text>
+              <Text style={styles.questOngoingMeta}>
+                {quest.since}　・　{quest.duration}{quest.sessions ? `　・　重ねた問い ${quest.sessions}回` : ""}
+              </Text>
+            </Pressable>
+          </RiseIn>
+        ))
+      ) : (
+        <RiseIn index={displayProposals.length + 3} playToken={token}>
+          <Text style={styles.questQuietNote}>いま、続いている探求はありません。</Text>
         </RiseIn>
-      ))}
+      )}
 
-      <RiseIn index={proposals.length + ongoing.length + 3} playToken={token} style={[styles.questGroupHeader, styles.questGroupHeaderSpaced]}>
+      <RiseIn index={displayProposals.length + displayOngoing.length + 3} playToken={token} style={[styles.questGroupHeader, styles.questGroupHeaderSpaced]}>
         <Text style={styles.questGroupTitle}>未来に向かう探求</Text>
         <View style={styles.questGroupRule} />
       </RiseIn>
-      <RiseIn index={proposals.length + ongoing.length + 4} playToken={token} duration={500}>
+      <RiseIn index={displayProposals.length + displayOngoing.length + 4} playToken={token} duration={500}>
         <Pressable
           onPress={() => {
             onUiSound?.();
@@ -2828,8 +3051,45 @@ function QuestScreen({ onUiSound, active }) {
           <Text style={styles.questOngoingMeta}>{demoFutureQuest.since}　・　{demoFutureQuest.duration}</Text>
         </Pressable>
       </RiseIn>
+
+      {closed.length > 0 && (
+        <>
+          <RiseIn index={displayProposals.length + displayOngoing.length + 5} playToken={token} style={[styles.questGroupHeader, styles.questGroupHeaderSpaced]}>
+            <Text style={styles.questGroupTitle}>一区切りついた探求</Text>
+            <View style={styles.questGroupRule} />
+          </RiseIn>
+          {closed.map((quest, index) => (
+            <RiseIn key={quest.id} index={displayProposals.length + displayOngoing.length + 6 + index} playToken={token} duration={500}>
+              <Pressable
+                onPress={() => {
+                  onUiSound?.();
+                  setOpenExploration(quest);
+                }}
+                style={({ pressed }) => [styles.questOngoingRow, styles.questClosedRow, pressed && styles.touchPressedSubtle]}
+              >
+                <Text style={[styles.questOngoingTheme, styles.questClosedTheme]}>{quest.theme}</Text>
+                <Text style={styles.questOngoingMeta}>{quest.since}　・　{quest.duration}をともに</Text>
+              </Pressable>
+            </RiseIn>
+          ))}
+        </>
+      )}
     </ScrollView>
     <FutureQuestDetailModal visible={futureQuestOpen} onClose={() => setFutureQuestOpen(false)} quest={demoFutureQuest} />
+    <ExplorationDetailModal
+      visible={!!openExploration}
+      quest={openExploration || {}}
+      onClose={() => setOpenExploration(null)}
+      onCloseExploration={
+        openExploration && !openExploration.demo && openExploration.status !== "closed"
+          ? () => {
+            onUiSound?.();
+            onCloseExploration?.(openExploration.id);
+            setOpenExploration(null);
+          }
+          : null
+      }
+    />
     </>
   );
 }
@@ -3039,7 +3299,7 @@ function JournalScreen({ journal, active, onOpenDetail }) {
 // shrinks, sinks and dims while the next slides over it. A thin thread at the
 // right edge keeps the overview alive — each segment's length is the
 // chapter's record weight, and the current one glows gold.
-function StoryScreen({ chapters, proposals, eligibleCount, busy, onPropose, onConfirm, onDefer, onSplit, active }) {
+function StoryScreen({ chapters, proposals, eligibleCount, busy, onPropose, onConfirm, onDefer, onSplit, chapterNotes, onChangeNote, active }) {
   const token = useEntrancePlay(active);
   const pages = getChapterPages(chapters);
   const [pageH, setPageH] = useState(0);
@@ -3096,7 +3356,12 @@ function StoryScreen({ chapters, proposals, eligibleCount, busy, onPropose, onCo
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.chpPageScroll}
                   >
-                    <ChapterPageBody chapter={chapter} playToken={index === 0 ? token : 0} />
+                    <ChapterPageBody
+                      chapter={chapter}
+                      playToken={index === 0 ? token : 0}
+                      savedNote={chapterNotes?.[chapter.id] || ""}
+                      onCommitNote={(text) => onChangeNote?.(chapter.id, text)}
+                    />
                   </ScrollView>
                 </Animated.View>
               </View>
@@ -3155,8 +3420,13 @@ function StoryScreen({ chapters, proposals, eligibleCount, busy, onPropose, onCo
 // chapter's wish (times touched, never a percentage), frequent words sized by
 // weight alone, recurring people and places, Nilo's letter, the single
 // writing field, and stats offered as thickness rather than achievement.
-function ChapterPageBody({ chapter, playToken }) {
-  const [selfNote, setSelfNote] = useState("");
+function ChapterPageBody({ chapter, playToken, savedNote, onCommitNote }) {
+  // Drafted locally per keystroke; committed to persisted state on blur so
+  // AsyncStorage isn't rewritten for every character.
+  const [selfNote, setSelfNote] = useState(savedNote || "");
+  useEffect(() => {
+    setSelfNote(savedNote || "");
+  }, [savedNote, chapter.id]);
   const excerpts = chapter.excerpts || [];
   const words = chapter.words || [];
   const figures = chapter.figures || [];
@@ -3235,6 +3505,7 @@ function ChapterPageBody({ chapter, playToken }) {
         <TextInput
           value={selfNote}
           onChangeText={setSelfNote}
+          onBlur={() => onCommitNote?.(selfNote)}
           multiline
           placeholder="いまのあなたから、この頃の自分へ"
           placeholderTextColor="rgba(196,176,148,0.4)"
@@ -3314,6 +3585,77 @@ function FutureQuestDetailModal({ visible, onClose, quest }) {
                 <Text style={styles.lifeQuestTalkText}>Niloとこの願いを話す</Text>
               </Pressable>
               <Text style={styles.lifeQuestPhilosophy}>達成より、道のりを残す。{"\n"}願いが叶っても、かたちを変えても、{"\n"}この時間は消えない。</Text>
+            </View>
+          </ScrollView>
+          <StatusBar barStyle="light-content" />
+        </SafeAreaView>
+      </View>
+    </Modal>
+  );
+}
+
+// Detail view for a past-facing exploration. What it shows is the weight of
+// the time spent facing the theme — the nights that touched it and the words
+// they left. 一区切り is offered quietly, never as completion: everything the
+// exploration gathered stays.
+function ExplorationDetailModal({ visible, quest, onClose, onCloseExploration }) {
+  const token = useEntrancePlay(visible);
+  const records = quest.records || [];
+  const isClosed = quest.status === "closed";
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <View style={styles.background}>
+        <BackgroundTexture />
+        <OuterGradient />
+        <View style={styles.scrim} />
+        <NightGrain />
+        <SafeAreaView style={styles.safe}>
+          <Pressable focusable={false} onPress={onClose} style={({ pressed }) => [styles.lifeQuestBack, pressed && styles.touchPressedTight]}>
+            <Text style={styles.lifeQuestBackText}>‹</Text>
+          </Pressable>
+          <ScrollView contentContainerStyle={styles.lifeQuestDetailScroll} showsVerticalScrollIndicator={false}>
+            <RiseIn index={0} playToken={token}>
+              <Text style={styles.lifeQuestDetailLabel}>{isClosed ? "一区切りついた探求" : "過去を辿る探求"}</Text>
+              <Text style={styles.lifeQuestDetailTitle}>{quest.theme}</Text>
+              <Text style={styles.lifeQuestDetailMeta}>
+                {quest.since}　・　{quest.duration}{quest.sessions ? `　・　重ねた問い ${quest.sessions}回` : ""}
+              </Text>
+            </RiseIn>
+
+            <RiseIn index={1} playToken={token} style={styles.recordTrailHeader}>
+              <Text style={styles.recordTrailLabel}>言葉の軌跡</Text>
+              <View style={styles.recordTrailRule} />
+            </RiseIn>
+            {records.length ? (
+              <View style={styles.lifeQuestRecordTimeline}>
+                <View pointerEvents="none" style={styles.lifeQuestRecordLine} />
+                {records.map((record, index) => (
+                  <RiseIn key={`${record.date}-${index}`} index={index + 2} playToken={token} duration={500} style={styles.lifeQuestRecordItem}>
+                    <View style={styles.lifeQuestRecordDot} />
+                    <View style={styles.lifeQuestRecordCopy}>
+                      <Text style={styles.lifeQuestRecordDate}>{record.date}</Text>
+                      <Text style={styles.lifeQuestRecordText}>{record.text}</Text>
+                    </View>
+                  </RiseIn>
+                ))}
+              </View>
+            ) : (
+              <RiseIn index={2} playToken={token}>
+                <Text style={styles.questQuietNote}>まだ言葉は残っていません。{"\n"}夜の対話でこのテーマにふれると、ここに積もっていきます。</Text>
+              </RiseIn>
+            )}
+
+            <View style={styles.lifeQuestActions}>
+              {!!onCloseExploration && (
+                <Pressable onPress={onCloseExploration} style={({ pressed }) => [styles.lifeQuestTalkButton, pressed && styles.touchPressedTight]}>
+                  <Text style={styles.lifeQuestTalkText}>そっと、一区切りにする</Text>
+                </Pressable>
+              )}
+              <Text style={styles.lifeQuestPhilosophy}>
+                {isClosed
+                  ? "この探求は一区切りしました。\nここで重ねた問いと言葉は、消えません。"
+                  : "急がなくていい。\n問いは、夜ごとに少しずつ深くなる。"}
+              </Text>
             </View>
           </ScrollView>
           <StatusBar barStyle="light-content" />
@@ -4525,7 +4867,7 @@ function SettingsModal({
                     placeholderTextColor="rgba(190,180,162,0.38)"
                     style={styles.settingInput}
                   />
-                  <Text style={styles.mutedText}>時刻はこの端末に保存されます。実際の通知はこれからの実装で灯ります。</Text>
+                  <Text style={styles.mutedText}>時刻はこの端末に保存されます。アプリを開いている間、その日の記録がまだなら一度だけ灯ります。</Text>
                 </View>
               </View>
             )}
@@ -5277,6 +5619,22 @@ function parseClockMinutes(value, fallback) {
   return hour * 60 + minute;
 }
 
+function isNightWhisperDue(date = new Date(), notificationTime = "22:00") {
+  const minutes = parseClockMinutes(notificationTime, 22 * 60);
+  const scheduled = new Date(`${getJournalDateKey(date)}T00:00:00`);
+  scheduled.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+  if (minutes < 3 * 60) scheduled.setDate(scheduled.getDate() + 1);
+  return date >= scheduled;
+}
+
+function shouldShowNightWhisper({ settings, journal, frequency, date = new Date() }) {
+  if (!settings?.notificationsEnabled) return false;
+  const journalDay = getJournalDateKey(date);
+  if (settings.lastNotificationDateKey === journalDay) return false;
+  if (isReflectionRecordedForPeriod(journal, frequency, date)) return false;
+  return isNightWhisperDue(date, settings.notificationTime);
+}
+
 const REFLECTION_FREQUENCY_LABELS = {
   daily: "毎日",
   weekly: "毎週",
@@ -5477,6 +5835,37 @@ function formatDotDate(value) {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}.${m}.${d}`;
+}
+
+// The passage of time on an exploration, spoken as thickness — never progress.
+function formatQuestSince(dateKey) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getMonth() + 1}月${date.getDate()}日から`;
+}
+
+function formatQuestDuration(dateKey, now = new Date()) {
+  const start = new Date(`${dateKey}T00:00:00`);
+  if (Number.isNaN(start.getTime())) return "";
+  const days = Math.max(0, Math.floor((now - start) / 86400000));
+  if (days < 7) return "はじまったばかり";
+  if (days < 60) return `${Math.floor(days / 7)}週間`;
+  if (days < 365) return `${Math.floor(days / 30)}ヶ月`;
+  const years = Math.floor(days / 365);
+  const months = Math.floor((days % 365) / 30);
+  return months ? `${years}年${months}ヶ月` : `${years}年`;
+}
+
+// A night touches an exploration when the theme's keywords surface in the
+// user's own words. Keywords come from Nilo's proposal; the theme text itself
+// is the fallback source.
+function questMatchesText(exploration, text) {
+  const hay = String(text || "");
+  if (!hay) return false;
+  const keys = (exploration.keywords && exploration.keywords.length)
+    ? exploration.keywords
+    : String(exploration.theme || "").split(/[、。,\s「」]/).filter((part) => part.length >= 2);
+  return keys.some((key) => key && hay.includes(key));
 }
 
 function languageLabel(value) {
@@ -8676,6 +9065,12 @@ const baseStyleDefs = ({
     fontSize: 11,
     letterSpacing: 0.6,
     marginTop: 7
+  },
+  questClosedRow: {
+    opacity: 0.62
+  },
+  questClosedTheme: {
+    color: "rgba(232,226,214,0.62)"
   },
   mobileQuestCard: {
     backgroundColor: "rgba(46,36,26,0.54)",
