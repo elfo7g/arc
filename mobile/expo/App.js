@@ -1,4 +1,4 @@
-﻿import Constants from "expo-constants";
+import Constants from "expo-constants";
 import "react-native-url-polyfill/auto";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as Linking from "expo-linking";
@@ -27,6 +27,7 @@ import * as Haptics from "expo-haptics";
 import * as WebBrowser from "expo-web-browser";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
+import Svg, { Circle, Line, Path } from "react-native-svg";
 import * as Clipboard from "expo-clipboard";
 import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system";
@@ -1591,6 +1592,14 @@ function AppContent() {
             {pageViews.find((page) => page.id === activeTab)?.node}
           </View>
         </View>
+
+        {!ritualLocked && !sealActive && activeTab === "home" && homePromptVisible && (
+          <Pressable
+            disabled={!reflectionInputEnabled}
+            onPress={beginReflectionInput}
+            style={styles.ritualTapZone}
+          />
+        )}
 
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -3696,56 +3705,73 @@ function TabBar({ activeTab, setActiveTab, hidden, opacity, unlocks }) {
 }
 
 function TabIcon({ id, active, locked }) {
-  const lineStyle = [styles.tabIconLine, active && styles.tabIconLineActive, locked && styles.tabIconLineLocked];
-  const dotStyle = [styles.tabIconDot, active && styles.tabIconDotActive, locked && styles.tabIconLineLocked];
-  const boxStyle = [styles.tabIconBox, active && styles.tabIconBoxActive, locked && styles.tabIconLineLocked];
+  const stroke = active ? "rgba(255,254,244,0.9)" : "rgba(246,239,228,0.62)";
+  const fill = active ? "rgba(232,200,150,0.32)" : "rgba(246,239,228,0.12)";
+  const common = {
+    stroke,
+    strokeWidth: 1.4,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    fill: "none"
+  };
 
   let glyph;
   if (id === "quests") {
+    // 羅針盤 — the direction of an exploration
     glyph = (
       <>
-        <View style={[lineStyle, styles.questIconStem]} />
-        <View style={[lineStyle, styles.questIconFlag]} />
-        <View style={[dotStyle, styles.questIconPoint]} />
+        <Circle cx={12} cy={10.5} r={7.8} {...common} />
+        <Path d="M15.6 6.9 L13.3 11.8 L8.4 14.1 L10.7 9.2 Z" {...common} fill={fill} />
+        <Circle cx={12} cy={10.5} r={0.9} stroke="none" fill={stroke} />
       </>
     );
   } else if (id === "journal") {
+    // 羽ペン — the act of writing itself
     glyph = (
       <>
-        <View style={[boxStyle, styles.journalIconPage]} />
-        <View style={[lineStyle, styles.journalIconLineA]} />
-        <View style={[lineStyle, styles.journalIconLineB]} />
+        <Path d="M5.8 16.8 C7.2 11.9 10.6 7.2 18.4 4.9 C17.4 9.6 14 14.1 8.2 15.9" {...common} />
+        <Path d="M6.8 15.8 C9.2 12 12.8 8.4 17 5.9" {...common} strokeWidth={1.1} />
+        <Line x1={4.6} y1={19.4} x2={12.2} y2={19.4} {...common} />
       </>
     );
   } else if (id === "home") {
+    // 灯 — the light of the night ritual
     glyph = (
       <>
-        <View style={[lineStyle, styles.homeIconRoofLeft]} />
-        <View style={[lineStyle, styles.homeIconRoofRight]} />
-        <View style={[boxStyle, styles.homeIconBase]} />
+        <Path
+          d="M12 3.6 C13.7 5.9 14.9 7.7 14.9 9.5 C14.9 11.4 13.6 12.7 12 12.7 C10.4 12.7 9.1 11.4 9.1 9.5 C9.1 7.7 10.3 5.9 12 3.6 Z"
+          {...common}
+          fill={fill}
+        />
+        <Line x1={8.2} y1={15.6} x2={15.8} y2={15.6} {...common} />
+        <Path d="M9 15.6 C9.2 17.2 10.4 18.1 12 18.1 C13.6 18.1 14.8 17.2 15 15.6" {...common} />
       </>
     );
   } else if (id === "story") {
+    // 開いた本としおりの糸 — a life bound into one book
     glyph = (
       <>
-        <View style={[boxStyle, styles.storyIconLeft]} />
-        <View style={[boxStyle, styles.storyIconRight]} />
-        <View style={[lineStyle, styles.storyIconSpine]} />
+        <Path d="M12 5.9 C10.1 4.5 7.7 4.1 4.8 4.3 V16.4 C7.7 16.2 10.1 16.7 12 18.1" {...common} />
+        <Path d="M12 5.9 C13.9 4.5 16.3 4.1 19.2 4.3 V16.4 C16.3 16.2 13.9 16.7 12 18.1" {...common} />
+        <Line x1={12} y1={5.9} x2={12} y2={18.1} {...common} strokeWidth={1.1} />
+        <Path d="M12 18.1 C12 19.3 11.5 20.2 10.8 20.9" {...common} strokeWidth={1.1} />
       </>
     );
   } else {
     glyph = (
       <>
-        <View style={[boxStyle, styles.memoryIconRing]} />
-        <View style={[dotStyle, styles.memoryIconDotCenter]} />
-        <View style={[dotStyle, styles.memoryIconDotOrbit]} />
+        <Circle cx={12} cy={10.5} r={7.6} {...common} />
+        <Circle cx={12} cy={10.5} r={1.6} stroke="none" fill={stroke} />
+        <Circle cx={17.4} cy={5.6} r={1.2} stroke="none" fill={stroke} />
       </>
     );
   }
 
   return (
-    <View style={styles.tabIconCanvas}>
-      {glyph}
+    <View style={[styles.tabIconCanvas, locked && styles.tabIconLocked]}>
+      <Svg width={24} height={22} viewBox="0 0 24 22">
+        {glyph}
+      </Svg>
     </View>
   );
 }
@@ -5597,6 +5623,13 @@ const baseStyleDefs = ({
   composerAvoiderFocused: {
     bottom: 0
   },
+  ritualTapZone: {
+    bottom: 0,
+    height: "50%",
+    left: 0,
+    position: "absolute",
+    right: 0
+  },
   header: {
     alignItems: "center",
     flexDirection: "row",
@@ -6975,135 +7008,13 @@ const baseStyleDefs = ({
     opacity: 0.34
   },
   tabIconCanvas: {
+    alignItems: "center",
     height: 22,
-    position: "relative",
+    justifyContent: "center",
     width: 24
   },
-  tabIconLine: {
-    backgroundColor: "rgba(246,239,228,0.62)",
-    borderRadius: 999,
-    position: "absolute"
-  },
-  tabIconLineActive: {
-    backgroundColor: "rgba(255,254,244,0.78)"
-  },
-  tabIconLineLocked: {
+  tabIconLocked: {
     opacity: 0.56
-  },
-  tabIconDot: {
-    backgroundColor: "rgba(246,239,228,0.62)",
-    borderRadius: 999,
-    position: "absolute"
-  },
-  tabIconDotActive: {
-    backgroundColor: "rgba(255,254,244,0.78)"
-  },
-  tabIconBox: {
-    borderColor: "rgba(246,239,228,0.62)",
-    borderRadius: 4,
-    borderWidth: 1.5,
-    position: "absolute"
-  },
-  tabIconBoxActive: {
-    borderColor: "rgba(255,254,244,0.78)"
-  },
-  questIconStem: {
-    height: 16,
-    left: 8,
-    top: 3,
-    width: 1.5
-  },
-  questIconFlag: {
-    height: 1.5,
-    left: 9,
-    top: 5,
-    width: 9
-  },
-  questIconPoint: {
-    height: 4,
-    left: 15,
-    top: 4,
-    width: 4
-  },
-  journalIconPage: {
-    height: 17,
-    left: 5,
-    top: 2,
-    width: 14
-  },
-  journalIconLineA: {
-    height: 1.4,
-    left: 8,
-    top: 8,
-    width: 8
-  },
-  journalIconLineB: {
-    height: 1.4,
-    left: 8,
-    top: 12,
-    width: 6
-  },
-  homeIconRoofLeft: {
-    height: 1.8,
-    left: 4,
-    top: 7,
-    transform: [{ rotate: "-38deg" }],
-    width: 11
-  },
-  homeIconRoofRight: {
-    height: 1.8,
-    right: 4,
-    top: 7,
-    transform: [{ rotate: "38deg" }],
-    width: 11
-  },
-  homeIconBase: {
-    borderTopWidth: 0,
-    height: 11,
-    left: 6,
-    top: 10,
-    width: 12
-  },
-  storyIconLeft: {
-    borderBottomRightRadius: 2,
-    borderTopRightRadius: 2,
-    height: 15,
-    left: 4,
-    top: 4,
-    width: 8
-  },
-  storyIconRight: {
-    borderBottomLeftRadius: 2,
-    borderTopLeftRadius: 2,
-    height: 15,
-    right: 4,
-    top: 4,
-    width: 8
-  },
-  storyIconSpine: {
-    height: 14,
-    left: 11.25,
-    top: 5,
-    width: 1.5
-  },
-  memoryIconRing: {
-    borderRadius: 999,
-    height: 16,
-    left: 4,
-    top: 3,
-    width: 16
-  },
-  memoryIconDotCenter: {
-    height: 4,
-    left: 10,
-    top: 9,
-    width: 4
-  },
-  memoryIconDotOrbit: {
-    height: 3,
-    left: 17,
-    top: 5,
-    width: 3
   },
   tabText: {
     color: "#aaa6af",
@@ -9653,7 +9564,7 @@ const baseStyleDefs = ({
   },
   screenBottomFade: {
     bottom: 60,
-    height: 220,
+    height: 160,
     left: 0,
     position: "absolute",
     right: 0,
