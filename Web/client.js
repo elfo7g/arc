@@ -399,9 +399,7 @@ function renderHome() {
   dom.homeQuestTitle.textContent = quest.title;
   dom.homeQuestSource.textContent = quest.fromNilo ? "NILO" : "QUEST";
   const answerButton = $(".home-quest-actions [data-action='quest-record']");
-  const doneButton = $(".home-quest-actions [data-action='toggle-quest']");
   if (answerButton) answerButton.textContent = quest.done ? "もう一度ひらく" : "答える";
-  if (doneButton) doneButton.textContent = quest.done ? "灯した" : "朝に行動";
 }
 
 function renderQuest() {
@@ -418,12 +416,11 @@ function renderQuest() {
       </div>
       <h2>${escapeHtml(quest.title)}</h2>
       ${quest.done ? `
-        <button class="done-note" type="button" data-action="toggle-quest" data-quest-index="${index}">
+        <div class="done-note">
           <i>✓</i><span>完了　·　明日 0:00 に消えます</span>
-        </button>
+        </div>
       ` : `
         <div class="quest-actions">
-          <button type="button" data-action="toggle-quest" data-quest-index="${index}">完了にする</button>
           <button type="button" data-action="quest-record" data-quest-index="${index}">Niloに記録</button>
         </div>
       `}
@@ -713,14 +710,6 @@ function saveDialogueAsEntry(result) {
   }
 }
 
-function toggleQuest(index) {
-  const quest = state.quests[index];
-  if (!quest) return;
-  state.quests[index] = { ...quest, done: !quest.done };
-  saveState();
-  render();
-}
-
 function openEntry(entryId) {
   if (!state.entries.some((entry) => entry.id === entryId)) return;
   state.selectedEntryId = entryId;
@@ -757,7 +746,6 @@ function handleClick(event) {
 
   if (action === "open-dialogue") startDialogue("home", null);
   if (action === "quest-record") startDialogue("quest", Number.isFinite(questIndex) ? questIndex : 0);
-  if (action === "toggle-quest") toggleQuest(questIndex);
   if (action === "open-entry") openEntry(actionTarget.dataset.entryId);
   if (action === "open-lifequest") goTo("lifequest");
   if (action === "open-settings") goTo("settings");
