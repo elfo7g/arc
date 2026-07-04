@@ -186,106 +186,176 @@ const reflectionQuestions = [
   "今日はどんな日でしたか？"
 ];
 const maxReflectionQuestions = 5;
-const questDust = [
-  { x: -28, y: -54, delay: 0, size: 5 },
-  { x: -10, y: -72, delay: 60, size: 4 },
-  { x: 16, y: -64, delay: 35, size: 6 },
-  { x: 34, y: -38, delay: 95, size: 3 },
-  { x: -34, y: -24, delay: 120, size: 3 },
-  { x: 6, y: -92, delay: 155, size: 4 },
-  { x: 28, y: -82, delay: 185, size: 3 },
-  { x: -18, y: -98, delay: 210, size: 2 }
-];
 
-const dailyQuestPrompts = [
-  { title: "三年前の春を、ひとつ思い出して。", category: "記憶" },
-  { title: "今日、言えなかった「ありがとう」は？", category: "感謝", nilo: true },
-  { title: "いま、いちばん手放したい荷物は？", category: "手放す" }
-];
+// Demo entries use relative dates so the preview always exercises the recent
+// window, the monthly bands, and the chapter guidance card, whatever today is.
+// (getJournalDateKey/toDateKey are hoisted declarations, callable here.)
+function demoDaysAgoKey(days) {
+  const date = new Date(`${getJournalDateKey()}T00:00:00`);
+  date.setDate(date.getDate() - days);
+  return toDateKey(date);
+}
 
 const demoJournalEntries = [
   {
-    id: "demo-journal-tonight",
-    dateKey: "2026-06-28",
-    dateLabel: "6月28日",
-    tag: "TONIGHT",
+    id: "demo-journal-walk",
+    dateKey: demoDaysAgoKey(0),
     source: "home",
-    title: "夕方、ひとりで長い散歩をした。川沿いの道を、ただ歩いていた。",
-    lines: [],
+    event: "夕方、ひとりで川沿いの道を長く歩いた。",
+    meaning: "何も考えないでいい時間が、ずっと欲しかったのかもしれない。",
     dialogue: [
-      { role: "nilo", text: "今日はどんな日だった？" },
-      { role: "user", text: "夕方、ひとりで長い散歩をした。川沿いの道を、ただ歩いていた。" },
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "夕方、ひとりで川沿いの道を長く歩いた。" },
       { role: "nilo", text: "ひとりの時間は、あなたにとってどんな意味があった？" },
       { role: "user", text: "誰にも気をつかわなくていい。ようやく、呼吸ができた気がした。" },
       { role: "nilo", text: "その「呼吸ができた」感じを、最近よく探している？" },
-      { role: "user", text: "たぶん。少しずつ、自分のペースを取り戻している。" }
+      { role: "user", text: "何も考えないでいい時間が、ずっと欲しかったのかもしれない。" }
     ],
     emotions: ["#静けさ", "#回復", "#ひとり時間"],
     related: [{ date: "5月19日", text: "夜、海まで歩いた。波の音だけが、ずっと残っていた。" }]
   },
   {
     id: "demo-journal-quest",
-    dateKey: "2026-06-27",
-    dateLabel: "6月27日",
-    tag: "QUEST",
+    dateKey: demoDaysAgoKey(2),
     source: "quest",
     questText: "いちばん安心する場所は、どこ？",
-    title: "実家の台所の隅。母が料理していた音がする場所。",
-    lines: [],
+    event: "実家の台所の隅を、ふいに思い出した。",
+    meaning: "守られていた頃の時間は、もう戻れないけど、確かにあった。",
     dialogue: [
       { role: "nilo", text: "いちばん安心する場所は、どこ？" },
       { role: "user", text: "実家の台所の隅。母が料理していた音がする場所。" },
       { role: "nilo", text: "その音は、いまのあなたに何を思い出させる？" },
-      { role: "user", text: "守られていた頃のこと。もう戻れないけど、確かにあった時間。" }
+      { role: "user", text: "守られていた頃の時間は、もう戻れないけど、確かにあった。" }
     ],
     emotions: ["#安心", "#記憶", "#家族"]
   },
   {
     id: "demo-journal-rain",
-    dateKey: "2026-06-25",
-    dateLabel: "6月25日",
+    dateKey: demoDaysAgoKey(5),
     source: "home",
-    title: "雨の音で目が覚めた。久しぶりに、何も予定のない朝。",
-    lines: [],
+    meaning: "雨の音で目が覚めた。久しぶりに、何も予定のない朝。",
     dialogue: [
-      { role: "nilo", text: "今日はどんな日だった？" },
-      { role: "user", text: "雨の音で目が覚めた。久しぶりに、何も予定のない朝。" },
-      { role: "nilo", text: "その静けさは、どんな色をしていた？" },
-      { role: "user", text: "薄いグレー。でも嫌じゃない、やわらかい色。" }
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "雨の音で目が覚めた。久しぶりに、何も予定のない朝。" }
     ],
     emotions: ["#休息", "#静けさ"]
   },
   {
     id: "demo-journal-call",
-    dateKey: "2026-06-21",
-    dateLabel: "6月21日",
+    dateKey: demoDaysAgoKey(9),
     source: "home",
-    title: "母に電話した。短い会話だったけど、声が聞けてよかった。",
-    lines: [],
+    event: "母に電話した。短い会話だった。",
+    meaning: "「ありがとう」は、いつも言いそびれてしまう。",
     dialogue: [
-      { role: "nilo", text: "今日はどんな日だった？" },
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
       { role: "user", text: "母に電話した。短い会話だったけど、声が聞けてよかった。" },
       { role: "nilo", text: "伝えられなかったことは、何かある？" },
-      { role: "user", text: "ありがとう、かな。いつも言いそびれてしまう。" }
+      { role: "user", text: "「ありがとう」は、いつも言いそびれてしまう。" }
     ],
     emotions: ["#家族", "#感謝"]
   },
   {
-    id: "demo-journal-old",
-    dateKey: "2026-06-14",
-    dateLabel: "6月14日",
-    tag: "QUEST",
+    id: "demo-journal-release",
+    dateKey: demoDaysAgoKey(13),
     source: "quest",
     questText: "そっと手放したいものは？",
-    title: "完璧じゃない自分を、責めてしまう癖。",
-    lines: [],
+    event: "完璧じゃない自分を、責めてしまう癖のこと。",
+    meaning: "手放せたら、もう少し自分にやさしくなれる気がする。",
     dialogue: [
       { role: "nilo", text: "そっと手放したいものは？" },
       { role: "user", text: "完璧じゃない自分を責める癖。" },
       { role: "nilo", text: "それを手放せたら、何が変わると思う？" },
-      { role: "user", text: "もう少し、自分にやさしくなれる気がする。" }
+      { role: "user", text: "手放せたら、もう少し自分にやさしくなれる気がする。" }
     ],
     emotions: ["#決意", "#内省"]
+  },
+  {
+    id: "demo-journal-m1a",
+    dateKey: demoDaysAgoKey(35),
+    source: "home",
+    meaning: "急がない一日も、ちゃんと一日だった。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "急がない一日も、ちゃんと一日だった。" }
+    ],
+    emotions: ["#休息"]
+  },
+  {
+    id: "demo-journal-m1b",
+    dateKey: demoDaysAgoKey(40),
+    source: "home",
+    meaning: "古い友人の声は、時間を一瞬で巻き戻す。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "古い友人の声は、時間を一瞬で巻き戻す。" }
+    ],
+    emotions: ["#友情", "#記憶"]
+  },
+  {
+    id: "demo-journal-m1c",
+    dateKey: demoDaysAgoKey(44),
+    source: "home",
+    meaning: "夜の台所で飲むお茶が、一日の句点になっている。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "夜の台所で飲むお茶が、一日の句点になっている。" }
+    ],
+    emotions: ["#習慣", "#静けさ"]
+  },
+  {
+    id: "demo-journal-m2a",
+    dateKey: demoDaysAgoKey(66),
+    source: "home",
+    meaning: "うまく言えなかった悔しさも、残しておきたい。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "うまく言えなかった悔しさも、残しておきたい。" }
+    ],
+    emotions: ["#葛藤"]
+  },
+  {
+    id: "demo-journal-m2b",
+    dateKey: demoDaysAgoKey(71),
+    source: "home",
+    meaning: "季節の変わり目の匂いに、少しだけ背中を押された。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "季節の変わり目の匂いに、少しだけ背中を押された。" }
+    ],
+    emotions: ["#季節", "#前進"]
+  },
+  {
+    id: "demo-journal-m3a",
+    dateKey: demoDaysAgoKey(100),
+    source: "home",
+    meaning: "始まりの日の緊張を、忘れたくない。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "始まりの日の緊張を、忘れたくない。" }
+    ],
+    emotions: ["#緊張", "#始まり"]
+  },
+  {
+    id: "demo-journal-old-a",
+    dateKey: demoDaysAgoKey(215),
+    source: "home",
+    meaning: "遠い日の決心。ここから、すべてが動き出した。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "遠い日の決心。ここから、すべてが動き出した。" }
+    ],
+    emotions: ["#決意"]
+  },
+  {
+    id: "demo-journal-old-b",
+    dateKey: demoDaysAgoKey(240),
+    source: "home",
+    meaning: "冬の朝の光は、静かに公平だった。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "冬の朝の光は、静かに公平だった。" }
+    ],
+    emotions: ["#静けさ"]
   }
 ];
 
@@ -394,20 +464,19 @@ const demoFutureQuest = {
   ]
 };
 
-// The diary timeline fades with age across five graded steps (newest → oldest),
-// matching the ARC reference: the node shrinks and dims, the date and body cool.
-// Each node overrides timelineDot's 7x7 base size, so left/top are recomputed
-// per size to keep every dot centered on the timeline (they'd drift off the
-// line otherwise, since left/top are measured from the box's corner).
-const diaryNodeStyles = [
-  { width: 10, height: 10, left: -26.5, top: 20.5, backgroundColor: "rgba(242,200,142,0.98)", shadowColor: "#d9a86c", shadowOpacity: 0.55, shadowRadius: 14, shadowOffset: { width: 0, height: 0 } },
-  { width: 7, height: 7, left: -25, top: 22, backgroundColor: "rgba(217,168,108,0.6)", shadowColor: "#d9a86c", shadowOpacity: 0.22, shadowRadius: 7, shadowOffset: { width: 0, height: 0 } },
-  { width: 6, height: 6, left: -24.5, top: 22.5, backgroundColor: "rgba(195,176,148,0.42)" },
-  { width: 6, height: 6, left: -24.5, top: 22.5, backgroundColor: "rgba(180,164,138,0.34)" },
-  { width: 5, height: 5, left: -24, top: 23, backgroundColor: "rgba(170,156,132,0.3)" }
+// Diary spec v1.0: the diary carries only "now". Entries inside the recent
+// window show in full two-layer detail; older ones fold into monthly bands;
+// beyond the archive horizon the diary defers to the chapter tab entirely.
+const DIARY_RECENT_DAYS = 14;
+const DIARY_ARCHIVE_MONTHS = 6;
+const englishMonthNames = [
+  "JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
+  "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"
 ];
-const diaryDateColors = ["rgba(232,200,150,0.88)", "rgba(205,191,168,0.6)", "rgba(205,191,168,0.5)", "rgba(205,191,168,0.4)", "rgba(205,191,168,0.32)"];
-const diaryTextColors = ["rgba(236,230,218,0.94)", "rgba(232,226,214,0.7)", "rgba(232,226,214,0.6)", "rgba(232,226,214,0.5)", "rgba(232,226,214,0.42)"];
+const japaneseMonthNames = [
+  "睦月", "如月", "弥生", "卯月", "皐月", "水無月",
+  "文月", "葉月", "長月", "神無月", "霜月", "師走"
+];
 
 // Quests per the ARC Quest Spec v1.0: Nilo proposes them from recurring themes
 // in the diary ("〜ですね" observation + "〜てみますか" invitation), the user
@@ -495,7 +564,6 @@ function AppContent() {
   const [sealActive, setSealActive] = useState(false);
   const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
   const [journal, setJournal] = useState([]);
-  const [quests, setQuests] = useState(() => createDailyQuests());
   const [memories, setMemories] = useState([]);
   const [chapters, setChapters] = useState([]);
   const [chaptersBusy, setChaptersBusy] = useState(false);
@@ -564,7 +632,6 @@ function AppContent() {
   // 子ツリーが描画される前に styles を差し替える（書体サイズ設定の反映）。
   applyFontScale(settings.fontScale);
 
-  const activeQuests = useMemo(() => quests.filter((quest) => !quest.completed), [quests]);
   const unreadNotificationCount = useMemo(() => notifications.filter((item) => !item.read).length, [notifications]);
   const journalDateKey = getJournalDateKey();
   const reflectionFrequency = normalizeReflectionFrequency(settings.reflection?.frequency);
@@ -742,7 +809,6 @@ function AppContent() {
           try {
             const saved = JSON.parse(raw);
             if (Array.isArray(saved.journal)) setJournal(saved.journal);
-            if (Array.isArray(saved.quests) && saved.quests.length) setQuests(saved.quests);
             if (Array.isArray(saved.memories)) setMemories(saved.memories);
             if (Array.isArray(saved.chapters)) setChapters(saved.chapters);
             if (saved.chapterNotes && typeof saved.chapterNotes === "object") setChapterNotes(saved.chapterNotes);
@@ -784,11 +850,11 @@ function AppContent() {
     AsyncStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        journal, quests, memories, chapters, chapterNotes, profile, settings,
+        journal, memories, chapters, chapterNotes, profile, settings,
         questProposals, explorations, declinedQuestThemes, questScanDateKey, notifications
       })
     ).catch(() => undefined);
-  }, [hydrated, journal, quests, memories, chapters, chapterNotes, profile, settings, questProposals, explorations, declinedQuestThemes, questScanDateKey, notifications]);
+  }, [hydrated, journal, memories, chapters, chapterNotes, profile, settings, questProposals, explorations, declinedQuestThemes, questScanDateKey, notifications]);
 
   useEffect(() => {
     // Opening the quest tab is when Nilo glances over the recent records —
@@ -1223,7 +1289,14 @@ function AppContent() {
     },
     {
       id: "journal",
-      node: <JournalScreen journal={journal} active={activeTab === "journal"} onOpenDetail={openEntryDetail} />
+      node: (
+        <JournalScreen
+          journal={journal}
+          active={activeTab === "journal"}
+          onOpenDetail={openEntryDetail}
+          onGoToStory={() => setActiveTab("story")}
+        />
+      )
     },
     {
       id: "story",
@@ -1272,12 +1345,7 @@ function AppContent() {
           forceFinish: questionCount >= ritualQuestionTarget,
           niloStyle: settings.niloStyle || "empathetic",
           frequency: reflectionFrequency,
-          activeQuests: activeQuests.map((quest) => ({
-            id: quest.id,
-            title: quest.title,
-            current: 0,
-            target: 1
-          }))
+          activeQuests: []
         })
       });
 
@@ -1330,6 +1398,7 @@ function AppContent() {
         sealRitual(closing);
         return;
       }
+      const userAnswers = messages.filter((message) => message.role === "user").map((message) => message.text);
       setJournal((items) => [
         {
           id: journalId,
@@ -1337,6 +1406,11 @@ function AppContent() {
           dateLabel: formatDotDate(entryDateKey),
           title: result.title || "今夜の記録",
           lines: result.summaryLines?.length ? result.summaryLines : ["今日の言葉を短く残しました。"],
+          // 二層構造: 出来事=最初の回答、意味=対話の最後に立ち上がった言葉。
+          event: userAnswers[0] || "",
+          meaning: userAnswers[userAnswers.length - 1] || result.title || "",
+          source: "home",
+          dialogue: finalMessages,
           niloLine: result.niloLine || closing,
           messages: finalMessages
         },
@@ -1344,7 +1418,6 @@ function AppContent() {
       ]);
       addRitualMemory({ messages: finalMessages, journalId, entryDateKey, essence: result.niloLine, closing, result });
       touchExplorations({ messages: finalMessages, entryDateKey });
-      addGeneratedQuests(result);
       sealRitual(closing);
       return;
     }
@@ -1394,6 +1467,10 @@ function AppContent() {
         dateLabel: formatDotDate(entryDateKey),
         title: userLines[0] || "今夜の記録",
         lines: userLines.length ? userLines : ["今日の印象を短く残しました。"],
+        event: userLines[0] || "",
+        meaning: userLines[userLines.length - 1] || "",
+        source: "home",
+        dialogue: finalMessages,
         niloLine: closing,
         messages: finalMessages
       },
@@ -1416,33 +1493,6 @@ function AppContent() {
   function getShortClosingComment(result) {
     const text = result.closingMessage || result.niloMessage || result.niloLine || "今夜の記録を、静かに残しました。";
     return String(text).replace(/\s+/g, " ").trim().slice(0, 42) || "今夜の記録を、静かに残しました。";
-  }
-
-  function addGeneratedQuests(result) {
-    if (settings.privacy?.questLink === false) return;
-
-    const generatedQuests = [
-      ...(result.quests || []),
-      result.questSuggestion ? { title: result.questSuggestion, scope: "life" } : null
-    ].filter((quest) => quest?.title);
-
-    setQuests((items) => {
-      const additions = generatedQuests
-        .filter((generated) => !items.some((quest) => quest.title === generated.title && !quest.completed))
-        .map((generated) => {
-          const source = getJournalQuestSource(generated);
-          return {
-            id: createId(source === "journal-daily" ? "journal-daily" : "life"),
-            title: generated.title,
-            reason: generated.reason || "",
-            firstStep: generated.firstStep || "",
-            target: generated.target || (source === "journal-daily" ? 1 : 7),
-            source,
-            completed: false
-          };
-        });
-      return [...additions, ...items];
-    });
   }
 
   function addRitualMemory({ messages, journalId, entryDateKey, essence, closing, result }) {
@@ -1474,18 +1524,6 @@ function AppContent() {
     };
 
     setMemories((items) => [memory, ...items]);
-  }
-
-  function getJournalQuestSource(quest) {
-    const scope = String(quest.scope || quest.type || quest.category || "").toLowerCase();
-    if (["daily", "journal-daily", "tomorrow", "small"].includes(scope)) return "journal-daily";
-    if (["life", "long", "long-term", "big"].includes(scope)) return "life";
-    const target = Number(quest.target);
-    return Number.isFinite(target) && target <= 2 ? "journal-daily" : "life";
-  }
-
-  function completeQuest(id) {
-    setQuests((items) => items.map((quest) => quest.id === id ? { ...quest, completed: true } : quest));
   }
 
   // Eligible = far enough in the past (not the in-progress window) and not
@@ -1935,8 +1973,6 @@ function AppContent() {
           bgmStatus={bgmStatus}
           journal={journal}
           setJournal={setJournal}
-          quests={quests}
-          setQuests={setQuests}
           memories={memories}
           setMemories={setMemories}
           chapters={chapters}
@@ -3266,202 +3302,126 @@ function QuestScreen({ onUiSound, active, proposals, explorations, onAccept, onD
   );
 }
 
-function QuestSection({ title, quests, completeQuest, onUiSound }) {
-  if (!quests.length) return null;
-  return (
-    <View style={styles.questSection}>
-      <Text style={styles.questSectionTitle}>{title}</Text>
-      <View style={styles.questGrid}>
-        {quests.map((quest) => (
-          <QuestTile key={quest.id} quest={quest} onComplete={completeQuest} onUiSound={onUiSound} />
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function QuestTile({ quest, onComplete, onUiSound }) {
-  const collapse = useRef(new Animated.Value(0)).current;
-  const dust = useRef(questDust.map(() => new Animated.Value(0))).current;
-  const [isCompleting, setIsCompleting] = useState(false);
-
-  function completeWithAnimation() {
-    if (isCompleting) return;
-    setIsCompleting(true);
-    onUiSound?.();
-
-    Animated.parallel([
-      Animated.timing(collapse, {
-        toValue: 1,
-        duration: 640,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false
-      }),
-      Animated.stagger(
-        30,
-        dust.map((value) => Animated.timing(value, {
-          toValue: 1,
-          duration: 620,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true
-        }))
-      )
-    ]).start(() => onComplete(quest.id));
-  }
-
-  // A small settle, then the card lifts up and to the right and fades —
-  // a quiet "carried away" rather than a busy shatter.
-  const tileOpacity = collapse.interpolate({
-    inputRange: [0, 0.5, 0.82, 1],
-    outputRange: [1, 0.96, 0.5, 0]
-  });
-  const tileScale = collapse.interpolate({
-    inputRange: [0, 0.14, 1],
-    outputRange: [1, 1.04, 0.7]
-  });
-  const tileRotate = collapse.interpolate({
-    inputRange: [0, 0.14, 1],
-    outputRange: ["0deg", "-1.5deg", "6deg"]
-  });
-  const tileTranslateX = collapse.interpolate({
-    inputRange: [0, 0.14, 1],
-    outputRange: [0, -6, 128]
-  });
-  const tileTranslateY = collapse.interpolate({
-    inputRange: [0, 0.14, 1],
-    outputRange: [0, 10, -184]
-  });
-  const tileHeight = collapse.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [154, 154, 0]
-  });
-  const tileWidth = collapse.interpolate({
-    inputRange: [0, 0.56, 1],
-    outputRange: ["46.5%", "46.5%", "0%"]
-  });
-  const tileMarginBottom = collapse.interpolate({
-    inputRange: [0, 0.48, 1],
-    outputRange: [12, 12, 0]
-  });
-  const tileMarginRight = collapse.interpolate({
-    inputRange: [0, 0.56, 1],
-    outputRange: [0, 0, 0]
-  });
-
-  return (
-    <Animated.View style={[styles.questTileShell, { height: tileHeight, marginBottom: tileMarginBottom, marginRight: tileMarginRight, width: tileWidth }]}>
-      <Animated.View
-        style={[
-          styles.questTile,
-          {
-            opacity: tileOpacity,
-            transform: [
-              { translateX: tileTranslateX },
-              { translateY: tileTranslateY },
-              { scale: tileScale },
-              { rotate: tileRotate }
-            ]
-          }
-        ]}
-      >
-        <GlassBackdrop intensity={22} />
-        <View style={styles.questTileHead}>
-          <View style={styles.questIconMark}>
-            <View style={styles.questIconMarkLine} />
-            <View style={styles.questIconMarkDot} />
-          </View>
-          <Pressable
-            disabled={isCompleting}
-            onPress={completeWithAnimation}
-            style={({ pressed }) => [styles.checkButton, pressed && !isCompleting && styles.checkButtonPressed, isCompleting && styles.checkButtonActive]}
-          >
-            <Text style={styles.checkButtonText}>✓</Text>
-          </Pressable>
-        </View>
-        <Text style={styles.dailyLabel}>{getQuestLabel(quest)}</Text>
-        <Text style={styles.questTitle}>{quest.title}</Text>
-      </Animated.View>
-      <View pointerEvents="none" style={styles.questDustLayer}>
-        {questDust.map((particle, index) => {
-          const progress = dust[index];
-          const opacity = progress.interpolate({
-            inputRange: [0, 0.16, 0.74, 1],
-            outputRange: [0, 1, 0.64, 0]
-          });
-          const translateX = progress.interpolate({
-            inputRange: [0, 1],
-            outputRange: [0, particle.x]
-          });
-          const translateY = progress.interpolate({
-            inputRange: [0, 1],
-            outputRange: [0, particle.y]
-          });
-          const scale = progress.interpolate({
-            inputRange: [0, 0.35, 1],
-            outputRange: [0.35, 1, 0.08]
-          });
-          return (
-            <Animated.View
-              key={index}
-              style={[
-                styles.questDust,
-                {
-                  height: particle.size,
-                  width: particle.size,
-                  opacity,
-                  transform: [{ translateX }, { translateY }, { scale }]
-                }
-              ]}
-            />
-          );
-        })}
-      </View>
-    </Animated.View>
-  );
-}
-
-function JournalScreen({ journal, active, onOpenDetail }) {
+// 日記タブ (per the Diary spec): 意味を主役にした二層のタイムライン。直近の
+// 窓だけを詳細に見せ、それ以前は月の帯に畳み、さらに古い日々は章へ委ねる。
+// 糸は「今」に最も近い一点だけが淡く光る。
+function JournalScreen({ journal, active, onOpenDetail, onGoToStory }) {
   const token = useEntrancePlay(active);
-  const entries = getJournalTimelineEntries(journal);
+  const { recentEntries, monthlyBands, hasOlder } = getDiaryModel(journal);
+  const [expandedMonths, setExpandedMonths] = useState(() => new Set());
+  const now = new Date(`${getJournalDateKey()}T00:00:00`);
+
+  const toggleMonth = (monthKey) => {
+    setExpandedMonths((current) => {
+      const next = new Set(current);
+      if (next.has(monthKey)) next.delete(monthKey);
+      else next.add(monthKey);
+      return next;
+    });
+  };
 
   return (
     <ScrollView contentContainerStyle={styles.journalScrollContent} showsVerticalScrollIndicator={false}>
       <RiseIn index={0} playToken={token} style={styles.journalHeader}>
         <Text style={styles.mobileScreenTitle}>日記</Text>
         <Text style={styles.mobileGoldLabel}>二つの川が、合流する場所</Text>
-        <Text style={styles.journalMonth}>JUNE 2026</Text>
-        <Text style={styles.journalWatermark}>水無月</Text>
+        <Text style={styles.journalMonth}>{`${englishMonthNames[now.getMonth()]} ${now.getFullYear()}`}</Text>
+        <Text style={styles.journalWatermark}>{japaneseMonthNames[now.getMonth()]}</Text>
       </RiseIn>
       <View style={styles.timeline}>
         <View pointerEvents="none" style={styles.timelineLine} />
-        {entries.map((entry, index) => {
-          // The timeline fades with age: the newest node is the brightest and
-          // largest, the oldest the faintest — five graded steps, as in ARC.
-          const fade = Math.min(index, 4);
-          return (
-            <RiseIn key={entry.id} index={index + 1} playToken={token} duration={550}>
-              <Pressable
-                onPress={() => onOpenDetail?.(entry)}
-                style={({ pressed }) => [styles.timelineItem, pressed && styles.touchPressedSubtle]}
-              >
-                <View style={[styles.timelineDot, diaryNodeStyles[fade]]} />
-                <View style={styles.timelineCopy}>
-                  <View style={styles.timelineMetaRow}>
-                    <Text style={[styles.timelineDate, { color: diaryDateColors[fade] }]}>{entry.dateLabel}</Text>
-                    {entry.tag === "TONIGHT" && <Text style={styles.timelineTag}>TONIGHT</Text>}
-                    {entry.tag === "QUEST" && <Text style={styles.timelineQuestTag}>QUEST</Text>}
-                  </View>
-                  <Text style={[styles.timelineText, { color: diaryTextColors[fade] }]}>{entry.title}</Text>
-                  {(entry.lines || []).map((line, lineIndex) => (
-                    <Text key={lineIndex} style={[styles.timelineText, { color: diaryTextColors[fade] }]}>{line}</Text>
-                  ))}
-                </View>
-              </Pressable>
-            </RiseIn>
-          );
-        })}
+        {recentEntries.length === 0 && (
+          <RiseIn index={1} playToken={token}>
+            <Text style={styles.diaryEmptyRecent}>この二週間は、まだ静かです。</Text>
+          </RiseIn>
+        )}
+        {recentEntries.map((entry, index) => (
+          <RiseIn key={entry.id} index={index + 1} playToken={token} duration={550}>
+            <DiaryEntryRow entry={entry} isCurrent={index === 0} onOpenDetail={onOpenDetail} />
+          </RiseIn>
+        ))}
+        {monthlyBands.map((band, index) => (
+          <RiseIn key={band.monthKey} index={recentEntries.length + index + 1} playToken={token} duration={550}>
+            <DiaryMonthBand
+              band={band}
+              expanded={expandedMonths.has(band.monthKey)}
+              onToggle={() => toggleMonth(band.monthKey)}
+              onOpenDetail={onOpenDetail}
+            />
+          </RiseIn>
+        ))}
+        {hasOlder && (
+          <RiseIn index={recentEntries.length + monthlyBands.length + 1} playToken={token} duration={550}>
+            <DiaryStoryGuide onGoToStory={onGoToStory} />
+          </RiseIn>
+        )}
       </View>
     </ScrollView>
+  );
+}
+
+// 一日の記録: 出来事(小・淡)の上に意味(主役)。強く感じた日ほど文字と余白が
+// 大きくなるが、その強弱は組版だけで語り、数値やバッジは出さない。
+function DiaryEntryRow({ entry, isCurrent, onOpenDetail }) {
+  const tierItem =
+    entry.tier === "strong" ? styles.diaryItemStrong : entry.tier === "quiet" ? styles.diaryItemQuiet : styles.diaryItemNormal;
+  const tierMeaning =
+    entry.tier === "strong"
+      ? styles.diaryMeaningStrong
+      : entry.tier === "quiet"
+        ? styles.diaryMeaningQuiet
+        : styles.diaryMeaningNormal;
+
+  return (
+    <Pressable
+      onPress={() => onOpenDetail?.(entry)}
+      style={({ pressed }) => [styles.timelineItem, tierItem, pressed && styles.touchPressedSubtle]}
+    >
+      <View style={[styles.timelineDot, isCurrent && styles.diaryDotCurrent]} />
+      <View style={styles.timelineCopy}>
+        <View style={styles.timelineMetaRow}>
+          <Text style={[styles.timelineDate, isCurrent && styles.timelineDateActive]}>{entry.dateLabel}</Text>
+          {entry.isQuest && <Text style={styles.diaryQuestLabel}>クエスト</Text>}
+        </View>
+        {!!entry.event && <Text style={styles.diaryEventText}>{entry.event}</Text>}
+        <Text style={tierMeaning}>{entry.meaning}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+// 月の帯: 太さがその月の記録量を静かに語る。開くと意味の一言だけが並ぶ。
+function DiaryMonthBand({ band, expanded, onToggle, onOpenDetail }) {
+  const barHeight = 10 + Math.min(36, band.entries.length * 3);
+  return (
+    <View>
+      <Pressable onPress={onToggle} style={({ pressed }) => [styles.diaryBandRow, pressed && styles.touchPressedSubtle]}>
+        <View style={[styles.diaryBandBar, { height: barHeight }, expanded && styles.diaryBandBarOpen]} />
+        <Text style={styles.diaryBandLabel}>{band.label}</Text>
+      </Pressable>
+      {expanded &&
+        band.entries.map((entry, index) => (
+          <RiseIn key={entry.id} index={index} playToken={1} duration={420} distance={8}>
+            <Pressable
+              onPress={() => onOpenDetail?.(entry)}
+              style={({ pressed }) => [styles.diaryBandEntryRow, pressed && styles.touchPressedSubtle]}
+            >
+              <Text style={styles.diaryBandEntryDate}>{entry.dateLabel}</Text>
+              <Text style={styles.diaryBandEntryText}>{entry.meaning}</Text>
+            </Pressable>
+          </RiseIn>
+        ))}
+    </View>
+  );
+}
+
+// 一定より古い日々は日記では見せない。章への静かな導線だけを置く。
+function DiaryStoryGuide({ onGoToStory }) {
+  return (
+    <Pressable onPress={() => onGoToStory?.()} style={({ pressed }) => [styles.diaryStoryGuide, pressed && styles.touchPressedSubtle]}>
+      <Text style={styles.diaryStoryGuideText}>それより前の日々は、章のなかで眠っています。</Text>
+      <Text style={styles.diaryStoryGuideLink}>章を読む →</Text>
+    </Pressable>
   );
 }
 
@@ -4371,12 +4331,6 @@ function TabIcon({ id, active, locked }) {
   );
 }
 
-function getQuestLabel(quest) {
-  if (quest.source === "daily") return "Habit Quest";
-  if (quest.source === "journal-daily") return "NR Quest";
-  return "Life Quest";
-}
-
 function SettingsModal({
   visible,
   profile,
@@ -4388,8 +4342,6 @@ function SettingsModal({
   bgmStatus,
   journal,
   setJournal,
-  quests,
-  setQuests,
   memories,
   setMemories,
   chapters,
@@ -4480,7 +4432,6 @@ function SettingsModal({
   const displayName = name || profile.name || session?.user?.user_metadata?.name || session?.user?.email?.split("@")[0] || "あなた";
   const profileInitial = displayName.slice(0, 1).toUpperCase();
   const profileDay = daysSince(birthdate) || daysSince(profile.birthdate) || daysSince(arcStartDate) + 1;
-  const completedQuestCount = quests.filter((quest) => quest.completed).length;
   const syncStatus = authLoading ? "確認中" : session ? "接続済み" : "未接続";
   const accountLabel = authLoading ? "確認中..." : session?.user?.email || "Googleアカウント未接続";
   const ritualConfig = settings.ritual || {};
@@ -4513,17 +4464,11 @@ function SettingsModal({
           setChapters([]);
         }
       },
-      quests: {
-        title: "クエストをリセットしますか？",
-        body: "現在のクエストを消して、デイリークエストを作り直します。",
-        run: () => setQuests(createDailyQuests())
-      },
       all: {
         title: "すべての記録を削除しますか？",
         body: "日記、クエスト、記憶、章をこの端末から削除します。この操作は元に戻せません。",
         run: () => {
           setJournal([]);
-          setQuests(createDailyQuests());
           setMemories([]);
           setChapters([]);
         }
@@ -4544,7 +4489,7 @@ function SettingsModal({
       const isMarkdown = exportFormat === "markdown";
       const content = isMarkdown
         ? buildExportMarkdown({ journal, memories, chapters })
-        : buildExportJson({ journal, memories, quests, chapters, profile, settings });
+        : buildExportJson({ journal, memories, chapters, profile, settings });
       const passphrase = exportPassphrase.trim();
       const dateKey = toDateKey(new Date());
       if (passphrase) {
@@ -4583,7 +4528,6 @@ function SettingsModal({
               onPress: () => {
                 setJournal([]);
                 setMemories([]);
-                setQuests(createDailyQuests());
                 setChapters([]);
               }
             }
@@ -4819,10 +4763,6 @@ function SettingsModal({
                   </Pressable>
                   <Pressable onPress={() => confirmClearData("memories")} style={({ pressed }) => [styles.soundTrackRow, pressed && styles.touchPressedSubtle]}>
                     <Text style={styles.settingValue}>記憶と章を削除</Text>
-                    <Text style={styles.baseChevron}>›</Text>
-                  </Pressable>
-                  <Pressable onPress={() => confirmClearData("quests")} style={({ pressed }) => [styles.soundTrackRow, pressed && styles.touchPressedSubtle]}>
-                    <Text style={styles.settingValue}>クエストをリセット</Text>
                     <Text style={styles.baseChevron}>›</Text>
                   </Pressable>
                 </View>
@@ -5225,7 +5165,6 @@ function SettingsModal({
                   <Text style={styles.settingLabel}>端末内データ</Text>
                   <View style={styles.syncSummaryRow}>
                     <BaseStat label="日記" value={`${journal.length}`} />
-                    <BaseStat label="クエスト" value={`${quests.length}`} />
                     <BaseStat label="記憶" value={`${memories.length}`} />
                     <BaseStat label="章" value={`${chapters.length}`} />
                   </View>
@@ -5293,7 +5232,6 @@ function SettingsModal({
                 </View>
                 <View style={styles.profileDataGrid}>
                   <BaseStat label="日記" value={`${journal.length}`} />
-                  <BaseStat label="完了" value={`${completedQuestCount}`} />
                   <BaseStat label="記憶" value={`${memories.length}`} />
                 </View>
               </View>
@@ -5327,7 +5265,6 @@ function SettingsModal({
                   <Text style={styles.settingLabel}>同期対象</Text>
                   <View style={styles.syncSummaryRow}>
                     <BaseStat label="日記" value={`${journal.length}`} />
-                    <BaseStat label="クエスト" value={`${quests.length}`} />
                     <BaseStat label="記憶" value={`${memories.length}`} />
                   </View>
                   <Text style={styles.mutedText}>現在は端末内保存をベースに、アカウント接続状態を先に整えています。</Text>
@@ -5790,25 +5727,94 @@ function getQuestCategory(quest) {
   return "LIFE";
 }
 
-function getJournalTimelineEntries(journal) {
-  if (!journal?.length) return demoJournalEntries;
-  return [...journal]
+// 日記は二層で残す: 出来事(小・淡)と、対話の最後に立ち上がった意味(主役)。
+// 旧形式のエントリー(event/meaning/dialogue なし)は保存済みの messages や
+// title から同じ形に読み替えるので、データ移行はしない。
+function normalizeDiaryEntry(entry, index) {
+  const dialogue = entry.dialogue || entry.messages || [];
+  const userTexts = dialogue
+    .filter((message) => message?.role === "user" && message.text)
+    .map((message) => String(message.text).trim())
+    .filter(Boolean);
+  const lastAnswer = userTexts[userTexts.length - 1] || "";
+  const meaning =
+    entry.meaning || lastAnswer || entry.title || entry.summary || (entry.lines || []).join("。") || "静かな記録";
+  let event = entry.event || (userTexts.length > 1 ? userTexts[0] : "");
+  if (event === meaning) event = "";
+  const score = userTexts.length * 2 + Math.min(6, userTexts.join("").length / 40) + (entry.emotions || []).length;
+  return {
+    id: entry.id || `journal-${index}`,
+    dateKey: entry.dateKey || "",
+    dateLabel: toJapaneseMonthDay(entry.dateKey) || entry.dateLabel || "今日",
+    event,
+    meaning,
+    isQuest: entry.source === "quest",
+    score,
+    // Carry the conversational record through so a tapped entry can open into
+    // its full detail (dialogue / emotions / a similar night).
+    title: entry.title,
+    source: entry.source,
+    questText: entry.questText,
+    dialogue,
+    emotions: entry.emotions,
+    related: entry.related
+  };
+}
+
+// 強弱は直近の窓の中だけで相対評価する(仕様 §04-①)。数値は表に出さない。
+function assignDiaryTiers(entries) {
+  if (!entries.length) return [];
+  const scores = entries.map((entry) => entry.score);
+  const min = Math.min(...scores);
+  const max = Math.max(...scores);
+  return entries.map((entry) => {
+    if (max - min < 2) return { ...entry, tier: "normal" };
+    const t = (entry.score - min) / (max - min);
+    return { ...entry, tier: t >= 0.66 ? "strong" : t <= 0.25 ? "quiet" : "normal" };
+  });
+}
+
+function getDiaryModel(journal) {
+  const source = journal?.length ? journal : demoJournalEntries;
+  const entries = [...source]
     .sort((a, b) => String(b.dateKey || "").localeCompare(String(a.dateKey || "")))
-    .map((entry, index) => ({
-      id: entry.id || `journal-${index}`,
-      dateKey: entry.dateKey,
-      dateLabel: toJapaneseMonthDay(entry.dateKey) || entry.dateLabel || "今日",
-      tag: index === 0 ? "TONIGHT" : entry.source === "quest" ? "QUEST" : "",
-      title: entry.title || entry.summary || (entry.lines || []).join("。") || "静かな記録",
-      lines: entry.title ? (entry.lines || []) : [],
-      // Carry the conversational record through so a tapped entry can open into
-      // its full detail (dialogue / emotions / a similar night).
-      source: entry.source,
-      questText: entry.questText,
-      dialogue: entry.dialogue,
-      emotions: entry.emotions,
-      related: entry.related
-    }));
+    .map(normalizeDiaryEntry);
+
+  const now = new Date(`${getJournalDateKey()}T00:00:00`);
+  const recentEdge = new Date(now);
+  recentEdge.setDate(recentEdge.getDate() - DIARY_RECENT_DAYS);
+  const recentEdgeKey = toDateKey(recentEdge);
+  const archiveEdge = new Date(now);
+  archiveEdge.setMonth(archiveEdge.getMonth() - DIARY_ARCHIVE_MONTHS);
+  const archiveEdgeKey = toDateKey(archiveEdge);
+
+  const recentEntries = [];
+  const bandMap = new Map();
+  let hasOlder = false;
+  for (const entry of entries) {
+    if (entry.dateKey >= recentEdgeKey) {
+      recentEntries.push(entry);
+    } else if (entry.dateKey >= archiveEdgeKey) {
+      const monthKey = entry.dateKey.slice(0, 7);
+      if (!bandMap.has(monthKey)) {
+        const [year, month] = monthKey.split("-").map(Number);
+        bandMap.set(monthKey, {
+          monthKey,
+          label: year === now.getFullYear() ? `${month}月` : `${year}年${month}月`,
+          entries: []
+        });
+      }
+      bandMap.get(monthKey).entries.push(entry);
+    } else {
+      hasOlder = true;
+    }
+  }
+
+  return {
+    recentEntries: assignDiaryTiers(recentEntries),
+    monthlyBands: [...bandMap.values()],
+    hasOlder
+  };
 }
 
 // Chapters become full pages (1章＝1画面). Confirmed chapters from Nilo carry
@@ -5849,15 +5855,6 @@ function toJapaneseMonthDay(value) {
 function toJapaneseNumber(value) {
   const labels = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
   return labels[value] || String(value);
-}
-
-function createDailyQuests() {
-  return dailyQuestPrompts.map((quest) => ({
-    id: createId("daily"),
-    source: "daily",
-    completed: false,
-    ...quest
-  }));
 }
 
 function formatMonthLabel(month) {
@@ -7372,153 +7369,6 @@ const baseStyleDefs = ({
     fontSize: 38,
     fontWeight: "600"
   },
-  questGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10
-  },
-  questSection: {
-    marginBottom: 16
-  },
-  questSectionTitle: {
-    color: "rgba(246,239,228,0.72)",
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 1.1,
-    marginBottom: 9
-  },
-  questSwitch: {
-    backgroundColor: "rgba(255,254,244,0.085)",
-    borderColor: "rgba(255,254,244,0.18)",
-    borderRadius: 18,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 14,
-    overflow: "hidden",
-    padding: 5
-  },
-  questSwitchHighlight: {
-    backgroundColor: "rgba(255,254,244,0.18)",
-    borderRadius: 14,
-    bottom: 5,
-    left: 5,
-    position: "absolute",
-    top: 5
-  },
-  questSwitchButton: {
-    alignItems: "center",
-    borderRadius: 9,
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 7,
-    minHeight: 36,
-    zIndex: 1
-  },
-  questSwitchText: {
-    color: "#aaa6af",
-    fontSize: 12,
-    fontWeight: "800"
-  },
-  questSwitchTextActive: {
-    color: "#f0bd76"
-  },
-  questSwitchCount: {
-    color: "#aaa6af",
-    fontSize: 11,
-    fontWeight: "700"
-  },
-  questTileShell: {
-    overflow: "visible",
-    position: "relative",
-    width: "46.5%"
-  },
-  questTile: {
-    aspectRatio: 1,
-    backgroundColor: "rgba(255,254,244,0.09)",
-    borderColor: "rgba(255,254,244,0.2)",
-    borderRadius: 22,
-    borderWidth: 1,
-    height: "100%",
-    padding: 12,
-    shadowColor: "#fff7df",
-    shadowOffset: { width: -8, height: -10 },
-    shadowOpacity: 0.12,
-    shadowRadius: 32,
-    width: "100%"
-  },
-  questTileHead: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between"
-  },
-  questIconMark: {
-    alignItems: "center",
-    borderColor: "rgba(255,254,244,0.14)",
-    borderRadius: 9,
-    borderWidth: 1,
-    height: 26,
-    justifyContent: "center",
-    position: "relative",
-    width: 26
-  },
-  questIconMarkLine: {
-    backgroundColor: "rgba(255,254,244,0.72)",
-    borderRadius: 999,
-    height: 1.5,
-    width: 10
-  },
-  questIconMarkDot: {
-    backgroundColor: "rgba(255,254,244,0.72)",
-    borderRadius: 999,
-    height: 4,
-    position: "absolute",
-    right: 6,
-    top: 7,
-    width: 4
-  },
-  checkButton: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,254,244,0.055)",
-    borderColor: "rgba(255,254,244,0.14)",
-    borderRadius: 8,
-    borderWidth: 1,
-    height: 30,
-    justifyContent: "center",
-    width: 30
-  },
-  checkButtonActive: {
-    backgroundColor: "rgba(217,179,106,0.22)",
-    borderColor: "rgba(239,212,154,0.72)"
-  },
-  checkButtonPressed: {
-    backgroundColor: "rgba(217,179,106,0.3)",
-    borderColor: "rgba(239,212,154,0.85)",
-    transform: [{ scale: 0.88 }]
-  },
-  checkButtonText: {
-    color: "#f6efe4",
-    fontSize: 16,
-    fontWeight: "800",
-    lineHeight: 18
-  },
-  dailyLabel: {
-    color: "#d9b36a",
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 1.1,
-    marginTop: 11,
-    textTransform: "uppercase"
-  },
-  questTitle: {
-    color: "#f6efe4",
-    fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
-    fontSize: 16,
-    fontWeight: "600",
-    lineHeight: 22,
-    marginTop: 5
-  },
   calendarSectionLabel: {
     color: "#d9b36a",
     fontSize: 11,
@@ -7625,24 +7475,6 @@ const baseStyleDefs = ({
   },
   calendarDotActive: {
     backgroundColor: "#d9b36a"
-  },
-  questDustLayer: {
-    alignItems: "center",
-    bottom: 38,
-    justifyContent: "center",
-    left: 0,
-    position: "absolute",
-    right: 0,
-    top: 0
-  },
-  questDust: {
-    backgroundColor: "rgba(240,189,118,0.92)",
-    borderRadius: 999,
-    position: "absolute",
-    shadowColor: "#f0bd76",
-    shadowOpacity: 0.55,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 0 }
   },
   tabBar: {
     alignSelf: "center",
@@ -9650,7 +9482,7 @@ const baseStyleDefs = ({
     position: "relative"
   },
   timelineLine: {
-    backgroundColor: "rgba(217,168,108,0.32)",
+    backgroundColor: "rgba(217,168,108,0.14)",
     bottom: 20,
     left: 4,
     position: "absolute",
@@ -10887,6 +10719,131 @@ const baseStyleDefs = ({
     shadowOpacity: 0.9,
     shadowRadius: 6,
     width: 3
+  },
+  diaryEventText: {
+    color: "rgba(205,191,168,0.55)",
+    fontFamily: fontSerifJa,
+    fontSize: 12,
+    letterSpacing: 0.4,
+    lineHeight: 20,
+    marginBottom: 4
+  },
+  diaryMeaningQuiet: {
+    color: "rgba(232,226,214,0.62)",
+    fontFamily: fontSerifJa,
+    fontSize: 15,
+    fontWeight: "300",
+    letterSpacing: 0.3,
+    lineHeight: 26
+  },
+  diaryMeaningNormal: {
+    color: "rgba(236,230,218,0.92)",
+    fontFamily: fontSerifJa,
+    fontSize: 17,
+    fontWeight: "300",
+    letterSpacing: 0.3,
+    lineHeight: 30
+  },
+  diaryMeaningStrong: {
+    color: "rgba(240,234,222,0.98)",
+    fontFamily: fontSerifJaMedium,
+    fontSize: 21,
+    letterSpacing: 0.6,
+    lineHeight: 36
+  },
+  diaryItemQuiet: {
+    paddingVertical: 12
+  },
+  diaryItemNormal: {
+    paddingVertical: 16
+  },
+  diaryItemStrong: {
+    paddingVertical: 26
+  },
+  diaryQuestLabel: {
+    color: "rgba(190,180,162,0.4)",
+    fontFamily: fontSerifJa,
+    fontSize: 10,
+    letterSpacing: 1.6
+  },
+  diaryDotCurrent: {
+    backgroundColor: "rgba(242,200,142,0.98)",
+    height: 9,
+    left: -26,
+    top: 21,
+    width: 9
+  },
+  diaryEmptyRecent: {
+    color: "rgba(205,191,168,0.5)",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    letterSpacing: 0.6,
+    lineHeight: 24,
+    paddingVertical: 18
+  },
+  diaryBandRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 16,
+    paddingVertical: 10,
+    position: "relative"
+  },
+  diaryBandBar: {
+    backgroundColor: "rgba(196,176,148,0.3)",
+    borderRadius: 2,
+    left: -27,
+    position: "absolute",
+    width: 3
+  },
+  diaryBandBarOpen: {
+    backgroundColor: "rgba(217,168,108,0.55)"
+  },
+  diaryBandLabel: {
+    color: "rgba(205,191,168,0.55)",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    letterSpacing: 1.6
+  },
+  diaryBandEntryRow: {
+    paddingBottom: 12,
+    paddingLeft: 4
+  },
+  diaryBandEntryDate: {
+    color: "rgba(205,191,168,0.42)",
+    fontFamily: fontSerifJa,
+    fontSize: 11,
+    letterSpacing: 1,
+    marginBottom: 2
+  },
+  diaryBandEntryText: {
+    color: "rgba(232,226,214,0.66)",
+    fontFamily: fontSerifJa,
+    fontSize: 14,
+    fontWeight: "300",
+    letterSpacing: 0.3,
+    lineHeight: 24
+  },
+  diaryStoryGuide: {
+    borderColor: "rgba(217,168,108,0.14)",
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 26,
+    paddingHorizontal: 20,
+    paddingVertical: 18
+  },
+  diaryStoryGuideText: {
+    color: "rgba(205,191,168,0.6)",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    lineHeight: 23
+  },
+  diaryStoryGuideLink: {
+    color: "rgba(232,200,150,0.8)",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    letterSpacing: 1.4,
+    marginTop: 10
   }
 });
 
