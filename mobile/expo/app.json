@@ -24,7 +24,6 @@
       "package": "app.arc.nilo"
     },
     "extra": {
-      "arcApiBaseUrl": "http://192.168.0.20:4173",
       "supabaseUrl": "https://fbpczitkbxefjxudcqmq.supabase.co"
     },
     "plugins": [

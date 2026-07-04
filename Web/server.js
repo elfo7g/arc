@@ -396,7 +396,58 @@ ${questLines}
 `.trim();
 }
 
-function buildAdaptiveNightRitualPrompt({ messages, questionCount, activeQuests, forceFinish }) {
+// ゆらぎ機能 v1.0 の対話スタイル（Account Settings由来）。表現は都度変えてよいので、
+// ここでは口調そのものではなく「何を優先するか」という機能レベルの指針だけを渡す。
+const NILO_DIALOGUE_STYLES = {
+  empathetic: "感情に寄り添い、静かに受け止めることを優先する。問いよりも、まず気持ちを言葉にして返す。",
+  questioning: "哲学的な問いを投げかけることを優先する。出来事の奥にある動機や意味を尋ねる。",
+  organizing: "論理的に構造化することを優先する。起きたことを要素に分けて静かに整理してから、次を尋ねる。",
+  silent: "最小限の介入に留める。解釈や共感の言葉を足さず、記録を促す短い問いだけを返す。"
+};
+
+// 視点のゆらぎ（Nilo Variation Spec 02）。骨格（出来事・感情・理由・明日）は変えず、
+// 「どの角度から聞くか」だけを時々ずらす。常には発火させない（呼び出し側で確率制御）。
+const NILO_PERSPECTIVE_SHIFTS = {
+  intensity: "感情の強度そのものを言葉にしてもらう視点。「10段階で言うと」のような数値化はせず、強さの質感を尋ねる。",
+  body: "身体感覚に焦点を当てる視点。その気持ちが身体のどこにあったかを尋ね、感情を感覚として捉え直す。",
+  otherPerspective: "他者ならどう言うかを尋ねる視点。親しい人が同じ状況だったら何と声をかけるかを尋ね、距離を作る。",
+  metaphor: "出来事を比喩に置き換える視点。その一日や気持ちを、一枚の絵やひとつの色などに例えてもらう。",
+  naming: "感情に名前をつけてもらう視点。既存の感情語彙に頼らず、その感じ方をどう呼ぶか尋ねる。"
+};
+
+function pickVariationGuidance({ currentQuestionCount, activeQuests, pastMemories, latestAnswer }) {
+  const blocks = [];
+
+  // 視点のゆらぎ: 毎回は発火させない。1問目・最終問には触れない。
+  if (currentQuestionCount >= 2 && currentQuestionCount <= 4 && Math.random() < 0.45) {
+    const keys = Object.keys(NILO_PERSPECTIVE_SHIFTS);
+    const chosen = keys[Math.floor(Math.random() * keys.length)];
+    blocks.push(`視点のゆらぎ（今回だけ採用）:\n${NILO_PERSPECTIVE_SHIFTS[chosen]}\nこの視点を使う場合も、直前のユーザーの発言にある具体的な言葉・固有名詞・比喩を優先して拾い、その言葉を通してこの視点の問いを組み立てること。拾える言葉がなければ無理にこの視点を使わなくてよい。`);
+  }
+
+  // クエスト発火接続: 進行中のクエストが十分な回数(目安5回)繰り返し現れている時だけ、
+  // ステップ3→4の間に観察の共有を一度だけ挟む。毎回は行わない。
+  const quests = Array.isArray(activeQuests) ? activeQuests : [];
+  const recurringQuest = quests.find((quest) => typeof quest === "object" && Number(quest.current || 0) >= 5);
+  if (currentQuestionCount === 3 && recurringQuest && Math.random() < 0.4) {
+    blocks.push(`クエスト接続（今回だけ、任意）:\n進行中の探求「${recurringQuest.title}」というテーマが、この対話の中で繰り返し現れているように見える場合だけ、次の問いの前に一度だけ、その反復の事実を「〜ですね」で静かに共有してから、「〜てみますか」の形で問いを続けてよい。新しい意味づけや評価は加えず、反復の事実だけを鏡のように返すこと。無理に繋げなくてよい。`);
+  }
+
+  // Echo: 過去の記録との偶発的な再会。見つかっても毎回は出さない。
+  const safePastMemories = Array.isArray(pastMemories) ? pastMemories.slice(0, 60) : [];
+  if (currentQuestionCount >= 2 && safePastMemories.length && Math.random() < 0.25) {
+    const memoryLines = safePastMemories.map((memory, index) => {
+      const date = String(memory.dateKey || memory.dateLabel || "").slice(0, 10);
+      const essence = String(memory.essence || memory.keptPhrase || "").slice(0, 100);
+      return `${index + 1}. ${date || "日付不明"} / ${essence}`;
+    }).join("\n");
+    blocks.push(`過去との再会（今回だけ、任意）:\n直前のユーザーの発言のテーマと、意味的に近い過去の記録が下にあれば、そっと一度だけ「〇〇のエントリーで、近いことに触れていましたね」のように事実だけを差し出してよい。解釈や意味づけはこちらから結論として渡さず、話を広げるかどうかはユーザーに委ねる。近いものが本当に見当たらなければ、無理に触れなくてよい。\n過去の記録:\n${memoryLines}`);
+  }
+
+  return blocks.join("\n\n");
+}
+
+function buildAdaptiveNightRitualPrompt({ messages, questionCount, activeQuests, forceFinish, niloStyle, pastMemories }) {
   const safeMessages = Array.isArray(messages)
     ? messages.slice(-10).map((message, index) => {
       const speaker = message.role === "user" ? "User" : "Nilo";
@@ -411,6 +462,8 @@ function buildAdaptiveNightRitualPrompt({ messages, questionCount, activeQuests,
   }).join("\n") || "なし";
   const currentQuestionCount = Number(questionCount) || 1;
   const mustFinish = Boolean(forceFinish) || currentQuestionCount >= 5;
+  const styleGuidance = NILO_DIALOGUE_STYLES[niloStyle] || NILO_DIALOGUE_STYLES.empathetic;
+  const variationGuidance = mustFinish ? "" : pickVariationGuidance({ currentQuestionCount, activeQuests, pastMemories, latestAnswer });
 
   return `
 あなたは人生アプリ ARC の Nilo です。
@@ -431,7 +484,11 @@ function buildAdaptiveNightRitualPrompt({ messages, questionCount, activeQuests,
 - 十分に記録できたら5問未満でも done:true にしてください。
 - forceFinish が true、または現在の質問数が5以上なら必ず done:true にしてください。
 
-直前のユーザー回答:
+今日の対話スタイル:
+${styleGuidance}
+このスタイルはNiloの人格を変えるものではない。「断定しない」「評価しない」という原則は、どのスタイルでも一貫して保つこと。
+
+${variationGuidance ? `ゆらぎ（今回の対話にだけ、任意で適用してよい変化）:\n${variationGuidance}\n\nこれらは「起きるかもしれないし、起きないかもしれない」ものとして渡している。無理に使わず、直前のユーザーの発言に自然に合う場合だけ採用すること。語尾や言い回しを毎回同じ形に固定しないこと（「〜ですね」「〜てみますか」はあくまで機能の例であり、表現そのものは都度変えてよい）。\n\n` : ""}直前のユーザー回答:
 ${latestAnswer || "なし"}
 
 現在の質問数:
@@ -746,7 +803,7 @@ async function handleNightRitual(req, res) {
       return;
     }
 
-    const json = await callGeminiJson(buildAdaptiveNightRitualPrompt(body), { temperature: 0.72 });
+    const json = await callGeminiJson(buildAdaptiveNightRitualPrompt(body), { temperature: 0.82 });
     sendJson(res, 200, normalizeNightRitual(json));
   } catch (error) {
     sendJson(res, error.detail ? 502 : 500, {

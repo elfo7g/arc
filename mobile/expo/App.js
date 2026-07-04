@@ -146,7 +146,6 @@ const dailyBank = [
   "深呼吸20回"
 ];
 
-const apiBaseUrl = Constants.expoConfig?.extra?.arcApiBaseUrl || "http://localhost:4173";
 const arcStartDate = "2026-06-01";
 const STORAGE_KEY = "arc.state.v1";
 // Chapters only form in the past: the most recent stretch stays "in progress"
@@ -186,6 +185,14 @@ const reflectionQuestions = [
   "今日はどんな日でしたか？"
 ];
 const maxReflectionQuestions = 5;
+
+async function invokeNilo(route, body) {
+  const { data, error } = await supabase.functions.invoke("nilo", {
+    body: { route, ...body }
+  });
+  if (error) throw error;
+  return data;
+}
 
 // Demo entries use relative dates so the preview always exercises the recent
 // window, the monthly bands, and the chapter guidance card, whatever today is.
@@ -1336,29 +1343,28 @@ function AppContent() {
     setIsSending(true);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/api/nilo/night-ritual`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: nextMessages,
-          questionCount,
-          forceFinish: questionCount >= ritualQuestionTarget,
-          niloStyle: settings.niloStyle || "empathetic",
-          frequency: reflectionFrequency,
-          activeQuests: explorations
-            .filter((item) => item.status !== "closed")
-            .map((item) => ({
-              id: item.id,
-              title: item.theme,
-              current: item.sessions || 0,
-              target: Math.max(1, item.clearTarget || 3),
-              firstStep: (item.keywords || []).slice(0, 4).join(" / ")
-            }))
-        })
+      const result = await invokeNilo("night-ritual", {
+        messages: nextMessages,
+        questionCount,
+        forceFinish: questionCount >= ritualQuestionTarget,
+        niloStyle: settings.niloStyle || "empathetic",
+        frequency: reflectionFrequency,
+        pastMemories: memories.slice(0, 40).map((memory) => ({
+          dateKey: memory.dateKey,
+          essence: memory.essence,
+          keptPhrase: memory.keptPhrase,
+          moodLabel: memory.moodLabel
+        })),
+        activeQuests: explorations
+          .filter((item) => item.status !== "closed")
+          .map((item) => ({
+            id: item.id,
+            title: item.theme,
+            current: item.sessions || 0,
+            target: Math.max(1, item.clearTarget || 3),
+            firstStep: (item.keywords || []).slice(0, 4).join(" / ")
+          }))
       });
-
-      if (!response.ok) throw new Error("request failed");
-      const result = await response.json();
       if (activeRitualRunId !== ritualRunIdRef.current || !ritualLockedRef.current) return;
       applyNightResult(result, nextMessages);
     } catch {
@@ -1556,22 +1562,16 @@ function AppContent() {
     }
     setChaptersBusy(true);
     try {
-      const response = await fetch(`${apiBaseUrl}/api/nilo/chapters`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          split: Boolean(splitFrom),
-          memories: source.map((memory) => ({
-            id: memory.id,
-            dateKey: memory.dateKey,
-            essence: memory.essence,
-            keptPhrase: memory.keptPhrase,
-            moodLabel: memory.moodLabel
-          }))
-        })
+      const result = await invokeNilo("chapters", {
+        split: Boolean(splitFrom),
+        memories: source.map((memory) => ({
+          id: memory.id,
+          dateKey: memory.dateKey,
+          essence: memory.essence,
+          keptPhrase: memory.keptPhrase,
+          moodLabel: memory.moodLabel
+        }))
       });
-      if (!response.ok) throw new Error("request failed");
-      const result = await response.json();
       const next = (result.proposals || [])
         .filter((proposal) => proposal.memoryIds?.length)
         .map((proposal) => ({ id: createId("proposal"), status: "proposed", ...proposal }));
@@ -1672,22 +1672,16 @@ function AppContent() {
     if (memories.length < 5) return;
     questScanRef.current = true;
     try {
-      const response = await fetch(`${apiBaseUrl}/api/nilo/quest-proposals`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          memories: memories.slice(0, 120).map((memory) => ({
-            dateKey: memory.dateKey,
-            essence: memory.essence,
-            keptPhrase: memory.keptPhrase,
-            moodLabel: memory.moodLabel
-          })),
-          declinedThemes: declinedQuestThemes,
-          ongoingThemes: explorations.filter((item) => item.status !== "closed").map((item) => item.theme)
-        })
+      const result = await invokeNilo("quest-proposals", {
+        memories: memories.slice(0, 120).map((memory) => ({
+          dateKey: memory.dateKey,
+          essence: memory.essence,
+          keptPhrase: memory.keptPhrase,
+          moodLabel: memory.moodLabel
+        })),
+        declinedThemes: declinedQuestThemes,
+        ongoingThemes: explorations.filter((item) => item.status !== "closed").map((item) => item.theme)
       });
-      if (!response.ok) throw new Error("request failed");
-      const result = await response.json();
       const next = (result.proposals || [])
         .filter((proposal) => proposal.theme && proposal.observation && proposal.invitation)
         .map((proposal) => ({ id: createId("questprop"), ...proposal }));
@@ -2235,11 +2229,12 @@ function makeFloatingOrbSpec(size, baseOpacity) {
 
 function makeFloatingOrbSpecs() {
   // 小さな灯を多めに、大きな灯は薄く・ゆっくりめに漂わせて奥行きを出す。
+  // 実機の画面はデスクトップより暗く沈むので、下限をやや高めに取る。
   const small = Array.from({ length: FLOATING_ORB_SMALL_COUNT }, () =>
-    makeFloatingOrbSpec(36 + Math.random() * 130, 0.06 + Math.random() * 0.16)
+    makeFloatingOrbSpec(36 + Math.random() * 130, 0.12 + Math.random() * 0.22)
   );
   const large = Array.from({ length: FLOATING_ORB_LARGE_COUNT }, () => {
-    const spec = makeFloatingOrbSpec(200 + Math.random() * 200, 0.04 + Math.random() * 0.09);
+    const spec = makeFloatingOrbSpec(200 + Math.random() * 200, 0.07 + Math.random() * 0.12);
     spec.duration = 7000 + Math.random() * 7000;
     return spec;
   });
@@ -2273,7 +2268,7 @@ function FloatingOrb({ spec }) {
 
   const opacity = phase.interpolate({
     inputRange: [0, 1],
-    outputRange: [spec.baseOpacity * 0.1, spec.baseOpacity]
+    outputRange: [spec.baseOpacity * 0.3, spec.baseOpacity]
   });
   const translateX = phase.interpolate({ inputRange: [0, 1], outputRange: [0, spec.driftX] });
   const translateY = phase.interpolate({ inputRange: [0, 1], outputRange: [0, spec.driftY] });
@@ -2312,24 +2307,111 @@ function FloatingOrbs() {
   );
 }
 
-function NiloLight({ style }) {
+function AnswerMote({ spec, playToken }) {
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!playToken) return undefined;
+    progress.setValue(0);
+    const animation = Animated.sequence([
+      Animated.delay(spec.delay),
+      Animated.timing(progress, {
+        toValue: 1,
+        duration: spec.duration,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true
+      })
+    ]);
+    animation.start();
+    return () => animation.stop();
+  }, [playToken, progress, spec]);
+
+  const opacity = progress.interpolate({
+    inputRange: [0, 0.14, 0.66, 1],
+    outputRange: [0, spec.peakOpacity, spec.peakOpacity * 0.55, 0]
+  });
+  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [0, -spec.rise] });
+  // まっすぐ昇るのではなく、蝋燭の煙のようにゆるく左右へ振れながら昇る。
+  const translateX = progress.interpolate({
+    inputRange: [0, 0.28, 0.55, 0.8, 1],
+    outputRange: [
+      0,
+      spec.driftX * 0.35 + spec.sway,
+      spec.driftX * 0.6 - spec.sway * 0.7,
+      spec.driftX * 0.85 + spec.sway * 0.4,
+      spec.driftX
+    ]
+  });
+  const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1.15] });
+
+  return (
+    <Animated.Image
+      pointerEvents="none"
+      source={niloOrbTexture}
+      resizeMode="contain"
+      style={{
+        position: "absolute",
+        left: `${spec.left}%`,
+        bottom: 0,
+        width: spec.size,
+        height: spec.size,
+        marginLeft: -spec.size / 2,
+        opacity,
+        transform: [{ translateY }, { translateX }, { scale }]
+      }}
+    />
+  );
+}
+
+// 答えを送った瞬間、画面の下からNiloの光へ向かって小さな粒が立ちのぼる。
+// 言葉が届いた、という手応えを光で返す。playTokenが進むたび一度だけ再生。
+function AnswerMotes({ playToken, style }) {
+  const specs = useMemo(
+    () => Array.from({ length: 7 }, () => ({
+      left: 28 + Math.random() * 44,
+      size: 24 + Math.random() * 36,
+      rise: 150 + Math.random() * 170,
+      driftX: -32 + Math.random() * 64,
+      sway: 8 + Math.random() * 16,
+      delay: Math.random() * 360,
+      duration: 1600 + Math.random() * 1100,
+      peakOpacity: 0.3 + Math.random() * 0.4
+    })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [playToken]
+  );
+
+  if (!playToken) return null;
+  return (
+    <View pointerEvents="none" style={style}>
+      {specs.map((spec, index) => (
+        <AnswerMote key={`${playToken}-${index}`} spec={spec} playToken={playToken} />
+      ))}
+    </View>
+  );
+}
+
+function NiloLight({ style, thinking, subdued }) {
   // The one light source on the screen: Nilo's soft glow. It does not move; it
   // only breathes — a diffuse amber radial like the prototype's, drawn from a
   // pre-rendered image so RN matches the Web's CSS radial-gradient exactly.
+  // While Nilo is thinking the breath quickens and the core burns brighter,
+  // so the light itself tells the user their words are being held.
   const breath = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    const duration = thinking ? 1500 : 4000;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(breath, {
           toValue: 1,
-          duration: 4000,
+          duration,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true
         }),
         Animated.timing(breath, {
           toValue: 0,
-          duration: 4000,
+          duration,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true
         })
@@ -2337,15 +2419,18 @@ function NiloLight({ style }) {
     );
     loop.start();
     return () => loop.stop();
-  }, [breath]);
+  }, [breath, thinking]);
 
   const opacity = breath.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] });
-  const scale = breath.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] });
-  const coreOpacity = breath.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0.95] });
-  const coreScale = breath.interpolate({ inputRange: [0, 1], outputRange: [0.42, 0.52] });
+  const scale = breath.interpolate({ inputRange: [0, 1], outputRange: [1, thinking ? 1.07 : 1.12] });
+  const coreOpacity = breath.interpolate({ inputRange: [0, 1], outputRange: thinking ? [0.68, 1] : [0.5, 0.95] });
+  const coreScale = breath.interpolate({ inputRange: [0, 1], outputRange: thinking ? [0.46, 0.56] : [0.42, 0.52] });
 
   return (
-    <View pointerEvents="none" style={[styles.niloLightWrap, style]}>
+    <View
+      pointerEvents="none"
+      style={[styles.niloLightWrap, style, subdued && { opacity: 0.55, transform: [{ scale: 0.76 }] }]}
+    >
       <Animated.Image
         pointerEvents="none"
         source={niloOrbTexture}
@@ -2384,60 +2469,93 @@ function GlassView({ children, style, intensity = 24 }) {
 
 function NiloHomeStage({ question, dimmed, thinking, hideQuestion, compact, sealed }) {
   const opacity = useRef(new Animated.Value(1)).current;
-  const [typed, setTyped] = useState(question);
-  const typeTimers = useRef([]);
+  const drift = useRef(new Animated.Value(0)).current;
+  const sealBloom = useRef(new Animated.Value(0)).current;
+  const [shownQuestion, setShownQuestion] = useState(question);
 
-  // The question fades as it changes (kept from before).
+  // 「今夜を綴じました」は咲くように現れる — わずかに下から、ゆっくり開いて。
+  // 同時に、印の周りをひとつの光輪が広がって消えていく。
   useEffect(() => {
-    opacity.setValue(0);
-    Animated.timing(opacity, {
-      toValue: dimmed ? 0 : 1,
-      duration: dimmed ? 360 : 820,
-      easing: Easing.inOut(Easing.cubic),
+    if (!sealed) {
+      sealBloom.setValue(0);
+      return;
+    }
+    Animated.timing(sealBloom, {
+      toValue: 1,
+      duration: 1400,
+      easing: Easing.out(Easing.cubic),
       useNativeDriver: true
     }).start();
-  }, [dimmed, opacity, question]);
+  }, [sealed, sealBloom]);
 
-  // Nilo writes the question, glyph by glyph — the prototype's writeQuestion:
-  // a 340ms breath, then a character every 52ms. While the old line fades out
-  // (dimmed) we hold it, so the erase reads as a fade rather than a flicker.
+  // 古い問いはただ消えるのではなく、煙のようにわずかに立ちのぼりながら溶ける。
+  // 新しい問いが来たら位置を戻し、文字それぞれの開花に任せる。
   useEffect(() => {
-    typeTimers.current.forEach(clearTimeout);
-    typeTimers.current = [];
-    if (hideQuestion || dimmed) return undefined;
-    const chars = Array.from(question || "");
-    setTyped("");
-    const begin = setTimeout(() => {
-      chars.forEach((_, index) => {
-        const timer = setTimeout(() => setTyped(chars.slice(0, index + 1).join("")), index * 52);
-        typeTimers.current.push(timer);
-      });
-    }, 340);
-    typeTimers.current.push(begin);
-    return () => {
-      typeTimers.current.forEach(clearTimeout);
-      typeTimers.current = [];
-    };
-  }, [question, dimmed, hideQuestion]);
+    if (dimmed) {
+      Animated.parallel([
+        Animated.timing(opacity, {
+          toValue: 0,
+          duration: 420,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: true
+        }),
+        Animated.timing(drift, {
+          toValue: -14,
+          duration: 480,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true
+        })
+      ]).start();
+      return;
+    }
+    drift.setValue(0);
+    opacity.setValue(1);
+    setShownQuestion(question);
+  }, [dimmed, opacity, drift, question]);
 
   return (
     <View style={[styles.niloStage, compact && styles.niloStageCompact]}>
       <View style={[styles.niloStageCopy, compact && styles.niloStageCopyCompact]}>
         {thinking && <NiloThinkingIndicator />}
         {!hideQuestion && (
-          <>
-            {sealed && <Animated.Text style={[styles.niloSealMark, { opacity }]}>✦ 今夜を綴じました</Animated.Text>}
-            <Animated.Text style={[styles.niloStageQuestion, compact && styles.niloStageQuestionCompact, { opacity }]}>
-              {typed}
-            </Animated.Text>
-          </>
+          <Animated.View style={{ alignItems: "center", opacity, transform: [{ translateY: drift }] }}>
+            {sealed && (
+              <View style={{ alignItems: "center", justifyContent: "center" }}>
+                <Animated.View
+                  pointerEvents="none"
+                  style={[styles.niloSealHalo, {
+                    opacity: sealBloom.interpolate({ inputRange: [0, 0.45, 1], outputRange: [0, 0.5, 0] }),
+                    transform: [{ scale: sealBloom.interpolate({ inputRange: [0, 1], outputRange: [0.45, 1.75] }) }]
+                  }]}
+                />
+                <Animated.Text
+                  style={[styles.niloSealMark, {
+                    opacity: sealBloom,
+                    transform: [
+                      { translateY: sealBloom.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) },
+                      { scale: sealBloom.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] }) }
+                    ]
+                  }]}
+                >
+                  ✦ 今夜を綴じました
+                </Animated.Text>
+              </View>
+            )}
+            <GlyphBloomText
+              text={shownQuestion}
+              textStyle={[styles.niloStageQuestion, compact && styles.niloStageQuestionCompact]}
+              initialDelay={340}
+              charDelay={48}
+              duration={700}
+            />
+          </Animated.View>
         )}
       </View>
     </View>
   );
 }
 
-function NiloThinkingIndicator() {
+function ThinkingDot({ delay }) {
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -2445,62 +2563,147 @@ function NiloThinkingIndicator() {
       Animated.sequence([
         Animated.timing(pulse, {
           toValue: 1,
-          duration: 520,
+          duration: 440,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true
         }),
         Animated.timing(pulse, {
           toValue: 0,
-          duration: 520,
+          duration: 440,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true
-        })
+        }),
+        Animated.delay(280)
       ])
     );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse]);
+    const timer = setTimeout(() => loop.start(), delay);
+    return () => {
+      clearTimeout(timer);
+      loop.stop();
+    };
+  }, [pulse, delay]);
 
   const opacity = pulse.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.32, 1]
+    outputRange: [0.22, 0.95]
+  });
+  const translateY = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -5]
+  });
+  const scale = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.78, 1.12]
   });
 
   return (
-    <Animated.Text style={[styles.niloThinkingText, { opacity }]}>・・・</Animated.Text>
+    <Animated.Image
+      source={niloOrbTexture}
+      resizeMode="contain"
+      style={{ width: 24, height: 24, marginHorizontal: 1, opacity, transform: [{ translateY }, { scale }] }}
+    />
+  );
+}
+
+// Niloと同じ光の粒が三つ、波のように順に浮かぶ。文字ではなく光そのもので
+// 「言葉を選んでいる」time を伝える。
+function NiloThinkingIndicator() {
+  return (
+    <View style={styles.niloThinkingRow}>
+      {[0, 170, 340].map((delay) => (
+        <ThinkingDot key={delay} delay={delay} />
+      ))}
+    </View>
+  );
+}
+
+// 文字がひとつずつ、にじむように浮かび上がる。タイプライタの機械的な追記では
+// なく、それぞれの文字が自分の呼吸で開く「開花」。行ごとに折り返しにも耐える。
+function GlyphBloomText({ text, textStyle, charDelay = 44, duration = 640, initialDelay = 0, rise = 8 }) {
+  // 禁則処理: 句読点や閉じ括弧が行頭に落ちないよう、前の文字と同じ粒にまとめる。
+  const glyphLines = useMemo(
+    () => String(text || "").split("\n").map((line) => {
+      const units = [];
+      for (const char of Array.from(line)) {
+        if (units.length && "、。！？…‥」』）〉》”’ゝゞ々ー".includes(char)) {
+          units[units.length - 1] += char;
+        } else {
+          units.push(char);
+        }
+      }
+      return units;
+    }),
+    [text]
+  );
+  const glyphCount = glyphLines.reduce((sum, line) => sum + line.length, 0);
+  const values = useRef([]);
+  if (values.current.length !== glyphCount) {
+    values.current = Array.from({ length: glyphCount }, () => new Animated.Value(0));
+  }
+
+  useEffect(() => {
+    values.current.forEach((value) => value.setValue(0));
+    const animation = Animated.sequence([
+      Animated.delay(initialDelay),
+      Animated.stagger(
+        charDelay,
+        values.current.map((value) =>
+          Animated.timing(value, {
+            toValue: 1,
+            duration,
+            easing: riseEasing,
+            useNativeDriver: true
+          })
+        )
+      )
+    ]);
+    animation.start();
+    return () => animation.stop();
+  }, [text, charDelay, duration, initialDelay]);
+
+  let cursor = 0;
+  return (
+    <View style={{ alignItems: "center" }}>
+      {glyphLines.map((line, lineIndex) => (
+        <View key={lineIndex} style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center" }}>
+          {line.map((glyph, glyphIndex) => {
+            const value = values.current[cursor];
+            cursor += 1;
+            return (
+              <Animated.Text
+                key={glyphIndex}
+                style={[textStyle, {
+                  opacity: value,
+                  transform: [{ translateY: value.interpolate({ inputRange: [0, 1], outputRange: [rise, 0] }) }]
+                }]}
+              >
+                {glyph}
+              </Animated.Text>
+            );
+          })}
+        </View>
+      ))}
+    </View>
   );
 }
 
 function AnswerPreview({ answer, fading, compact }) {
   const fade = useRef(new Animated.Value(0)).current;
-  const [typedText, setTypedText] = useState("");
   const text = answer?.text || "";
 
   useEffect(() => {
     if (!answer) {
-      setTypedText("");
       fade.setValue(0);
-      return undefined;
+      return;
     }
-
-    setTypedText("");
     fade.setValue(0);
     Animated.timing(fade, {
       toValue: 1,
-      duration: 180,
+      duration: 220,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true
     }).start();
-
-    let index = 0;
-    const interval = setInterval(() => {
-      index += 1;
-      setTypedText(text.slice(0, index));
-      if (index >= text.length) clearInterval(interval);
-    }, 42);
-
-    return () => clearInterval(interval);
-  }, [answer, fade, text]);
+  }, [answer, fade]);
 
   useEffect(() => {
     if (!answer || !fading) return;
@@ -2517,7 +2720,7 @@ function AnswerPreview({ answer, fading, compact }) {
   return (
     <Animated.View style={[styles.answerPreview, compact && styles.answerPreviewCompact, { opacity: fade }]}>
       <Text style={styles.answerPreviewMark}>あなたの言葉</Text>
-      <Text style={styles.answerPreviewText}>{typedText}</Text>
+      <GlyphBloomText text={text} textStyle={styles.answerPreviewText} charDelay={26} duration={520} rise={5} />
     </Animated.View>
   );
 }
@@ -2731,6 +2934,9 @@ function HomeScreen({
   onBeginInput
 }) {
   const questionLift = useRef(new Animated.Value(0)).current;
+  const idleFloat = useRef(new Animated.Value(0)).current;
+  const [moteToken, setMoteToken] = useState(0);
+  const hadPreview = useRef(false);
   const needsProfile = !profile.name?.trim() || !profile.birthdate?.trim();
   const showFirstRun = !authLoading && (!session || needsProfile);
   const compact = keyboardVisible;
@@ -2748,6 +2954,36 @@ function HomeScreen({
     }).start();
   }, [keyboardVisible, liftedY, questionLift]);
 
+  // 問いの一角が、Niloの光と同じ8秒周期でわずかに上下する。
+  // 画面が「止まっている」のではなく「息をしている」と感じさせるための揺らぎ。
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(idleFloat, {
+          toValue: 1,
+          duration: 4000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true
+        }),
+        Animated.timing(idleFloat, {
+          toValue: 0,
+          duration: 4000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true
+        })
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [idleFloat]);
+
+  // 答えが送られた瞬間だけ、光の粒をひと束立ちのぼらせる。
+  useEffect(() => {
+    const has = Boolean(answerPreview);
+    if (has && !hadPreview.current) setMoteToken((value) => value + 1);
+    hadPreview.current = has;
+  }, [answerPreview]);
+
   // Keep the question a touch above center, then leave a wide silence below it
   // for the light to sit in.
   const questionTopInset = compact ? 28 : Math.round(Math.max(130, (screenHeight - 90 - 192) / 3));
@@ -2756,7 +2992,16 @@ function HomeScreen({
     <View
       style={[styles.homeReflectionScreen, { paddingTop: questionTopInset }]}
     >
-      <Animated.View style={[styles.reflectionTapArea, { transform: [{ translateY: questionLift }] }]}>
+      <Animated.View
+        style={[styles.reflectionTapArea, {
+          transform: [
+            { translateY: Animated.add(
+              questionLift,
+              idleFloat.interpolate({ inputRange: [0, 1], outputRange: [0, compact ? 0 : -5] })
+            ) }
+          ]
+        }]}
+      >
         {!answerPreview && (
           <Animated.Text style={[styles.homeLeadText, questionTransitioning && styles.homeLeadTextDimmed]}>
             今日もおつかれさま。
@@ -2773,9 +3018,29 @@ function HomeScreen({
         <AnswerPreview answer={answerPreview} fading={questionTransitioning} compact={compact} />
       </Animated.View>
 
-      {!compact && !inputLocked && (
-        <NiloLight style={{ position: "absolute", alignSelf: "center", bottom: Math.round(screenHeight * 0.2) }} />
-      )}
+      {/* 入力中も対話中も、Niloの灯は消えない。キーボードが上がっている間は
+          少し身を引いて(小さく・淡く)、問いの下でそっと呼吸を続ける。 */}
+      <NiloLight
+        thinking={isSending || questionTransitioning}
+        subdued={compact || inputLocked}
+        style={{
+          position: "absolute",
+          alignSelf: "center",
+          bottom: compact ? Math.round(screenHeight * 0.34) : Math.round(screenHeight * 0.2)
+        }}
+      />
+
+      {/* キーボードが上がっている間は、粒の生まれる場所もキーボードより上へ。 */}
+      <AnswerMotes
+        playToken={moteToken}
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: Math.round(screenHeight * (compact ? 0.46 : 0.16)),
+          height: 280
+        }}
+      />
 
       {showFirstRun && (
         <FirstRunCard
@@ -2867,7 +3132,7 @@ function RitualComposer({
       )}
       <Pressable onPress={onPress} onPressIn={onPress} style={styles.composerLine}>
         <GlassBackdrop intensity={28} />
-        <Text style={styles.composerSparkle}>✦</Text>
+        <Animated.Text style={[styles.composerSparkle, { opacity: cursorPulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }) }]}>✦</Animated.Text>
         <View style={styles.composerInputWrap}>
           {!input && (
             <View pointerEvents="none" style={styles.composerPlaceholderRow}>
@@ -2974,10 +3239,18 @@ function useBreath(duration = 3500) {
 
 // Nilo's small breathing mark at the head of the dialogue — a soft amber glow
 // (the pre-rendered orb) with a bright core, the prototype's 46px light.
-function NiloMark() {
-  const breath = useBreath();
-  const glowOpacity = breath.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0.95] });
-  const glowScale = breath.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] });
+// While Nilo is thinking, the breath quickens and the glow leans brighter,
+// the same language as the home screen's large light.
+function NiloMark({ thinking }) {
+  const breath = useBreath(thinking ? 1400 : 3500);
+  const glowOpacity = breath.interpolate({
+    inputRange: [0, 1],
+    outputRange: thinking ? [0.72, 1] : [0.55, 0.95]
+  });
+  const glowScale = breath.interpolate({
+    inputRange: [0, 1],
+    outputRange: thinking ? [1.02, 1.1] : [1, 1.06]
+  });
   return (
     <View pointerEvents="none" style={styles.niloMarkWrap}>
       <Animated.Image source={niloOrbTexture} resizeMode="contain" style={[styles.niloMarkGlow, { opacity: glowOpacity, transform: [{ scale: glowScale }] }]} />
@@ -2986,58 +3259,47 @@ function NiloMark() {
   );
 }
 
-// The current chapter's dot breathes the same way Nilo's mark does — the
-// only timeline entry that's still open, so it's the only one that glows.
-// Nilo's question, written glyph by glyph (writeQuestion: 340ms breath, then a
-// character every 52ms), fading as it changes between questions.
+// Nilo's question in the night dialogue. Each glyph blooms into place —
+// the same breath as the home stage — and the old line lifts away like smoke
+// while it fades, so question-to-question feels like turning a page of air.
 function NiloDialogQuestion({ question, dimmed, closing }) {
   const opacity = useRef(new Animated.Value(1)).current;
-  const caret = useRef(new Animated.Value(0.9)).current;
-  const [typed, setTyped] = useState(question || "");
-  const timers = useRef([]);
+  const drift = useRef(new Animated.Value(0)).current;
+  const [shownQuestion, setShownQuestion] = useState(question || "");
 
   useEffect(() => {
-    opacity.setValue(0);
-    Animated.timing(opacity, { toValue: dimmed ? 0 : 1, duration: dimmed ? 360 : 820, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start();
-  }, [dimmed, opacity, question]);
-
-  useEffect(() => {
-    timers.current.forEach(clearTimeout);
-    timers.current = [];
-    if (dimmed) return undefined;
-    const chars = Array.from(question || "");
-    setTyped("");
-    const begin = setTimeout(() => {
-      chars.forEach((_, index) => {
-        const timer = setTimeout(() => setTyped(chars.slice(0, index + 1).join("")), index * 52);
-        timers.current.push(timer);
-      });
-    }, 340);
-    timers.current.push(begin);
-    return () => {
-      timers.current.forEach(clearTimeout);
-      timers.current = [];
-    };
-  }, [question, dimmed]);
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(caret, { toValue: 0.9, duration: 0, useNativeDriver: true }),
-        Animated.delay(560),
-        Animated.timing(caret, { toValue: 0, duration: 0, useNativeDriver: true }),
-        Animated.delay(590)
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [caret]);
+    if (dimmed) {
+      Animated.parallel([
+        Animated.timing(opacity, {
+          toValue: 0,
+          duration: 420,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: true
+        }),
+        Animated.timing(drift, {
+          toValue: -14,
+          duration: 480,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true
+        })
+      ]).start();
+      return;
+    }
+    drift.setValue(0);
+    opacity.setValue(1);
+    setShownQuestion(question || "");
+  }, [dimmed, opacity, drift, question]);
 
   return (
-    <Animated.Text style={[styles.niloDialogQuestion, { opacity }]}>
-      {typed}
-      {!closing && <Animated.Text style={[styles.niloDialogCaret, { opacity: caret }]}>▏</Animated.Text>}
-    </Animated.Text>
+    <Animated.View style={{ alignItems: "center", opacity, transform: [{ translateY: drift }] }}>
+      <GlyphBloomText
+        text={shownQuestion}
+        textStyle={styles.niloDialogQuestion}
+        initialDelay={340}
+        charDelay={48}
+        duration={700}
+      />
+    </Animated.View>
   );
 }
 
@@ -3047,9 +3309,19 @@ function NiloDialogQuestion({ question, dimmed, closing }) {
 // the existing night-ritual flow, unchanged.
 function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLabel, inputRef, input, setInput, enabled, onSubmit, onExit, exitConfirmOpen, onConfirmExit, onCancelExit, onBlur }) {
   const fade = useRef(new Animated.Value(0)).current;
+  const [moteToken, setMoteToken] = useState(0);
+  const wasThinking = useRef(false);
+
   useEffect(() => {
     Animated.timing(fade, { toValue: visible ? 1 : 0, duration: visible ? 520 : 240, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start();
   }, [fade, visible]);
+
+  // 答えを送った瞬間(thinkingが立った瞬間)、入力欄のあたりからNiloの灯へ
+  // 向かって光の粒が立ちのぼる。ホームと同じ「言葉が届いた」合図。
+  useEffect(() => {
+    if (thinking && !wasThinking.current) setMoteToken((value) => value + 1);
+    wasThinking.current = thinking;
+  }, [thinking]);
 
   if (!visible) return null;
 
@@ -3059,9 +3331,10 @@ function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLa
       <OuterGradient />
       <View style={styles.scrim} />
       <NightGrain />
+      <FloatingOrbs />
       <View style={styles.niloScreenSafe}>
         <View style={styles.niloTopTier}>
-          <NiloMark />
+          <NiloMark thinking={thinking} />
           <Text style={styles.niloMarkLabel}>NILO</Text>
           <Text style={styles.niloDateLabel}>{dateLabel} · 今夜</Text>
           <View style={styles.niloQuestionArea}>
@@ -3072,6 +3345,13 @@ function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLa
             )}
           </View>
         </View>
+
+        {/* 実機ではOSキーボードが下半分を覆うので、粒はキーボードより上
+            (画面の中ほど)から問いへ向かって立ちのぼらせる。 */}
+        <AnswerMotes
+          playToken={moteToken}
+          style={{ position: "absolute", left: 0, right: 0, bottom: "42%", height: 320 }}
+        />
 
         {closing ? (
           <View style={styles.niloClosing}>
@@ -6607,6 +6887,11 @@ const baseStyleDefs = ({
   niloStageEyebrowCompact: {
     marginTop: 0
   },
+  niloThinkingRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center"
+  },
   niloThinkingText: {
     color: "rgba(217,179,106,0.78)",
     fontSize: 20,
@@ -6628,6 +6913,18 @@ const baseStyleDefs = ({
     letterSpacing: 1.5,
     marginBottom: 8,
     textAlign: "center"
+  },
+  niloSealHalo: {
+    borderColor: "rgba(228,196,142,0.55)",
+    borderRadius: 70,
+    borderWidth: 1,
+    height: 140,
+    left: "50%",
+    marginLeft: -70,
+    marginTop: -70,
+    position: "absolute",
+    top: "50%",
+    width: 140
   },
   niloStageQuestion: {
     color: "rgba(246,239,228,0.94)",
@@ -10122,11 +10419,6 @@ const baseStyleDefs = ({
     textShadowColor: "rgba(217,168,108,0.22)",
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 26
-  },
-  niloDialogCaret: {
-    color: "rgba(242,200,142,0.92)",
-    fontFamily: fontSerifJa,
-    fontSize: 27
   },
   niloClosing: {
     alignItems: "center",
