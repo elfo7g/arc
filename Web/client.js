@@ -97,12 +97,6 @@ const seedEntries = [
   }
 ];
 
-const seedQuests = [
-  { id: "quest-memory-spring", category: "記憶", title: "三年前の春を、ひとつ思い出して。", fromNilo: false, done: false },
-  { id: "quest-gratitude", category: "感謝", title: "今日、言えなかった「ありがとう」は？", fromNilo: true, done: true },
-  { id: "quest-release", category: "手放す", title: "いま、いちばん手放したい荷物は？", fromNilo: false, done: false }
-];
-
 const chapters = [
   {
     number: "第二章",
@@ -145,14 +139,12 @@ const defaultState = {
   stack: [],
   selectedEntryId: "entry-2026-06-28-home",
   entries: seedEntries,
-  quests: seedQuests,
   settings: {
     nilo: true,
     lock: true
   },
   dialogue: {
     source: "home",
-    questIndex: null,
     questionCount: 1,
     messages: [],
     status: "",
@@ -223,11 +215,6 @@ const dom = {
   tabBar: $("#tab-bar"),
   backButton: $("#back-button"),
   statusTime: $("#status-time"),
-  homeQuestTitle: $("#home-quest-title"),
-  homeQuestSource: $("#home-quest-source"),
-  questProgressLabel: $("#quest-progress-label"),
-  questProgressBar: $("#quest-progress-bar"),
-  questCards: $("#quest-cards"),
   litQuestionList: $("#lit-question-list"),
   diaryList: $("#diary-list"),
   diaryMonth: $("#diary-month"),
@@ -266,7 +253,6 @@ function loadState() {
       ...clone(defaultState),
       ...saved,
       entries: Array.isArray(saved.entries) && saved.entries.length ? saved.entries : clone(seedEntries),
-      quests: Array.isArray(saved.quests) && saved.quests.length ? saved.quests : clone(seedQuests),
       settings: { ...clone(defaultState.settings), ...(saved.settings || {}) },
       dialogue: { ...clone(defaultState.dialogue), ...(saved.dialogue || {}), isSubmitting: false },
       stack: Array.isArray(saved.stack) ? saved.stack : []
@@ -395,38 +381,9 @@ function render() {
 }
 
 function renderHome() {
-  const quest = state.quests[0] || seedQuests[0];
-  dom.homeQuestTitle.textContent = quest.title;
-  dom.homeQuestSource.textContent = quest.fromNilo ? "NILO" : "QUEST";
-  const answerButton = $(".home-quest-actions [data-action='quest-record']");
-  if (answerButton) answerButton.textContent = quest.done ? "もう一度ひらく" : "答える";
 }
 
 function renderQuest() {
-  const completed = state.quests.filter((quest) => quest.done).length;
-  const total = Math.max(1, state.quests.length);
-  dom.questProgressLabel.textContent = `今夜 ${completed} / ${total} 完了`;
-  dom.questProgressBar.style.width = `${Math.round((completed / total) * 100)}%`;
-
-  dom.questCards.innerHTML = state.quests.map((quest, index) => `
-    <article class="quest-card ${quest.done ? "is-done" : ""}">
-      <div class="quest-card-top">
-        <p>${escapeHtml(quest.category)}</p>
-        ${quest.fromNilo ? "<span>NILO</span>" : ""}
-      </div>
-      <h2>${escapeHtml(quest.title)}</h2>
-      ${quest.done ? `
-        <div class="done-note">
-          <i>✓</i><span>完了　·　明日 0:00 に消えます</span>
-        </div>
-      ` : `
-        <div class="quest-actions">
-          <button type="button" data-action="quest-record" data-quest-index="${index}">Niloに記録</button>
-        </div>
-      `}
-    </article>
-  `).join("");
-
   const questEntries = state.entries.filter((entry) => entry.source === "quest" || entry.questText);
   dom.litQuestionList.innerHTML = questEntries.length
     ? questEntries.map((entry) => `
@@ -535,12 +492,10 @@ function renderSettings() {
   dom.settingLock.classList.toggle("is-on", state.settings.lock);
 }
 
-function startDialogue(source = "home", questIndex = null) {
-  const quest = Number.isInteger(questIndex) ? state.quests[questIndex] : null;
-  const firstQuestion = quest ? quest.title : "今日はどんな日だった？";
+function startDialogue(source = "home") {
+  const firstQuestion = "今日はどんな日だった？";
   state.dialogue = {
     source,
-    questIndex,
     questionCount: 1,
     messages: [{ role: "nilo", text: firstQuestion }],
     status: "",
@@ -587,12 +542,7 @@ async function askNilo(forceFinish = false) {
       messages: state.dialogue.messages,
       questionCount: state.dialogue.questionCount,
       forceFinish,
-      activeQuests: state.quests.map((quest) => ({
-        id: quest.id,
-        title: quest.title,
-        current: quest.done ? 1 : 0,
-        target: 1
-      }))
+      activeQuests: []
     })
   });
 
@@ -683,7 +633,7 @@ function saveDialogueAsEntry(result) {
     ? result.summaryLines
     : userTexts.slice(0, 4);
   const summary = summaryLines.join(" ");
-  const quest = Number.isInteger(state.dialogue.questIndex) ? state.quests[state.dialogue.questIndex] : null;
+  const quest = null;
   const moodTag = result.moodLabel ? `#${String(result.moodLabel).replace(/^#/, "")}` : "#記録";
 
   const entry = {
@@ -704,10 +654,6 @@ function saveDialogueAsEntry(result) {
 
   state.entries = [entry, ...state.entries.map((item) => ({ ...item, tonight: false }))];
   state.selectedEntryId = entry.id;
-
-  if (quest) {
-    state.quests[state.dialogue.questIndex] = { ...quest, done: true };
-  }
 }
 
 function openEntry(entryId) {
@@ -742,10 +688,8 @@ function handleClick(event) {
   if (!actionTarget) return;
 
   const action = actionTarget.dataset.action;
-  const questIndex = Number(actionTarget.dataset.questIndex);
 
   if (action === "open-dialogue") startDialogue("home", null);
-  if (action === "quest-record") startDialogue("quest", Number.isFinite(questIndex) ? questIndex : 0);
   if (action === "open-entry") openEntry(actionTarget.dataset.entryId);
   if (action === "open-lifequest") goTo("lifequest");
   if (action === "open-settings") goTo("settings");

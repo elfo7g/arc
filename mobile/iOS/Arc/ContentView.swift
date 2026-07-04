@@ -237,74 +237,26 @@ private struct TodayCard: View {
 }
 
 private struct QuestView: View {
-    @EnvironmentObject private var store: ArcStore
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 PageTitle(eyebrow: "Quiet quests", title: "クエスト", subtitle: "明日の自分が少し続きを見たくなる約束。")
 
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    ForEach(store.activeQuests) { quest in
-                        QuestTile(quest: quest)
-                    }
-                }
+                Text("日々の小さなタスクは使わず、Niloが見つけた長い探求だけをここに残します。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.arcPanel, in: RoundedRectangle(cornerRadius: 16))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.arcLine, lineWidth: 1)
+                    )
             }
             .padding(.horizontal, 20)
             .padding(.top, 24)
             .padding(.bottom, 110)
         }
-    }
-}
-
-private struct QuestTile: View {
-    @EnvironmentObject private var store: ArcStore
-    var quest: Quest
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Image("NiloNormal")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 28, height: 28)
-                Spacer()
-                Button {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        store.complete(quest)
-                    }
-                } label: {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 13, weight: .bold))
-                        .frame(width: 30, height: 30)
-                        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.arcLine, lineWidth: 1)
-                        )
-                }
-                .buttonStyle(.plain)
-            }
-
-            Text(quest.source == "daily" ? "Daily" : "Quest")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(Color.arcGold)
-                .textCase(.uppercase)
-
-            Text(quest.title)
-                .font(.system(size: 16, weight: .semibold, design: .serif))
-                .lineLimit(3)
-                .foregroundStyle(Color.arcInk)
-
-            Spacer()
-        }
-        .padding(14)
-        .aspectRatio(1, contentMode: .fit)
-        .background(Color.arcPanel, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.arcLine, lineWidth: 1)
-        )
     }
 }
 

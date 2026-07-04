@@ -4,7 +4,7 @@ SwiftUI native prototype for Arc.
 
 ## Open
 
-Open this file on a Mac with Xcode:
+Open this project on a Mac with Xcode:
 
 ```text
 mobile/iOS/Arc.xcodeproj
@@ -35,17 +35,21 @@ For a real iPhone, replace this with your Mac's LAN address, for example:
 http://192.168.1.20:4173
 ```
 
-For a deployed backend, replace it with the Vercel production URL after `GEMINI_API_KEY` is configured there.
+For a deployed backend, replace it with the production URL after `GEMINI_API_KEY` is configured there.
 
 ## Current Scope
 
-- Native SwiftUI shell
-- Home / Journal / Quest / Story / Memory tabs
-- Night Ritual input flow
-- Daily quest square tiles
-- Settings sheet with profile and day count
-- Local persistence with `UserDefaults`
-- Nilo and Arc visual assets from the Web app
+- Native SwiftUI shell.
+- Home / Journal / Quest / Story / Memory tabs.
+- Night Ritual input flow backed by the local Web API.
+- Journal entries saved to local `UserDefaults`.
+- Quest tab kept as an exploration surface, not a daily checklist.
+- Settings sheet with profile and day count.
+- Nilo and Arc visual assets shared with the broader app.
+
+## Retired
+
+Daily task-style quests, daily quest generation, manual completion, and square quest tiles have been removed.
 
 ## Notes
 

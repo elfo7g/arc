@@ -1345,7 +1345,15 @@ function AppContent() {
           forceFinish: questionCount >= ritualQuestionTarget,
           niloStyle: settings.niloStyle || "empathetic",
           frequency: reflectionFrequency,
-          activeQuests: []
+          activeQuests: explorations
+            .filter((item) => item.status !== "closed")
+            .map((item) => ({
+              id: item.id,
+              title: item.theme,
+              current: item.sessions || 0,
+              target: Math.max(1, item.clearTarget || 3),
+              firstStep: (item.keywords || []).slice(0, 4).join(" / ")
+            }))
         })
       });
 
@@ -1418,6 +1426,7 @@ function AppContent() {
       ]);
       addRitualMemory({ messages: finalMessages, journalId, entryDateKey, essence: result.niloLine, closing, result });
       touchExplorations({ messages: finalMessages, entryDateKey });
+      applyExplorationClearJudgements(result, entryDateKey);
       sealRitual(closing);
       return;
     }
@@ -1707,6 +1716,8 @@ function AppContent() {
         keywords: proposal.keywords || [],
         sinceDateKey: getJournalDateKey(),
         status: "ongoing",
+        clearable: false,
+        clearTarget: 3,
         sessions: 0,
         records: []
       },
@@ -1742,8 +1753,29 @@ function AppContent() {
   // 一区切り — never completion: the records and the time spent all remain.
   function closeExploration(id) {
     setExplorations((items) => items.map((item) => item.id === id
-      ? { ...item, status: "closed", closedDateKey: getJournalDateKey() }
+      ? { ...item, status: "closed", closedDateKey: getJournalDateKey(), clearable: false }
       : item));
+  }
+
+  function applyExplorationClearJudgements(result, entryDateKey) {
+    const updates = Array.isArray(result?.questUpdates) ? result.questUpdates : [];
+    if (!updates.length) return;
+
+    setExplorations((items) => items.map((item) => {
+      if (item.status === "closed") return item;
+      const update = updates.find((candidate) => {
+        if (candidate.id && candidate.id === item.id) return true;
+        return candidate.title && candidate.title === item.theme;
+      });
+      if (!update || !update.completed) return item;
+
+      return {
+        ...item,
+        clearable: true,
+        clearJudgedAt: entryDateKey,
+        clearNote: update.note || item.clearNote || ""
+      };
+    }));
   }
 
   // When tonight's ritual brushes an ongoing exploration's theme, the night
@@ -3234,6 +3266,7 @@ function QuestScreen({ onUiSound, active, proposals, explorations, onAccept, onD
               <Text style={styles.questOngoingMeta}>
                 {quest.since}　・　{quest.duration}{quest.sessions ? `　・　重ねた問い ${quest.sessions}回` : ""}
               </Text>
+              {quest.clearable && <Text style={styles.questClearableMeta}>Niloが一区切りを認めました</Text>}
             </Pressable>
           </RiseIn>
         ))
@@ -3288,6 +3321,7 @@ function QuestScreen({ onUiSound, active, proposals, explorations, onAccept, onD
       visible={!!openExploration}
       quest={openExploration || {}}
       onClose={() => setOpenExploration(null)}
+      canCloseExploration={Boolean(openExploration?.clearable)}
       onCloseExploration={
         openExploration && !openExploration.demo && openExploration.status !== "closed"
           ? () => {
@@ -3731,10 +3765,11 @@ function FutureQuestDetailModal({ visible, onClose, quest }) {
 // the time spent facing the theme — the nights that touched it and the words
 // they left. 一区切り is offered quietly, never as completion: everything the
 // exploration gathered stays.
-function ExplorationDetailModal({ visible, quest, onClose, onCloseExploration }) {
+function ExplorationDetailModal({ visible, quest, onClose, onCloseExploration, canCloseExploration }) {
   const token = useEntrancePlay(visible);
   const records = quest.records || [];
   const isClosed = quest.status === "closed";
+  const canClose = Boolean(canCloseExploration);
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <View style={styles.background}>
@@ -3781,14 +3816,21 @@ function ExplorationDetailModal({ visible, quest, onClose, onCloseExploration })
 
             <View style={styles.lifeQuestActions}>
               {!!onCloseExploration && (
-                <Pressable onPress={onCloseExploration} style={({ pressed }) => [styles.lifeQuestTalkButton, pressed && styles.touchPressedTight]}>
-                  <Text style={styles.lifeQuestTalkText}>そっと、一区切りにする</Text>
+                <Pressable
+                  disabled={!canClose}
+                  onPress={onCloseExploration}
+                  style={({ pressed }) => [styles.lifeQuestTalkButton, !canClose && styles.questCloseLocked, pressed && canClose && styles.touchPressedTight]}
+                >
+                  <Text style={styles.lifeQuestTalkText}>{canClose ? "そっと、一区切りにする" : "Niloのクリア判定を待つ"}</Text>
                 </Pressable>
               )}
+              {!isClosed && !!quest.clearNote && <Text style={styles.questClearNote}>{quest.clearNote}</Text>}
               <Text style={styles.lifeQuestPhilosophy}>
                 {isClosed
                   ? "この探求は一区切りしました。\nここで重ねた問いと言葉は、消えません。"
-                  : "急がなくていい。\n問いは、夜ごとに少しずつ深くなる。"}
+                  : canClose
+                    ? "Niloが、ここまでの言葉に一区切りを見つけました。\n閉じても、重ねた時間は残ります。"
+                    : "急がなくていい。\nクリアは自己申告ではなく、夜の対話からNiloが見つけます。"}
               </Text>
             </View>
           </ScrollView>
@@ -4689,6 +4731,7 @@ function SettingsModal({
                 settings={settings}
                 session={session}
                 authLoading={authLoading}
+                displayName={displayName}
                 updateSettings={updateSettings}
                 playToken={pageToken}
                 onSelect={(tab) => {
@@ -4722,6 +4765,15 @@ function SettingsModal({
                   <GlassBackdrop intensity={24} />
                   <Text style={styles.settingLabel}>いつでも、持ち出せます</Text>
                   <Text style={styles.mutedText}>すべての記録は、意味が損なわれない形でいつでも書き出せます。ARCをやめる日が来ても、あなたの夜はあなたと一緒に出ていけます。</Text>
+                </View>
+                <View style={styles.settingsCard}>
+                  <GlassBackdrop intensity={24} />
+                  <Text style={styles.settingLabel}>端末内データ</Text>
+                  <View style={styles.syncSummaryRow}>
+                    <BaseStat label="日記" value={`${journal.length}`} />
+                    <BaseStat label="記憶" value={`${memories.length}`} />
+                    <BaseStat label="章" value={`${chapters.length}`} />
+                  </View>
                 </View>
               </View>
             )}
@@ -5157,34 +5209,39 @@ function SettingsModal({
               </View>
             )}
 
-            {activeSettingsTab === "data" && (
+            {activeSettingsTab === "account" && (
               <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="data" title="記録を書き出す" body="端末内に残る記録を確認・整理します。" />
-                <View style={styles.settingsCard}>
-                  <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>端末内データ</Text>
-                  <View style={styles.syncSummaryRow}>
-                    <BaseStat label="日記" value={`${journal.length}`} />
-                    <BaseStat label="記憶" value={`${memories.length}`} />
-                    <BaseStat label="章" value={`${chapters.length}`} />
-                  </View>
+                <SettingsPageTitle icon="profile" title="アカウント" body="プロフィールと、データの接続状態を管理します。" />
+                <View style={styles.arcSettingGroupCard}>
+                  <ArcSettingRow
+                    title="プロフィール"
+                    body="名前と、始まりの日"
+                    onPress={() => {
+                      onUiSound?.();
+                      setActiveSettingsTab("profile");
+                    }}
+                  />
+                  <ArcSettingRow
+                    title="データ同期"
+                    body={authLoading ? "確認中" : session ? "接続済み" : "未接続"}
+                    last={!session}
+                    onPress={() => {
+                      onUiSound?.();
+                      setActiveSettingsTab("sync");
+                    }}
+                  />
+                  {!!session && (
+                    <ArcSettingRow
+                      title="ログアウト"
+                      body="記録は端末に残ります"
+                      last
+                      onPress={() => {
+                        onUiSound?.();
+                        setActiveSettingsTab("logout");
+                      }}
+                    />
+                  )}
                 </View>
-                <ArcSettingRow
-                  title="データエクスポート"
-                  body="JSON / Markdownで書き出す"
-                  onPress={() => {
-                    onUiSound?.();
-                    setActiveSettingsTab("ownershipExport");
-                  }}
-                />
-                <ArcSettingRow
-                  title="アーカイブの削除"
-                  body="端末内の記録を消去する"
-                  onPress={() => {
-                    onUiSound?.();
-                    setActiveSettingsTab("ownershipDelete");
-                  }}
-                />
               </View>
             )}
 
@@ -5371,6 +5428,7 @@ function SettingsBase({
   settings,
   session,
   authLoading,
+  displayName,
   onSelect,
   updateSettings,
   playToken = 0
@@ -5456,12 +5514,6 @@ function SettingsBase({
 
       <ArcSettingGroup label="アプリ設定" index={4} playToken={playToken}>
         <ArcSettingRow
-          title="ニロの灯り"
-          body="そばにいる、ひとつの光"
-          toggle={!!settings.bgmEnabled}
-          onPress={() => updateSettings({ bgmEnabled: !settings.bgmEnabled })}
-        />
-        <ArcSettingRow
           title="夜のささやき"
           body="そっと問いが灯る時刻"
           value={settings.notificationTime || "23:00"}
@@ -5478,19 +5530,9 @@ function SettingsBase({
           onPress={() => onSelect("bgm")}
         />
         <ArcSettingRow
-          title="この場所を守る"
-          body="Face IDでロックする"
-          toggle={settings.security?.lockEnabled !== false}
-          onPress={() => updateSettings({ security: { ...(settings.security || {}), lockEnabled: settings.security?.lockEnabled === false } })}
-        />
-        <ArcSettingRow
           title="書体の大きさ"
           value={{ small: "小", standard: "標準", large: "大" }[settings.fontScale || "standard"]}
           onPress={() => onSelect("language")}
-        />
-        <ArcSettingRow
-          title="記録を書き出す"
-          onPress={() => onSelect("data")}
         />
         <ArcSettingRow
           title="ARC について"
@@ -5504,22 +5546,10 @@ function SettingsBase({
 
       <ArcSettingGroup label="アカウント" index={5} playToken={playToken}>
         <ArcSettingRow
-          title="プロフィール"
-          body="名前と、始まりの日"
-          onPress={() => onSelect("profile")}
+          title="アカウント"
+          body={authLoading ? "確認中" : session ? `接続済み・${displayName}` : "未接続"}
+          onPress={() => onSelect("account")}
         />
-        <ArcSettingRow
-          title="データ同期"
-          body={authLoading ? "確認中" : session ? "接続済み" : "未接続"}
-          onPress={() => onSelect("sync")}
-        />
-        {!!session && (
-          <ArcSettingRow
-            title="ログアウト"
-            body="記録は端末に残ります"
-            onPress={() => onSelect("logout")}
-          />
-        )}
       </ArcSettingGroup>
 
       <View style={styles.settingsWordmark}>
@@ -6018,13 +6048,12 @@ async function generateRecoveryKey() {
   return Array.from(bytes).map((byte) => RECOVERY_WORDLIST[byte % RECOVERY_WORDLIST.length]).join(" ");
 }
 
-function buildExportJson({ journal, memories, quests, chapters, profile, settings }) {
+function buildExportJson({ journal, memories, chapters, profile, settings }) {
   return JSON.stringify({
     exportedAt: new Date().toISOString(),
     app: "ARC",
     journal,
     memories,
-    quests,
     chapters,
     profile,
     settings
@@ -9311,6 +9340,13 @@ const baseStyleDefs = ({
     letterSpacing: 0.6,
     marginTop: 7
   },
+  questClearableMeta: {
+    color: "rgba(228,196,142,0.78)",
+    fontFamily: fontSerifJa,
+    fontSize: 11,
+    letterSpacing: 0.8,
+    marginTop: 8
+  },
   questClosedRow: {
     opacity: 0.62
   },
@@ -9814,6 +9850,9 @@ const baseStyleDefs = ({
     borderWidth: 1,
     paddingVertical: 15
   },
+  questCloseLocked: {
+    opacity: 0.42
+  },
   lifeQuestTalkText: {
     color: "rgba(228,184,124,0.92)",
     fontFamily: fontSerifJa,
@@ -9826,6 +9865,14 @@ const baseStyleDefs = ({
     fontSize: 11,
     lineHeight: 19,
     marginTop: 6,
+    textAlign: "center"
+  },
+  questClearNote: {
+    color: "rgba(228,196,142,0.7)",
+    fontFamily: fontSerifJa,
+    fontSize: 12,
+    letterSpacing: 0.4,
+    lineHeight: 21,
     textAlign: "center"
   },
   lifeQuestRecordTimeline: {

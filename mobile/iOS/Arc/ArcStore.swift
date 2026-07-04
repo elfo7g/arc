@@ -1,4 +1,4 @@
-import Foundation
+﻿import Foundation
 import SwiftUI
 
 @MainActor
@@ -8,7 +8,6 @@ final class ArcStore: ObservableObject {
         RitualMessage(role: .nilo, text: "今日、一番印象に残ったことは？")
     ]
     @Published var journal: [JournalEntry] = []
-    @Published var quests: [Quest] = []
     @Published var memories: [MemoryEntry] = []
     @Published var profile = ArcProfile()
     @Published var isSettingsPresented = false
@@ -20,11 +19,6 @@ final class ArcStore: ObservableObject {
 
     init() {
         load()
-        ensureDailyQuests()
-    }
-
-    var activeQuests: [Quest] {
-        quests.filter { !$0.isCompleted }
     }
 
     var latestEntry: JournalEntry? {
@@ -54,12 +48,6 @@ final class ArcStore: ObservableObject {
         save()
     }
 
-    func complete(_ quest: Quest) {
-        guard let index = quests.firstIndex(where: { $0.id == quest.id }) else { return }
-        quests[index].isCompleted = true
-        save()
-    }
-
     func saveProfile(name: String, birthdate: Date?) {
         profile.name = name
         profile.birthdate = birthdate
@@ -83,7 +71,6 @@ final class ArcStore: ObservableObject {
                 summaryLines: response.summaryLines?.prefix(5).map(String.init) ?? ["今日の言葉を短く残しました。"],
                 niloLine: response.niloLine ?? closing
             ), at: 0)
-            addGeneratedQuests(response)
             resetRitual()
         } else {
             questionCount = min(5, questionCount + 1)
@@ -107,30 +94,13 @@ final class ArcStore: ObservableObject {
         resetRitual()
     }
 
-    private func addGeneratedQuests(_ response: NightRitualResponse) {
-        let titles = (response.quests ?? []).map(\.title) + [response.questSuggestion].compactMap { $0 }
-        for title in titles where !title.isEmpty {
-            guard !quests.contains(where: { $0.title == title && !$0.isCompleted }) else { continue }
-            quests.insert(Quest(title: title, source: "night-ritual"), at: 0)
-        }
-    }
-
     private func resetRitual() {
         questionCount = 1
         ritualMessages = [RitualMessage(role: .nilo, text: "今日、一番印象に残ったことは？")]
     }
 
-    private func ensureDailyQuests() {
-        guard quests.filter({ $0.source == "daily" && !$0.isCompleted }).isEmpty else { return }
-        let bank = ["水を1杯飲む", "ストレッチ3分", "本を1ページ読む", "机を片付ける", "日光を10分浴びる", "深呼吸20回"]
-        for title in bank.shuffled().prefix(Int.random(in: 2...4)) {
-            quests.insert(Quest(title: title, source: "daily"), at: 0)
-        }
-        save()
-    }
-
     private func save() {
-        let state = PersistedArcState(journal: journal, quests: quests, memories: memories, profile: profile)
+        let state = PersistedArcState(journal: journal, memories: memories, profile: profile)
         if let data = try? JSONEncoder().encode(state) {
             UserDefaults.standard.set(data, forKey: storageKey)
         }
@@ -143,7 +113,6 @@ final class ArcStore: ObservableObject {
         else { return }
 
         journal = state.journal
-        quests = state.quests
         memories = state.memories
         profile = state.profile
     }

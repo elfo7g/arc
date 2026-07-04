@@ -49,14 +49,6 @@ struct JournalEntry: Identifiable, Codable, Equatable {
     var niloLine: String
 }
 
-struct Quest: Identifiable, Codable, Equatable {
-    var id = UUID()
-    var title: String
-    var source: String
-    var isCompleted = false
-    var createdAt = Date()
-}
-
 struct MemoryEntry: Identifiable, Codable, Equatable {
     var id = UUID()
     var title: String
@@ -77,17 +69,10 @@ struct NightRitualResponse: Decodable {
     var niloLine: String?
     var niloMessage: String?
     var closingMessage: String?
-    var quests: [GeneratedQuest]?
-    var questSuggestion: String?
-}
-
-struct GeneratedQuest: Decodable {
-    var title: String
 }
 
 struct PersistedArcState: Codable {
     var journal: [JournalEntry]
-    var quests: [Quest]
     var memories: [MemoryEntry]
     var profile: ArcProfile
 }

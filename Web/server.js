@@ -1,4 +1,4 @@
-const http = require("node:http");
+﻿const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -439,11 +439,12 @@ ${safeMessages || "なし"}
 進行中のクエスト:
 ${questLines}
 
-クエスト生成ルール:
-- ユーザーが明日やってみたい小さい行動を明確に言った場合だけ quests に1件追加してください。
-- 明日につながる小さい行動なら quests[].scope は "daily"。
-- 数日以上続く大きめの目標や人生の方向性なら quests[].scope は "life"。
-- 曖昧な気分、過去の出来事だけ、一度きりの予定、既存クエストと似ている内容では quests は空配列。
+進行中クエストのクリア判定ルール:
+- activeQuests は日次チェックリストではなく、Niloが見つけた長期的な探求です。
+- 新しい日次クエストは作らないでください。quests は空配列にしてください。
+- 進行中クエストに対して、ユーザーの実際の言葉から「このテーマを十分に生きた・受け入れた・統合した・一区切りついた」と読める場合だけ questUpdates に入れてください。
+- completed は、クリアを認めてよい場合だけ true にしてください。迷う場合、触れただけの場合、まだ願望や予定の段階の場合は false または省略してください。
+- questUpdates[].id には必ず activeQuest の id を入れてください。
 
 done:false の場合:
 - nextQuestion だけが重要です。
@@ -463,16 +464,16 @@ JSONだけを返してください。Markdownは禁止です。
   "summaryLines": [],
   "relatedQuests": [],
   "questSuggestion": "",
-  "quests": [
+  "quests": [],
+  "questUpdates": [
     {
-      "title": "短いクエスト名",
-      "reason": "なぜ明日につながるか",
-      "firstStep": "最初の小さな一歩",
-      "scope": "daily",
-      "target": 1
+      "id": "activeQuest id",
+      "title": "activeQuest title",
+      "progressDelta": 0,
+      "completed": false,
+      "note": "判定理由。50文字以内"
     }
   ],
-  "questUpdates": [],
   "moodLabel": "",
   "moodScore": null,
   "niloLine": "",
