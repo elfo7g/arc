@@ -39,7 +39,14 @@ function loadEnvFile(filePath) {
   }
 }
 
+function setCorsHeaders(res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
 function sendJson(res, status, data) {
+  setCorsHeaders(res);
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(data));
 }
@@ -855,6 +862,13 @@ function serveStatic(req, res) {
 }
 
 function routeRequest(req, res) {
+  if (req.method === "OPTIONS") {
+    setCorsHeaders(res);
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/api/nilo/reflection") {
     handleNiloReflection(req, res);
     return;
