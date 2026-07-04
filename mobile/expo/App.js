@@ -511,6 +511,10 @@ function AppContent() {
   const [questScanDateKey, setQuestScanDateKey] = useState("");
   const questScanRef = useRef(false);
   const notificationPromptRef = useRef(false);
+  // 通知タブ（お知らせ）: Niloの提案などが届いたときの記録。承認/却下の判断はせず、
+  // ただ「起きたこと」を静かに並べる場所。
+  const [notifications, setNotifications] = useState([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [profile, setProfile] = useState(() => DEV_MODE ? DEV_PROFILE : { name: "", birthdate: "" });
   const [settings, setSettings] = useState({
@@ -561,6 +565,7 @@ function AppContent() {
   applyFontScale(settings.fontScale);
 
   const activeQuests = useMemo(() => quests.filter((quest) => !quest.completed), [quests]);
+  const unreadNotificationCount = useMemo(() => notifications.filter((item) => !item.read).length, [notifications]);
   const journalDateKey = getJournalDateKey();
   const reflectionFrequency = normalizeReflectionFrequency(settings.reflection?.frequency);
   // Night Ritual no longer fixed to daily / a nightly time window — the user's
@@ -745,6 +750,7 @@ function AppContent() {
             if (Array.isArray(saved.explorations)) setExplorations(saved.explorations);
             if (Array.isArray(saved.declinedQuestThemes)) setDeclinedQuestThemes(saved.declinedQuestThemes);
             if (typeof saved.questScanDateKey === "string") setQuestScanDateKey(saved.questScanDateKey);
+            if (Array.isArray(saved.notifications)) setNotifications(saved.notifications);
             if (saved.profile) setProfile((current) => ({ ...current, ...saved.profile }));
             if (saved.settings) {
               setSettings((current) => ({
@@ -779,10 +785,10 @@ function AppContent() {
       STORAGE_KEY,
       JSON.stringify({
         journal, quests, memories, chapters, chapterNotes, profile, settings,
-        questProposals, explorations, declinedQuestThemes, questScanDateKey
+        questProposals, explorations, declinedQuestThemes, questScanDateKey, notifications
       })
     ).catch(() => undefined);
-  }, [hydrated, journal, quests, memories, chapters, chapterNotes, profile, settings, questProposals, explorations, declinedQuestThemes, questScanDateKey]);
+  }, [hydrated, journal, quests, memories, chapters, chapterNotes, profile, settings, questProposals, explorations, declinedQuestThemes, questScanDateKey, notifications]);
 
   useEffect(() => {
     // Opening the quest tab is when Nilo glances over the recent records —
@@ -1525,6 +1531,15 @@ function AppContent() {
       setChapterProposals((current) => splitFrom
         ? [...current.filter((item) => item.id !== splitFrom.id), ...next]
         : next);
+      if (!splitFrom) {
+        addNotifications(next.map((proposal) => ({
+          refId: `chapter-${proposal.period}`,
+          tag: "STORY",
+          title: "Niloから、新しい章の提案があります",
+          body: proposal.observation || "",
+          tab: "story"
+        })));
+      }
     } catch {
       // Offline: without the model Nilo can't sense inflection points, and we
       // never declare chapters locally — so no proposal is offered.
@@ -1631,6 +1646,13 @@ function AppContent() {
         .map((proposal) => ({ id: createId("questprop"), ...proposal }));
       setQuestProposals(next);
       setQuestScanDateKey(today);
+      addNotifications(next.map((proposal) => ({
+        refId: `quest-${proposal.theme}`,
+        tag: "QUEST",
+        title: "Niloから、探求の提案があります",
+        body: proposal.theme,
+        tab: "quests"
+      })));
     } catch {
       // Keep whatever proposals were already on the table.
     } finally {
@@ -1652,6 +1674,23 @@ function AppContent() {
       },
       ...items
     ]);
+  }
+
+  // お知らせ: 新着だけを静かに積む。同じ出来事（refId）は重ねて通知しない。
+  function addNotifications(items) {
+    if (!items || !items.length) return;
+    setNotifications((current) => {
+      const existingRefs = new Set(current.map((item) => item.refId).filter(Boolean));
+      const additions = items
+        .filter((item) => !item.refId || !existingRefs.has(item.refId))
+        .map((item) => ({ id: createId("notice"), read: false, createdAt: Date.now(), ...item }));
+      if (!additions.length) return current;
+      return [...additions, ...current].slice(0, 40);
+    });
+  }
+
+  function markNotificationRead(id) {
+    setNotifications((items) => items.map((item) => item.id === id ? { ...item, read: true } : item));
   }
 
   function declineQuestProposal(proposal) {
@@ -1698,6 +1737,7 @@ function AppContent() {
         <OuterGradient />
         <View style={styles.scrim} />
         <NightGrain />
+        <FloatingOrbs />
       </View>
     );
   }
@@ -1709,6 +1749,7 @@ function AppContent() {
         <OuterGradient />
         <View style={styles.scrim} />
         <NightGrain />
+        <FloatingOrbs />
         <SafeAreaView style={styles.safe}>
           <AuthGate loading />
           <StatusBar barStyle="light-content" />
@@ -1724,6 +1765,7 @@ function AppContent() {
         <OuterGradient />
         <View style={styles.scrim} />
         <NightGrain />
+        <FloatingOrbs />
         <SafeAreaView style={styles.safe}>
           <AuthGate
             authBusy={authBusy}
@@ -1746,6 +1788,7 @@ function AppContent() {
         <OuterGradient />
         <View style={styles.scrim} />
         <NightGrain />
+        <FloatingOrbs />
         <SafeAreaView style={styles.safe}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.app}>
             <ProfileGate
@@ -1768,6 +1811,7 @@ function AppContent() {
       <OuterGradient />
       <View style={styles.scrim} />
       <NightGrain />
+      <FloatingOrbs />
       <SafeAreaView style={styles.safe}>
         <Header
           profile={profile}
@@ -1775,14 +1819,14 @@ function AppContent() {
           showTitle={activeTab !== "home"}
           showSettings={activeTab === "home"}
           showNotifications={activeTab === "home"}
+          unreadNotifications={unreadNotificationCount}
           onAccount={() => {
             playUiSound();
             setSettingsOpen(true);
           }}
           onNotifications={() => {
             playUiSound();
-            setSettingsInitialTab("notifications");
-            setSettingsOpen(true);
+            setNotificationsOpen(true);
           }}
         />
 
@@ -1912,6 +1956,22 @@ function AppContent() {
             setSettingsInitialTab("base");
           }}
         />
+
+        <NotificationsModal
+          visible={notificationsOpen}
+          notifications={notifications}
+          onClose={() => setNotificationsOpen(false)}
+          onMarkRead={markNotificationRead}
+          onNavigate={(tab) => {
+            setActiveTab(tab);
+            setNotificationsOpen(false);
+          }}
+          onOpenSettings={() => {
+            setNotificationsOpen(false);
+            setSettingsInitialTab("notifications");
+            setSettingsOpen(true);
+          }}
+        />
       <StatusBar barStyle="light-content" />
       </SafeAreaView>
     </View>
@@ -1959,7 +2019,7 @@ export default function App() {
   );
 }
 
-function Header({ onAccount, onNotifications, showTitle, showSettings = true, showNotifications = true }) {
+function Header({ onAccount, onNotifications, showTitle, showSettings = true, showNotifications = true, unreadNotifications = 0 }) {
   return (
     <View style={styles.header}>
       <View style={styles.headerSide} />
@@ -1972,6 +2032,7 @@ function Header({ onAccount, onNotifications, showTitle, showSettings = true, sh
           style={({ pressed }) => [styles.notificationButton, pressed && styles.touchPressedTight]}
         >
           <NotificationBellGlyph />
+          {unreadNotifications > 0 && <View pointerEvents="none" style={styles.notificationBellDot} />}
         </Pressable>
       )}
       {showSettings && (
@@ -2064,6 +2125,13 @@ function OuterGradient() {
         style={StyleSheet.absoluteFillObject}
       />
       <LinearGradient
+        colors={["rgba(232,196,138,0.12)", "rgba(224,182,120,0.05)", "rgba(217,168,108,0)"]}
+        locations={[0, 0.45, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={styles.upperGlow}
+      />
+      <LinearGradient
         colors={["rgba(255,194,96,0)", "rgba(217,168,108,0.06)", "rgba(217,168,108,0.15)"]}
         locations={[0, 0.62, 1]}
         start={{ x: 0.5, y: 0 }}
@@ -2077,6 +2145,101 @@ function OuterGradient() {
         end={{ x: 0.5, y: 0 }}
         style={styles.lowerGlowPool}
       />
+    </View>
+  );
+}
+
+const FLOATING_ORB_SMALL_COUNT = 22;
+const FLOATING_ORB_LARGE_COUNT = 8;
+
+function makeFloatingOrbSpec(size, baseOpacity) {
+  return {
+    left: Math.random() * 100,
+    top: Math.random() * 100,
+    size,
+    baseOpacity,
+    driftX: (Math.random() - 0.5) * 240,
+    driftY: -(60 + Math.random() * 160),
+    duration: 4000 + Math.random() * 6000,
+    delay: Math.random() * 3000
+  };
+}
+
+function makeFloatingOrbSpecs() {
+  // 小さな灯を多めに、大きな灯は薄く・ゆっくりめに漂わせて奥行きを出す。
+  const small = Array.from({ length: FLOATING_ORB_SMALL_COUNT }, () =>
+    makeFloatingOrbSpec(36 + Math.random() * 130, 0.06 + Math.random() * 0.16)
+  );
+  const large = Array.from({ length: FLOATING_ORB_LARGE_COUNT }, () => {
+    const spec = makeFloatingOrbSpec(200 + Math.random() * 200, 0.04 + Math.random() * 0.09);
+    spec.duration = 7000 + Math.random() * 7000;
+    return spec;
+  });
+  return [...large, ...small];
+}
+
+function FloatingOrb({ spec }) {
+  const phase = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(spec.delay),
+        Animated.timing(phase, {
+          toValue: 1,
+          duration: spec.duration,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true
+        }),
+        Animated.timing(phase, {
+          toValue: 0,
+          duration: spec.duration,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true
+        })
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [phase, spec]);
+
+  const opacity = phase.interpolate({
+    inputRange: [0, 1],
+    outputRange: [spec.baseOpacity * 0.1, spec.baseOpacity]
+  });
+  const translateX = phase.interpolate({ inputRange: [0, 1], outputRange: [0, spec.driftX] });
+  const translateY = phase.interpolate({ inputRange: [0, 1], outputRange: [0, spec.driftY] });
+  const scale = phase.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1.45] });
+
+  return (
+    <Animated.Image
+      pointerEvents="none"
+      source={niloOrbTexture}
+      resizeMode="contain"
+      style={{
+        position: "absolute",
+        left: `${spec.left}%`,
+        top: `${spec.top}%`,
+        width: spec.size,
+        height: spec.size,
+        marginLeft: -spec.size / 2,
+        marginTop: -spec.size / 2,
+        opacity,
+        transform: [{ translateX }, { translateY }, { scale }]
+      }}
+    />
+  );
+}
+
+function FloatingOrbs() {
+  // 背景に漂う多数の小さな灯。Niloの光と同じテクスチャを薄く散らし、
+  // それぞれがランダムな位置・大きさ・周期でゆっくり明滅しながら流れる。
+  const specs = useRef(makeFloatingOrbSpecs()).current;
+  return (
+    <View pointerEvents="none" style={styles.floatingOrbLayer}>
+      {specs.map((spec, i) => (
+        <FloatingOrb key={i} spec={spec} />
+      ))}
     </View>
   );
 }
@@ -2108,8 +2271,10 @@ function NiloLight({ style }) {
     return () => loop.stop();
   }, [breath]);
 
-  const opacity = breath.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0.92] });
-  const scale = breath.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] });
+  const opacity = breath.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] });
+  const scale = breath.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] });
+  const coreOpacity = breath.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0.95] });
+  const coreScale = breath.interpolate({ inputRange: [0, 1], outputRange: [0.42, 0.52] });
 
   return (
     <View pointerEvents="none" style={[styles.niloLightWrap, style]}>
@@ -2118,6 +2283,13 @@ function NiloLight({ style }) {
         source={niloOrbTexture}
         resizeMode="contain"
         style={[styles.niloOrbImage, { opacity, transform: [{ scale }] }]}
+      />
+      {/* 背景に灯が増えても Nilo だけは芯を持つ、ひときわ明るい二重の光にする */}
+      <Animated.Image
+        pointerEvents="none"
+        source={niloOrbTexture}
+        resizeMode="contain"
+        style={[styles.niloOrbImage, { position: "absolute", opacity: coreOpacity, transform: [{ scale: coreScale }] }]}
       />
     </View>
   );
@@ -3546,6 +3718,7 @@ function FutureQuestDetailModal({ visible, onClose, quest }) {
         <OuterGradient />
         <View style={styles.scrim} />
         <NightGrain />
+        <FloatingOrbs />
         <SafeAreaView style={styles.safe}>
           <Pressable focusable={false} onPress={onClose} style={({ pressed }) => [styles.lifeQuestBack, pressed && styles.touchPressedTight]}>
             <Text style={styles.lifeQuestBackText}>‹</Text>
@@ -3609,6 +3782,7 @@ function ExplorationDetailModal({ visible, quest, onClose, onCloseExploration })
         <OuterGradient />
         <View style={styles.scrim} />
         <NightGrain />
+        <FloatingOrbs />
         <SafeAreaView style={styles.safe}>
           <Pressable focusable={false} onPress={onClose} style={({ pressed }) => [styles.lifeQuestBack, pressed && styles.touchPressedTight]}>
             <Text style={styles.lifeQuestBackText}>‹</Text>
@@ -3665,6 +3839,84 @@ function ExplorationDetailModal({ visible, quest, onClose, onCloseExploration })
   );
 }
 
+// 通知タブ（お知らせ）: a quiet inbox for what Nilo has noticed — a new quest
+// proposal, a chapter ready to be named. No badges to clear, no inbox-zero;
+// tapping an item just marks it read and, if it points somewhere, opens it.
+function NotificationsModal({ visible, notifications, onClose, onMarkRead, onNavigate, onOpenSettings }) {
+  const token = useEntrancePlay(visible);
+  if (!visible) return null;
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaView style={styles.modal}>
+        <BackgroundTexture />
+        <OuterGradient />
+        <View style={styles.scrim} />
+        <NightGrain />
+        <FloatingOrbs />
+        <View style={styles.modalHeader}>
+          <Pressable focusable={false} onPress={onClose} style={({ pressed }) => [styles.modalBackButton, pressed && styles.touchPressedTight]}>
+            <Text style={styles.modalBackText}>‹</Text>
+          </Pressable>
+          <View style={styles.modalTitleWrap}>
+            <Text style={styles.modalSub}>NOTIFICATIONS</Text>
+            <Text style={styles.modalTitle}>お知らせ</Text>
+          </View>
+        </View>
+
+        <View style={styles.settingsBody}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.settingSection}>
+            {notifications.length ? (
+              notifications.map((item, index) => (
+                <RiseIn key={item.id} index={index} playToken={token} duration={500}>
+                  <Pressable
+                    onPress={() => {
+                      onMarkRead(item.id);
+                      if (item.tab) onNavigate(item.tab);
+                    }}
+                    style={({ pressed }) => [
+                      styles.notificationRow,
+                      !item.read && styles.notificationRowUnread,
+                      pressed && styles.touchPressedTight
+                    ]}
+                  >
+                    <GlassBackdrop intensity={18} />
+                    {!item.read && <View pointerEvents="none" style={styles.notificationRowDot} />}
+                    <Text style={styles.notificationRowTag}>{item.tag}</Text>
+                    <Text style={styles.notificationRowTitle}>{item.title}</Text>
+                    {!!item.body && <Text style={styles.notificationRowBody}>{item.body}</Text>}
+                    <Text style={styles.notificationRowDate}>{formatNotificationTimestamp(item.createdAt)}</Text>
+                  </Pressable>
+                </RiseIn>
+              ))
+            ) : (
+              <RiseIn index={0} playToken={token} style={styles.settingsPage}>
+                <SettingsPageTitle icon="notifications" title="お知らせ" body="いまは、届いているお知らせはありません。" />
+                <Text style={styles.notificationEmptyNote}>Niloが記録の中に何かを見つけたとき、{"\n"}ここにそっと届きます。</Text>
+              </RiseIn>
+            )}
+
+            <Pressable onPress={onOpenSettings} style={({ pressed }) => [styles.backToBase, pressed && styles.touchPressedTight]}>
+              <Text style={styles.backToBaseText}>通知の時刻を設定する ›</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+        <StatusBar barStyle="light-content" />
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+function formatNotificationTimestamp(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  if (sameDay) {
+    return `今日 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
 // ENTRY DETAIL (SCR-05) — a tapped record opens into the full conversation
 // with Nilo, the emotions it left, a similar night, and the quiet reminder
 // that the record cannot be erased. Opened as a full-screen modal, like the
@@ -3688,6 +3940,7 @@ function EntryDetailModal({ entry, onClose }) {
         <OuterGradient />
         <View style={styles.scrim} />
         <NightGrain />
+        <FloatingOrbs />
         <SafeAreaView style={styles.safe}>
           <ScrollView contentContainerStyle={styles.entryDetailScroll} showsVerticalScrollIndicator={false}>
             <RiseIn index={0} playToken={token}>
@@ -4171,6 +4424,11 @@ function SettingsModal({
   const [windowStartDraft, setWindowStartDraft] = useState(null);
   const [windowEndDraft, setWindowEndDraft] = useState(null);
 
+  // 開いた時だけでなく、ページ遷移(タブ切替)でも入場を静かに再生する。
+  // RiseInのplayTokenはtruthinessとエフェクト依存にしか使われないため文字列で良い。
+  const entranceToken = useEntrancePlay(visible);
+  const pageToken = entranceToken ? `${entranceToken}:${activeSettingsTab}` : 0;
+
   useEffect(() => {
     if (visible) {
       setActiveSettingsTab(initialTab || "base");
@@ -4469,6 +4727,7 @@ function SettingsModal({
         <OuterGradient />
         <View style={styles.scrim} />
         <NightGrain />
+        <FloatingOrbs />
         <View style={styles.modalHeader}>
           <Pressable focusable={false} onPress={onClose} style={({ pressed }) => [styles.modalBackButton, pressed && styles.touchPressedTight]}>
             <Text style={styles.modalBackText}>‹</Text>
@@ -4487,6 +4746,7 @@ function SettingsModal({
                 session={session}
                 authLoading={authLoading}
                 updateSettings={updateSettings}
+                playToken={pageToken}
                 onSelect={(tab) => {
                   onUiSound?.();
                   setActiveSettingsTab(tab);
@@ -4495,6 +4755,7 @@ function SettingsModal({
             )}
 
             {activeSettingsTab !== "base" && (
+            <RiseIn playToken={pageToken} index={0} distance={12} duration={480} style={styles.settingsDetailStack}>
               <Pressable
                 onPress={() => {
                   onUiSound?.();
@@ -4504,11 +4765,10 @@ function SettingsModal({
               >
                 <Text style={styles.backToBaseText}>‹ 設定へ戻る</Text>
               </Pressable>
-            )}
 
             {activeSettingsTab === "ownershipPolicy" && (
               <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="data" title="所有権ポリシー" body="データはあなたのものです。ARCはそれを証明し、守ります。" />
+                <SettingsPageTitle icon="privacy" title="所有権ポリシー" body="データはあなたのものです。ARCはそれを証明し、守ります。" />
                 <View style={styles.settingsCard}>
                   <GlassBackdrop intensity={24} />
                   <Text style={styles.ownershipStatement}>このデータは、あなたのものです。</Text>
@@ -4716,7 +4976,7 @@ function SettingsModal({
 
             {activeSettingsTab === "archiveStyle" && (
               <View style={styles.settingsPage}>
-                <SettingsPageTitle icon="ritual" title="Niloの対話スタイル" body="夜の対話での、Niloの寄り添い方。" />
+                <SettingsPageTitle icon="feedback" title="Niloの対話スタイル" body="夜の対話での、Niloの寄り添い方。" />
                 <View style={styles.settingsCard}>
                   <GlassBackdrop intensity={24} />
                   <Text style={styles.settingLabel}>対話スタイル</Text>
@@ -4856,6 +5116,7 @@ function SettingsModal({
                       updateSettings({ notificationTime: value });
                     }
                   )}
+                  <Text style={styles.settingTimeCaption}>好きな時刻を直接入力することもできます</Text>
                   <TextInput
                     value={notificationDraft ?? settings.notificationTime}
                     onChangeText={setNotificationDraft}
@@ -4865,7 +5126,7 @@ function SettingsModal({
                     }}
                     placeholder="22:00"
                     placeholderTextColor="rgba(190,180,162,0.38)"
-                    style={styles.settingInput}
+                    style={[styles.settingInput, styles.settingTimeInput]}
                   />
                   <Text style={styles.mutedText}>時刻はこの端末に保存されます。アプリを開いている間、その日の記録がまだなら一度だけ灯ります。</Text>
                 </View>
@@ -4901,28 +5162,31 @@ function SettingsModal({
                   <GlassBackdrop intensity={24} />
                   <Text style={styles.settingLabel}>対話の時間帯</Text>
                   <Text style={styles.mutedText}>夜の対話が灯る時間帯です。日付をまたいでもかまいません。</Text>
-                  <TextInput
-                    value={windowStartDraft ?? (ritualConfig.windowStart || "20:00")}
-                    onChangeText={setWindowStartDraft}
-                    onBlur={() => {
-                      commitClockValue(windowStartDraft ?? ritualConfig.windowStart, ritualConfig.windowStart || "20:00", (value) => updateRitualSettings({ windowStart: value }));
-                      setWindowStartDraft(null);
-                    }}
-                    placeholder="20:00"
-                    placeholderTextColor="rgba(190,180,162,0.38)"
-                    style={styles.settingInput}
-                  />
-                  <TextInput
-                    value={windowEndDraft ?? (ritualConfig.windowEnd || "03:00")}
-                    onChangeText={setWindowEndDraft}
-                    onBlur={() => {
-                      commitClockValue(windowEndDraft ?? ritualConfig.windowEnd, ritualConfig.windowEnd || "03:00", (value) => updateRitualSettings({ windowEnd: value }));
-                      setWindowEndDraft(null);
-                    }}
-                    placeholder="03:00"
-                    placeholderTextColor="rgba(190,180,162,0.38)"
-                    style={styles.settingInput}
-                  />
+                  <View style={styles.settingTimeRangeRow}>
+                    <TextInput
+                      value={windowStartDraft ?? (ritualConfig.windowStart || "20:00")}
+                      onChangeText={setWindowStartDraft}
+                      onBlur={() => {
+                        commitClockValue(windowStartDraft ?? ritualConfig.windowStart, ritualConfig.windowStart || "20:00", (value) => updateRitualSettings({ windowStart: value }));
+                        setWindowStartDraft(null);
+                      }}
+                      placeholder="20:00"
+                      placeholderTextColor="rgba(190,180,162,0.38)"
+                      style={[styles.settingInput, styles.settingTimeInput]}
+                    />
+                    <Text style={styles.settingTimeRangeTilde}>〜</Text>
+                    <TextInput
+                      value={windowEndDraft ?? (ritualConfig.windowEnd || "03:00")}
+                      onChangeText={setWindowEndDraft}
+                      onBlur={() => {
+                        commitClockValue(windowEndDraft ?? ritualConfig.windowEnd, ritualConfig.windowEnd || "03:00", (value) => updateRitualSettings({ windowEnd: value }));
+                        setWindowEndDraft(null);
+                      }}
+                      placeholder="03:00"
+                      placeholderTextColor="rgba(190,180,162,0.38)"
+                      style={[styles.settingInput, styles.settingTimeInput]}
+                    />
+                  </View>
                 </View>
               </View>
             )}
@@ -5113,6 +5377,8 @@ function SettingsModal({
                 sections={privacyPolicySections}
               />
             )}
+            </RiseIn>
+            )}
           </ScrollView>
         </View>
       </SafeAreaView>
@@ -5169,148 +5435,156 @@ function SettingsBase({
   session,
   authLoading,
   onSelect,
-  updateSettings
+  updateSettings,
+  playToken = 0
 }) {
   return (
     <View style={styles.simpleSettingsPage}>
-      <Text style={styles.arcGroupLabel}>人生の所有権</Text>
-      <ArcSettingRow
-        title="所有権ポリシー"
-        body="このデータは、あなたのものです"
-        onPress={() => onSelect("ownershipPolicy")}
-      />
-      <ArcSettingRow
-        title="データエクスポート"
-        body="JSON / Markdownで書き出す"
-        onPress={() => onSelect("ownershipExport")}
-      />
-      <ArcSettingRow
-        title="アーカイブの削除"
-        body="端末内の記録を消去する"
-        onPress={() => onSelect("ownershipDelete")}
-      />
-
-      <Text style={[styles.arcGroupLabel, styles.arcGroupLabelSpaced]}>未来への継承</Text>
-      <ArcSettingRow
-        title="継承先の管理"
-        body="信頼できる連絡先を登録する"
-        onPress={() => onSelect("inheritanceContacts")}
-      />
-      <ArcSettingRow
-        title="未設定時のデフォルト処理"
-        body="完全削除、または継承先へ移管"
-        onPress={() => onSelect("inheritanceDefault")}
-      />
-      <ArcSettingRow
-        title="アクセス権の予約公開"
-        body="時間と相手を指定して公開する"
-        onPress={() => onSelect("inheritanceDisclosure")}
-      />
-
-      <Text style={[styles.arcGroupLabel, styles.arcGroupLabelSpaced]}>聖域のセキュリティ</Text>
-      <ArcSettingRow
-        title="暗号化ステータス"
-        body="あなた以外には読めない構造"
-        onPress={() => onSelect("securityEncryption")}
-      />
-      <ArcSettingRow
-        title="リカバリーキー"
-        body="緊急時の復旧手段"
-        onPress={() => onSelect("securityRecovery")}
-      />
-      <ArcSettingRow
-        title="緊急連絡先（証人）"
-        body="復旧の際の証人を登録する"
-        onPress={() => onSelect("securityWitness")}
-      />
-
-      <Text style={[styles.arcGroupLabel, styles.arcGroupLabelSpaced]}>アーカイブの質</Text>
-      <ArcSettingRow
-        title="Niloの対話スタイル"
-        body="寄り添い方のトーン"
-        onPress={() => onSelect("archiveStyle")}
-      />
-      <ArcSettingRow
-        title="振り返り頻度"
-        body="毎日から季節ごとまで、あなたのペースで"
-        onPress={() => onSelect("archiveFrequency")}
-      />
-      <ArcSettingRow
-        title="要約スタイル"
-        body="過去の自分と出会うときの、まとめ方"
-        onPress={() => onSelect("archiveSummary")}
-      />
-      <ArcSettingRow
-        title="通知のトーン"
-        body="静かな促しか、積極的なリマインドか"
-        onPress={() => onSelect("archiveTone")}
-      />
-
-      <Text style={[styles.arcGroupLabel, styles.arcGroupLabelSpaced]}>アプリ設定</Text>
-      <ArcSettingRow
-        title="ニロの灯り"
-        body="そばにいる、ひとつの光"
-        toggle={!!settings.bgmEnabled}
-        onPress={() => updateSettings({ bgmEnabled: !settings.bgmEnabled })}
-      />
-      <ArcSettingRow
-        title="夜のささやき"
-        body="そっと問いが灯る時刻"
-        value={settings.notificationTime || "23:00"}
-        onPress={() => onSelect("notifications")}
-      />
-      <ArcSettingRow
-        title="夜の対話"
-        body="質問の数と、終わり方"
-        onPress={() => onSelect("ritual")}
-      />
-      <ArcSettingRow
-        title="サウンド"
-        body="曲の選択と音量"
-        onPress={() => onSelect("bgm")}
-      />
-      <ArcSettingRow
-        title="この場所を守る"
-        body="Face IDでロックする"
-        toggle={settings.security?.lockEnabled !== false}
-        onPress={() => updateSettings({ security: { ...(settings.security || {}), lockEnabled: settings.security?.lockEnabled === false } })}
-      />
-      <ArcSettingRow
-        title="書体の大きさ"
-        value={{ small: "小", standard: "標準", large: "大" }[settings.fontScale || "standard"]}
-        onPress={() => onSelect("language")}
-      />
-      <ArcSettingRow
-        title="記録を書き出す"
-        onPress={() => onSelect("data")}
-      />
-      <ArcSettingRow
-        title="ARC について"
-        onPress={() => onSelect("terms")}
-      />
-      <ArcSettingRow
-        title="プライバシーポリシー"
-        onPress={() => onSelect("privacyPolicy")}
-      />
-
-      <Text style={[styles.arcGroupLabel, styles.arcGroupLabelSpaced]}>アカウント</Text>
-      <ArcSettingRow
-        title="プロフィール"
-        body="名前と、始まりの日"
-        onPress={() => onSelect("profile")}
-      />
-      <ArcSettingRow
-        title="データ同期"
-        body={authLoading ? "確認中" : session ? "接続済み" : "未接続"}
-        onPress={() => onSelect("sync")}
-      />
-      {!!session && (
+      <ArcSettingGroup label="人生の所有権" index={0} playToken={playToken}>
         <ArcSettingRow
-          title="ログアウト"
-          body="記録は端末に残ります"
-          onPress={() => onSelect("logout")}
+          title="所有権ポリシー"
+          body="このデータは、あなたのものです"
+          onPress={() => onSelect("ownershipPolicy")}
         />
-      )}
+        <ArcSettingRow
+          title="データエクスポート"
+          body="JSON / Markdownで書き出す"
+          onPress={() => onSelect("ownershipExport")}
+        />
+        <ArcSettingRow
+          title="アーカイブの削除"
+          body="端末内の記録を消去する"
+          onPress={() => onSelect("ownershipDelete")}
+        />
+      </ArcSettingGroup>
+
+      <ArcSettingGroup label="未来への継承" index={1} playToken={playToken}>
+        <ArcSettingRow
+          title="継承先の管理"
+          body="信頼できる連絡先を登録する"
+          onPress={() => onSelect("inheritanceContacts")}
+        />
+        <ArcSettingRow
+          title="未設定時のデフォルト処理"
+          body="完全削除、または継承先へ移管"
+          onPress={() => onSelect("inheritanceDefault")}
+        />
+        <ArcSettingRow
+          title="アクセス権の予約公開"
+          body="時間と相手を指定して公開する"
+          onPress={() => onSelect("inheritanceDisclosure")}
+        />
+      </ArcSettingGroup>
+
+      <ArcSettingGroup label="聖域のセキュリティ" index={2} playToken={playToken}>
+        <ArcSettingRow
+          title="暗号化ステータス"
+          body="あなた以外には読めない構造"
+          onPress={() => onSelect("securityEncryption")}
+        />
+        <ArcSettingRow
+          title="リカバリーキー"
+          body="緊急時の復旧手段"
+          onPress={() => onSelect("securityRecovery")}
+        />
+        <ArcSettingRow
+          title="緊急連絡先（証人）"
+          body="復旧の際の証人を登録する"
+          onPress={() => onSelect("securityWitness")}
+        />
+      </ArcSettingGroup>
+
+      <ArcSettingGroup label="アーカイブの質" index={3} playToken={playToken}>
+        <ArcSettingRow
+          title="Niloの対話スタイル"
+          body="寄り添い方のトーン"
+          onPress={() => onSelect("archiveStyle")}
+        />
+        <ArcSettingRow
+          title="振り返り頻度"
+          body="毎日から季節ごとまで、あなたのペースで"
+          onPress={() => onSelect("archiveFrequency")}
+        />
+        <ArcSettingRow
+          title="要約スタイル"
+          body="過去の自分と出会うときの、まとめ方"
+          onPress={() => onSelect("archiveSummary")}
+        />
+        <ArcSettingRow
+          title="通知のトーン"
+          body="静かな促しか、積極的なリマインドか"
+          onPress={() => onSelect("archiveTone")}
+        />
+      </ArcSettingGroup>
+
+      <ArcSettingGroup label="アプリ設定" index={4} playToken={playToken}>
+        <ArcSettingRow
+          title="ニロの灯り"
+          body="そばにいる、ひとつの光"
+          toggle={!!settings.bgmEnabled}
+          onPress={() => updateSettings({ bgmEnabled: !settings.bgmEnabled })}
+        />
+        <ArcSettingRow
+          title="夜のささやき"
+          body="そっと問いが灯る時刻"
+          value={settings.notificationTime || "23:00"}
+          onPress={() => onSelect("notifications")}
+        />
+        <ArcSettingRow
+          title="夜の対話"
+          body="質問の数と、終わり方"
+          onPress={() => onSelect("ritual")}
+        />
+        <ArcSettingRow
+          title="サウンド"
+          body="曲の選択と音量"
+          onPress={() => onSelect("bgm")}
+        />
+        <ArcSettingRow
+          title="この場所を守る"
+          body="Face IDでロックする"
+          toggle={settings.security?.lockEnabled !== false}
+          onPress={() => updateSettings({ security: { ...(settings.security || {}), lockEnabled: settings.security?.lockEnabled === false } })}
+        />
+        <ArcSettingRow
+          title="書体の大きさ"
+          value={{ small: "小", standard: "標準", large: "大" }[settings.fontScale || "standard"]}
+          onPress={() => onSelect("language")}
+        />
+        <ArcSettingRow
+          title="記録を書き出す"
+          onPress={() => onSelect("data")}
+        />
+        <ArcSettingRow
+          title="ARC について"
+          onPress={() => onSelect("terms")}
+        />
+        <ArcSettingRow
+          title="プライバシーポリシー"
+          onPress={() => onSelect("privacyPolicy")}
+        />
+      </ArcSettingGroup>
+
+      <ArcSettingGroup label="アカウント" index={5} playToken={playToken}>
+        <ArcSettingRow
+          title="プロフィール"
+          body="名前と、始まりの日"
+          onPress={() => onSelect("profile")}
+        />
+        <ArcSettingRow
+          title="データ同期"
+          body={authLoading ? "確認中" : session ? "接続済み" : "未接続"}
+          onPress={() => onSelect("sync")}
+        />
+        {!!session && (
+          <ArcSettingRow
+            title="ログアウト"
+            body="記録は端末に残ります"
+            onPress={() => onSelect("logout")}
+          />
+        )}
+      </ArcSettingGroup>
+
       <View style={styles.settingsWordmark}>
         <Text style={styles.settingsWordmarkText}>A R C</Text>
         <Text style={styles.settingsVersion}>VERSION 1.0 ・ 過ぎゆく日々に、消えない意味を。</Text>
@@ -5320,10 +5594,23 @@ function SettingsBase({
 
 }
 
-function ArcSettingRow({ title, body, value, toggle, onPress }) {
+// ルート一覧のひとまとまり。ラベル+淡い面のカードで束ね、グループ単位で静かに入場する。
+function ArcSettingGroup({ label, index = 0, playToken = 0, children }) {
+  const items = React.Children.toArray(children);
+  return (
+    <RiseIn index={index} playToken={playToken} duration={500} style={styles.arcSettingGroup}>
+      <Text style={styles.arcGroupLabel}>{label}</Text>
+      <View style={styles.arcSettingGroupCard}>
+        {items.map((child, i) => React.cloneElement(child, { last: i === items.length - 1 }))}
+      </View>
+    </RiseIn>
+  );
+}
+
+function ArcSettingRow({ title, body, value, toggle, onPress, last = false }) {
   const hasToggle = typeof toggle === "boolean";
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.arcSettingRow, pressed && styles.touchPressedSubtle]}>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.arcSettingRow, last && styles.arcSettingRowLast, pressed && styles.touchPressedSubtle]}>
       <View style={styles.arcSettingCopy}>
         <Text style={styles.arcSettingTitle}>{title}</Text>
         {!!body && <Text style={styles.arcSettingBody}>{body}</Text>}
@@ -5456,6 +5743,18 @@ function SettingsIcon({ id, active = false, locked = false }) {
     );
   }
 
+  if (id === "policy") {
+    // 封をした手紙: 継承やポリシーなど「託す約束」を表す。
+    return (
+      <View style={styles.settingsIconCanvas}>
+        <View style={[boxStyle, styles.settingsIconPolicyBox]} />
+        <View style={[lineStyle, styles.settingsIconPolicyFoldL]} />
+        <View style={[lineStyle, styles.settingsIconPolicyFoldR]} />
+        <View style={[dotStyle, styles.settingsIconPolicyDot]} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.settingsIconCanvas}>
       <View style={[boxStyle, styles.settingsIconDocument]} />
@@ -5474,8 +5773,10 @@ function SettingToggleRow({ title, body, value, onPress }) {
           <Text style={styles.settingValue}>{title}</Text>
           <Text style={styles.mutedText}>{body}</Text>
         </View>
-        <Pressable onPress={onPress} style={({ pressed }) => [styles.togglePill, value && styles.togglePillOn, pressed && styles.touchPressedTight]}>
-          <Text style={[styles.toggleText, value && styles.toggleTextOn]}>{value ? "ON" : "OFF"}</Text>
+        <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.touchPressedTight]}>
+          <View style={[styles.arcSwitch, value && styles.arcSwitchOn]}>
+            <View style={[styles.arcSwitchKnob, value && styles.arcSwitchKnobOn]} />
+          </View>
         </Pressable>
       </View>
     </View>
@@ -5514,7 +5815,7 @@ function getJournalTimelineEntries(journal) {
 // only period/observation/people/emotions — every richer element renders only
 // when its data exists, so a sparse chapter stays quiet instead of empty.
 function getChapterPages(chapters) {
-  if (!chapters?.length) return demoChapters;
+  if (!chapters?.length) return [...demoChapters].reverse();
   const total = chapters.length;
   return chapters.map((chapter, index) => ({
     id: chapter.id || `chapter-${index}`,
@@ -5535,7 +5836,7 @@ function getChapterPages(chapters) {
     figures: chapter.figures || chapter.people || [],
     niloLetter: chapter.niloLetter || "",
     stats: chapter.stats
-  }));
+  })).reverse();
 }
 
 function toJapaneseMonthDay(value) {
@@ -5907,6 +6208,10 @@ const baseStyleDefs = ({
     height: "100%",
     opacity: 0.92,
     width: "100%"
+  },
+  floatingOrbLayer: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: "hidden"
   },
   scrim: {
     ...StyleSheet.absoluteFillObject,
@@ -8115,6 +8420,33 @@ const baseStyleDefs = ({
     top: 13,
     width: 5
   },
+  settingsIconPolicyBox: {
+    borderRadius: 4,
+    height: 12,
+    left: 4,
+    top: 6,
+    width: 16
+  },
+  settingsIconPolicyFoldL: {
+    height: 1.5,
+    left: 4.5,
+    top: 9.5,
+    transform: [{ rotate: "24deg" }],
+    width: 8
+  },
+  settingsIconPolicyFoldR: {
+    height: 1.5,
+    left: 11.5,
+    top: 9.5,
+    transform: [{ rotate: "-24deg" }],
+    width: 8
+  },
+  settingsIconPolicyDot: {
+    height: 3,
+    left: 10.5,
+    top: 12.5,
+    width: 3
+  },
   baseTextDisabled: {
     color: "rgba(255,255,255,0.34)"
   },
@@ -8644,6 +8976,13 @@ const baseStyleDefs = ({
     position: "absolute",
     right: "-18%"
   },
+  upperGlow: {
+    height: "30%",
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0
+  },
   header: {
     alignItems: "center",
     flexDirection: "row",
@@ -8734,6 +9073,80 @@ const baseStyleDefs = ({
     position: "absolute",
     top: 15,
     width: 2.6
+  },
+  notificationBellDot: {
+    backgroundColor: "#E8B25E",
+    borderRadius: 999,
+    height: 7,
+    position: "absolute",
+    right: 6,
+    shadowColor: "#E8B25E",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7,
+    shadowRadius: 4,
+    top: 6,
+    width: 7
+  },
+  notificationRow: {
+    backgroundColor: "rgba(46,36,26,0.42)",
+    borderColor: "rgba(217,168,108,0.14)",
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 12,
+    overflow: "hidden",
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    position: "relative"
+  },
+  notificationRowUnread: {
+    borderColor: "rgba(217,168,108,0.34)"
+  },
+  notificationRowDot: {
+    backgroundColor: "#E8B25E",
+    borderRadius: 999,
+    height: 6,
+    position: "absolute",
+    right: 18,
+    top: 20,
+    width: 6
+  },
+  notificationRowTag: {
+    color: "rgba(232,200,150,0.7)",
+    fontFamily: fontSerifEnMedium,
+    fontSize: 10,
+    letterSpacing: 2,
+    marginBottom: 8
+  },
+  notificationRowTitle: {
+    color: "#E8E2D6",
+    fontFamily: fontSerifJa,
+    fontSize: 15,
+    letterSpacing: 0.3,
+    lineHeight: 24
+  },
+  notificationRowBody: {
+    color: "rgba(232,226,214,0.6)",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    letterSpacing: 0.2,
+    lineHeight: 21,
+    marginTop: 6
+  },
+  notificationRowDate: {
+    color: "rgba(205,176,134,0.5)",
+    fontFamily: fontSerifJa,
+    fontSize: 11,
+    letterSpacing: 0.4,
+    marginTop: 10
+  },
+  notificationEmptyNote: {
+    color: "rgba(190,180,162,0.5)",
+    fontFamily: fontSerifJa,
+    fontSize: 14,
+    letterSpacing: 0.3,
+    lineHeight: 24,
+    marginTop: 8,
+    textAlign: "center"
   },
   settingsSunGlyph: {
     height: 19,
@@ -10080,9 +10493,12 @@ const baseStyleDefs = ({
     borderBottomWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
-    minHeight: 80,
+    minHeight: 72,
     outlineStyle: "none",
-    paddingVertical: 20
+    paddingVertical: 18
+  },
+  arcSettingRowLast: {
+    borderBottomWidth: 0
   },
   arcSettingCopy: {
     flex: 1,
@@ -10105,6 +10521,7 @@ const baseStyleDefs = ({
   },
   arcSettingValueWrap: {
     alignItems: "center",
+    alignSelf: "center",
     flexDirection: "row",
     gap: 10
   },
@@ -10115,8 +10532,9 @@ const baseStyleDefs = ({
   },
   arcSettingChevron: {
     color: "rgba(238,224,202,0.22)",
-    fontSize: 22,
-    lineHeight: 24
+    fontSize: 20,
+    lineHeight: 20,
+    marginTop: -2
   },
   arcSwitch: {
     alignItems: "center",
@@ -10197,6 +10615,51 @@ const baseStyleDefs = ({
     fontSize: 10,
     letterSpacing: 2.2,
     marginTop: 8
+  },
+  settingsDetailStack: {
+    gap: 24
+  },
+  arcSettingGroup: {
+    gap: 10,
+    marginBottom: 30
+  },
+  arcSettingGroupCard: {
+    backgroundColor: "rgba(255,254,244,0.028)",
+    borderColor: "rgba(217,168,108,0.10)",
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: "hidden",
+    paddingHorizontal: 18
+  },
+  settingTimeCaption: {
+    color: "rgba(190,180,162,0.5)",
+    fontFamily: fontSerifJa,
+    fontSize: 12,
+    letterSpacing: 0.4,
+    lineHeight: 18,
+    marginTop: 2
+  },
+  settingTimeInput: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255,254,244,0.045)",
+    borderColor: "rgba(217,168,108,0.22)",
+    color: "#F6ECDB",
+    fontFamily: fontSerifEnMedium,
+    fontSize: 17,
+    letterSpacing: 3,
+    maxWidth: 140,
+    minWidth: 108,
+    textAlign: "center"
+  },
+  settingTimeRangeRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12
+  },
+  settingTimeRangeTilde: {
+    color: "rgba(222,206,180,0.45)",
+    fontFamily: fontSerifJa,
+    fontSize: 14
   },
   webPhoneFrameOuter: {
     alignItems: "center",

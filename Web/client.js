@@ -459,7 +459,7 @@ function renderDiary() {
 function renderChapter() {
   dom.chapterList.innerHTML = chapters.map((chapter) => `
     <article class="chapter-item ${chapter.current ? "" : "is-past"}">
-      <button type="button" data-action="${chapter.lifeQuest ? "open-lifequest" : "noop"}">
+      <button type="button" ${chapter.lifeQuest ? 'data-action="open-lifequest"' : 'aria-disabled="true" tabindex="-1"'}>
         <span class="chapter-item-top">
           <span>${escapeHtml(chapter.number)}</span>
           <span>${escapeHtml(chapter.era)}</span>
