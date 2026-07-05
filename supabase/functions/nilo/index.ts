@@ -2,6 +2,120 @@ const primaryGeminiModel = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
 const fallbackGeminiModel = Deno.env.get("GEMINI_FALLBACK_MODEL") || "gemini-2.5-flash";
 const geminiModels = Array.from(new Set([primaryGeminiModel, fallbackGeminiModel].filter(Boolean)));
 
+// ARCがサポートする6言語。Nilo自身の対話生成もユーザーの選択言語に合わせる。
+const SUPPORTED_LANGUAGES = ["ja", "en", "fr", "de", "zh", "ko"] as const;
+type SupportedLanguage = typeof SUPPORTED_LANGUAGES[number];
+
+function normalizeLanguage(value: unknown): SupportedLanguage {
+  const lang = String(value || "ja");
+  return (SUPPORTED_LANGUAGES as readonly string[]).includes(lang) ? (lang as SupportedLanguage) : "ja";
+}
+
+// Geminiへの出力言語指示に使うフルネーム(モデルが指示を誤解しないよう英語表記で渡す)。
+const LANGUAGE_NAMES_FOR_PROMPT: Record<SupportedLanguage, string> = {
+  ja: "Japanese (日本語)",
+  en: "English",
+  fr: "French (Français)",
+  de: "German (Deutsch)",
+  zh: "Simplified Chinese (简体中文)",
+  ko: "Korean (한국어)"
+};
+
+// ユーザーに見えるフォールバック文言・エラーメッセージのみを言語ごとに用意する。
+// Gemini自体へのメタ指示(日本語)は翻訳しない — LLMは指示言語に関わらず出力言語を切り替えられるため。
+const STRINGS: Record<SupportedLanguage, Record<string, string>> = {
+  ja: {
+    defaultTitle: "今夜の記録",
+    defaultSummaryLine: "今日の言葉を短く残しました。",
+    defaultMoodLabel: "記録済み",
+    defaultNiloMessage: "ここまでで、今夜の記録にしましょう。",
+    defaultClosingMessage: "今夜の記録を、静かに残しました。",
+    defaultTag: "Night Ritual",
+    emptyRitualLog: "Night Ritualの会話ログが空です。",
+    emptyChapterMemories: "章にする記憶がまだありません。",
+    unknownRoute: "Unknown Nilo route.",
+    geminiKeyMissing: "GEMINI_API_KEY is not set.",
+    geminiNotJson: "Gemini response was not JSON.",
+    geminiRequestFailed: "Gemini API request failed.",
+    functionError: "Nilo function error."
+  },
+  en: {
+    defaultTitle: "Tonight's record",
+    defaultSummaryLine: "Kept a short trace of today's words.",
+    defaultMoodLabel: "Recorded",
+    defaultNiloMessage: "Let's make this tonight's record, then.",
+    defaultClosingMessage: "Tonight's record has been quietly kept.",
+    defaultTag: "Night Ritual",
+    emptyRitualLog: "The Night Ritual conversation log is empty.",
+    emptyChapterMemories: "There are no memories yet to form a chapter.",
+    unknownRoute: "Unknown Nilo route.",
+    geminiKeyMissing: "GEMINI_API_KEY is not set.",
+    geminiNotJson: "Gemini response was not JSON.",
+    geminiRequestFailed: "Gemini API request failed.",
+    functionError: "Nilo function error."
+  },
+  fr: {
+    defaultTitle: "L'enregistrement de ce soir",
+    defaultSummaryLine: "Une courte trace des mots d'aujourd'hui a été gardée.",
+    defaultMoodLabel: "Enregistré",
+    defaultNiloMessage: "Faisons de ceci l'enregistrement de ce soir.",
+    defaultClosingMessage: "L'enregistrement de ce soir a été gardé, tranquillement.",
+    defaultTag: "Night Ritual",
+    emptyRitualLog: "Le journal de conversation du Night Ritual est vide.",
+    emptyChapterMemories: "Il n'y a pas encore de souvenirs pour former un chapitre.",
+    unknownRoute: "Unknown Nilo route.",
+    geminiKeyMissing: "GEMINI_API_KEY is not set.",
+    geminiNotJson: "Gemini response was not JSON.",
+    geminiRequestFailed: "Gemini API request failed.",
+    functionError: "Nilo function error."
+  },
+  de: {
+    defaultTitle: "Die Aufzeichnung von heute Nacht",
+    defaultSummaryLine: "Eine kurze Spur der heutigen Worte wurde bewahrt.",
+    defaultMoodLabel: "Festgehalten",
+    defaultNiloMessage: "Lass uns das zur heutigen Aufzeichnung machen.",
+    defaultClosingMessage: "Die Aufzeichnung von heute Nacht wurde still bewahrt.",
+    defaultTag: "Night Ritual",
+    emptyRitualLog: "Das Gesprächsprotokoll des Night Ritual ist leer.",
+    emptyChapterMemories: "Es gibt noch keine Erinnerungen für ein Kapitel.",
+    unknownRoute: "Unknown Nilo route.",
+    geminiKeyMissing: "GEMINI_API_KEY is not set.",
+    geminiNotJson: "Gemini response was not JSON.",
+    geminiRequestFailed: "Gemini API request failed.",
+    functionError: "Nilo function error."
+  },
+  zh: {
+    defaultTitle: "今晚的记录",
+    defaultSummaryLine: "简短地留下了今天的话语。",
+    defaultMoodLabel: "已记录",
+    defaultNiloMessage: "就把这里当作今晚的记录吧。",
+    defaultClosingMessage: "今晚的记录，已静静保存。",
+    defaultTag: "Night Ritual",
+    emptyRitualLog: "Night Ritual的对话记录为空。",
+    emptyChapterMemories: "还没有可以组成章节的记忆。",
+    unknownRoute: "Unknown Nilo route.",
+    geminiKeyMissing: "GEMINI_API_KEY is not set.",
+    geminiNotJson: "Gemini response was not JSON.",
+    geminiRequestFailed: "Gemini API request failed.",
+    functionError: "Nilo function error."
+  },
+  ko: {
+    defaultTitle: "오늘 밤의 기록",
+    defaultSummaryLine: "오늘의 말을 짧게 남겼습니다.",
+    defaultMoodLabel: "기록됨",
+    defaultNiloMessage: "여기까지로 오늘 밤의 기록으로 할게요.",
+    defaultClosingMessage: "오늘 밤의 기록을, 조용히 남겼습니다.",
+    defaultTag: "Night Ritual",
+    emptyRitualLog: "Night Ritual의 대화 기록이 비어 있습니다.",
+    emptyChapterMemories: "아직 챕터로 만들 기억이 없습니다.",
+    unknownRoute: "Unknown Nilo route.",
+    geminiKeyMissing: "GEMINI_API_KEY is not set.",
+    geminiNotJson: "Gemini response was not JSON.",
+    geminiRequestFailed: "Gemini API request failed.",
+    functionError: "Nilo function error."
+  }
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",

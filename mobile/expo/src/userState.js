@@ -7,7 +7,7 @@ export function collectSyncedState({
   journal, memories, chapters, chapterNotes, profile, settings,
   questProposals, explorations, declinedQuestThemes, questScanDateKey, notifications,
   onboardingComplete
-}) {
+} = {}) {
   return {
     journal, memories, chapters, chapterNotes, profile, settings,
     questProposals, explorations, declinedQuestThemes, questScanDateKey, notifications,

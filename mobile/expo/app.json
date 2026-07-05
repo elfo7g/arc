@@ -28,7 +28,8 @@
     },
     "plugins": [
       "expo-web-browser",
-      "expo-audio"
+      "expo-audio",
+      "@sentry/react-native"
     ]
   }
 }

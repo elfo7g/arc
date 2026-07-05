@@ -7,8 +7,10 @@ Expo Go app for Arc. This is the primary client in the repo.
 ```powershell
 cd C:\Users\g048fnu\Documents\The_Arc\mobile\expo
 npm install
-npx expo start
+npm start
 ```
+
+`npm start` and `npx expo start --go` force the QR code to target Expo Go. Because this project also has `expo-dev-client` installed, plain `expo start` can produce a development-build QR code that Expo Go cannot open. Use `npm run start:dev-client` only when launching a custom development build.
 
 Scan the QR code with Expo Go.
 
@@ -22,6 +24,8 @@ Set these public Expo variables in `mobile/expo/.env`:
 ```text
 EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your_publishable_or_anon_key
+EXPO_PUBLIC_SENTRY_DSN=your_sentry_dsn
+EXPO_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=0
 ```
 
 Gemini stays server-side in Supabase:
@@ -31,6 +35,14 @@ cd C:\Users\g048fnu\Documents\The_Arc
 supabase secrets set GEMINI_API_KEY=your_gemini_api_key_here
 supabase functions deploy nilo
 ```
+
+## Sentry
+
+Sentry is initialized from `src/sentry.js` before the Expo root component is registered. It stays disabled until `EXPO_PUBLIC_SENTRY_DSN` is set, so Expo Go remains usable without a Sentry project configured.
+
+The default setup is intentionally privacy-conservative for Arc: Sentry events drop breadcrumbs, request data, and user data before sending. Keep `EXPO_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=0` unless performance tracing is explicitly needed.
+
+For production builds, configure Sentry source map upload with your Sentry organization/project and auth token in the build environment. Do not commit Sentry auth tokens.
 
 ## Current Scope
 

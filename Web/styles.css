@@ -447,6 +447,67 @@ body:not([data-mode="tab"]) .tab-bar {
   margin-top: 7px;
 }
 
+.quest-screen {
+  background:
+    radial-gradient(88% 56% at 22% 7%, rgba(78, 112, 105, 0.22), transparent 58%),
+    radial-gradient(118% 64% at 50% 10%, #1a1714 0%, #12100e 54%, #0b0908 100%);
+}
+
+.quest-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  min-height: 96px;
+  overflow: hidden;
+}
+
+.quest-head::before {
+  position: absolute;
+  top: -24px;
+  bottom: -10px;
+  left: -94px;
+  width: 82px;
+  content: "";
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(196, 218, 207, 0.24), rgba(217, 168, 108, 0.08), transparent);
+  transform: rotate(-12deg);
+  animation: questHeadSweep 9.6s ease-in-out infinite;
+}
+
+.quest-head-main {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  padding-right: 16px;
+}
+
+.quest-field-pill {
+  position: relative;
+  z-index: 1;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid rgba(119, 149, 143, 0.22);
+  border-radius: 8px;
+  color: rgba(200, 207, 194, 0.58);
+  font-family: var(--roman);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+}
+
+.quest-head > strong {
+  position: absolute;
+  top: 42px;
+  right: -3px;
+  color: rgba(119, 149, 143, 0.055);
+  font-family: var(--roman);
+  font-size: 58px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  pointer-events: none;
+  animation: questWatermarkDrift 8.8s ease-in-out infinite;
+}
+
 .tab-scroll {
   position: absolute;
   left: 0;
@@ -493,7 +554,11 @@ body:not([data-mode="tab"]) .tab-bar {
 }
 
 .quest-scroll {
-  top: 156px;
+  top: 154px;
+}
+
+.quest-scroll .section-rule {
+  margin-top: 10px;
 }
 
 .quest-cards {
@@ -571,7 +636,7 @@ body:not([data-mode="tab"]) .tab-bar {
 .lit-question-list {
   position: relative;
   margin-top: 16px;
-  padding-left: 22px;
+  padding-left: 0;
 }
 
 .lit-question-list::before,
@@ -587,6 +652,10 @@ body:not([data-mode="tab"]) .tab-bar {
   background: linear-gradient(180deg, rgba(217, 168, 108, 0.42), rgba(217, 168, 108, 0.08));
 }
 
+.lit-question-list::before {
+  display: none;
+}
+
 .lit-item,
 .diary-item,
 .chapter-item,
@@ -600,7 +669,46 @@ body:not([data-mode="tab"]) .tab-bar {
 }
 
 .lit-item {
-  padding: 13px 0;
+  overflow: hidden;
+  padding: 14px 0 16px;
+  border-radius: 8px;
+  animation: questItemIn 0.58s cubic-bezier(0.2, 0.72, 0.28, 1) both;
+  animation-delay: calc(var(--quest-index, 0) * 60ms);
+  transition:
+    border-color 0.25s ease,
+    background 0.25s ease,
+    box-shadow 0.25s ease,
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.lit-item.is-current {
+  margin: 2px 0 8px;
+  padding: 16px 16px 18px;
+  border: 1px solid rgba(119, 149, 143, 0.22);
+  background:
+    linear-gradient(135deg, rgba(119, 149, 143, 0.12), rgba(34, 29, 25, 0.7) 62%, rgba(217, 168, 108, 0.06)),
+    rgba(20, 24, 22, 0.24);
+  box-shadow: 0 18px 30px rgba(0, 0, 0, 0.22);
+}
+
+.lit-item.is-current::after {
+  position: absolute;
+  top: -30px;
+  bottom: -30px;
+  left: -96px;
+  z-index: 0;
+  width: 76px;
+  content: "";
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(246, 239, 228, 0.22), rgba(119, 149, 143, 0.1), transparent);
+  transform: rotate(-14deg);
+  animation: questCurrentSheen 8.8s ease-in-out infinite;
+}
+
+.lit-item.is-current > * {
+  position: relative;
+  z-index: 1;
 }
 
 .lit-item::before,
@@ -618,6 +726,10 @@ body:not([data-mode="tab"]) .tab-bar {
   box-shadow: 0 0 9px 2px rgba(217, 168, 108, 0.4);
 }
 
+.lit-item::before {
+  display: none;
+}
+
 .lit-meta,
 .diary-meta {
   display: flex;
@@ -628,11 +740,58 @@ body:not([data-mode="tab"]) .tab-bar {
   font-size: 10px;
 }
 
+.lit-meta {
+  color: rgba(196, 218, 207, 0.74);
+}
+
+.lit-meta em {
+  padding: 2px 7px;
+  border: 1px solid rgba(217, 168, 108, 0.16);
+  border-radius: 999px;
+  color: rgba(222, 190, 144, 0.7);
+  font-family: var(--roman);
+  font-size: 9px;
+  font-style: normal;
+}
+
+.lit-node {
+  position: absolute;
+  left: -30px;
+  top: 17px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.lit-node::before,
+.lit-node::after {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  border-radius: 999px;
+  content: "";
+  transform: translate(-50%, -50%);
+}
+
+.lit-node::before {
+  width: 22px;
+  height: 22px;
+  background: rgba(119, 149, 143, 0.18);
+  animation: questNodePulse 4.2s ease-in-out infinite;
+}
+
+.lit-node::after {
+  width: 7px;
+  height: 7px;
+  background: rgba(196, 218, 207, 0.9);
+  box-shadow: 0 0 8px rgba(196, 218, 207, 0.42);
+}
+
 .lit-item strong {
   display: block;
-  margin-top: 6px;
-  color: rgba(228, 222, 210, 0.82);
-  font-size: 15px;
+  margin-top: 8px;
+  color: rgba(232, 226, 214, 0.9);
+  font-size: 16px;
   font-weight: 400;
   line-height: 1.6;
 }
@@ -647,8 +806,33 @@ body:not([data-mode="tab"]) .tab-bar {
   white-space: nowrap;
 }
 
+.lit-item:focus-visible {
+  outline: 1px solid rgba(217, 168, 108, 0.34);
+  outline-offset: 3px;
+}
+
+.lit-item:hover,
+.lit-item:focus-visible {
+  border-color: rgba(119, 149, 143, 0.28);
+  transform: translateY(-1px);
+}
+
+.lit-item:active {
+  transform: translateY(1px) scale(0.992);
+}
+
+.lit-empty {
+  padding: 18px 0;
+  color: rgba(205, 191, 168, 0.5);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  line-height: 1.8;
+}
+
 .diary-screen {
-  background: radial-gradient(120% 60% at 50% 8%, #1e1812 0%, #15110e 52%, #0d0a08 100%);
+  background:
+    radial-gradient(90% 54% at 28% 6%, rgba(78, 112, 105, 0.24), transparent 58%),
+    radial-gradient(120% 60% at 50% 8%, #1b1714 0%, #13110f 52%, #0b0908 100%);
 }
 
 .diary-head {
@@ -656,24 +840,25 @@ body:not([data-mode="tab"]) .tab-bar {
   align-items: flex-start;
   justify-content: space-between;
   top: 58px;
+  min-height: 76px;
+  overflow: hidden;
 }
 
-.diary-head span {
-  margin-top: 31px;
-  color: rgba(190, 180, 162, 0.48);
-  font-family: var(--roman);
-  font-size: 12px;
-}
-
-.diary-head strong {
+.diary-head::before {
   position: absolute;
-  top: 38px;
-  right: 2px;
-  color: rgba(217, 168, 108, 0.06);
-  font-size: 58px;
-  font-weight: 500;
-  line-height: 1;
+  top: -22px;
+  bottom: -12px;
+  left: -96px;
+  width: 82px;
+  content: "";
   pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(246, 239, 228, 0.22), rgba(217, 168, 108, 0.07), transparent);
+  transform: rotate(-12deg);
+  animation: diaryHeadSweep 10s ease-in-out infinite;
+}
+
+.diary-scroll {
+  top: 146px;
 }
 
 .diary-list {
@@ -683,11 +868,64 @@ body:not([data-mode="tab"]) .tab-bar {
 
 .diary-list::before {
   left: 4px;
-  background: linear-gradient(180deg, rgba(217, 168, 108, 0.5), rgba(217, 168, 108, 0.14) 55%, rgba(217, 168, 108, 0));
+  width: 2px;
+  background: linear-gradient(180deg, rgba(119, 149, 143, 0.34), rgba(217, 168, 108, 0.16) 64%, rgba(217, 168, 108, 0));
+}
+
+.diary-list::after {
+  position: absolute;
+  top: 8px;
+  left: 3px;
+  width: 4px;
+  height: 58px;
+  border-radius: 999px;
+  content: "";
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(246, 239, 228, 0.58), rgba(119, 149, 143, 0.16), transparent);
+  animation: diaryThreadSweep 8.4s ease-in-out infinite;
 }
 
 .diary-item {
+  overflow: hidden;
   padding: 16px 0 18px;
+  border-radius: 8px;
+  animation: diaryItemIn 0.58s cubic-bezier(0.2, 0.72, 0.28, 1) both;
+  animation-delay: calc(var(--diary-index, 0) * 55ms);
+  transition:
+    border-color 0.25s ease,
+    background 0.25s ease,
+    box-shadow 0.25s ease,
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.diary-item.is-current {
+  margin: 2px 0 8px;
+  padding: 16px 16px 18px;
+  border: 1px solid rgba(119, 149, 143, 0.22);
+  background:
+    linear-gradient(135deg, rgba(119, 149, 143, 0.14), rgba(40, 34, 28, 0.72) 62%, rgba(217, 168, 108, 0.07)),
+    rgba(20, 24, 22, 0.26);
+  box-shadow: 0 18px 30px rgba(0, 0, 0, 0.22);
+}
+
+.diary-item.is-current::after {
+  position: absolute;
+  top: -30px;
+  bottom: -30px;
+  left: -96px;
+  z-index: 0;
+  width: 76px;
+  content: "";
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(246, 239, 228, 0.26), rgba(217, 168, 108, 0.08), transparent);
+  transform: rotate(-14deg);
+  animation: diaryCurrentSheen 9.2s ease-in-out infinite;
+}
+
+.diary-item.is-current > * {
+  position: relative;
+  z-index: 1;
 }
 
 .diary-item::before {
@@ -697,35 +935,60 @@ body:not([data-mode="tab"]) .tab-bar {
   height: 8px;
 }
 
-.diary-item.is-old::before {
-  width: 6px;
-  height: 6px;
-  background: rgba(195, 176, 148, 0.42);
-  box-shadow: none;
+.diary-item:focus-visible {
+  outline: 1px solid rgba(217, 168, 108, 0.36);
+  outline-offset: 3px;
+}
+
+.diary-item:hover,
+.diary-item:focus-visible {
+  border-color: rgba(119, 149, 143, 0.28);
+  transform: translateY(-1px);
+}
+
+.diary-item:active {
+  transform: translateY(1px) scale(0.992);
 }
 
 .diary-meta {
-  color: rgba(232, 200, 150, 0.88);
+  color: rgba(196, 218, 207, 0.76);
   font-size: 12px;
 }
 
 .diary-meta em {
-  color: rgba(232, 200, 150, 0.78);
+  padding: 2px 7px;
+  border: 1px solid rgba(217, 168, 108, 0.16);
+  border-radius: 999px;
+  color: rgba(222, 190, 144, 0.7);
   font-family: var(--roman);
   font-size: 9px;
   font-style: normal;
 }
 
+.diary-item strong {
+  display: block;
+  margin-top: 8px;
+  color: rgba(205, 191, 168, 0.56);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  line-height: 1.55;
+}
+
 .diary-item p {
-  margin-top: 9px;
+  margin-top: 7px;
   color: rgba(236, 230, 218, 0.92);
   font-size: 17px;
   font-weight: 300;
   line-height: 1.75;
 }
 
-.diary-item.is-old p {
-  color: rgba(232, 226, 214, 0.56);
+.diary-empty {
+  padding: 18px 0;
+  color: rgba(205, 191, 168, 0.5);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  line-height: 1.8;
 }
 
 .chapter-screen {
@@ -1721,6 +1984,146 @@ body:not([data-mode="tab"]) .tab-bar {
   50% {
     opacity: 0.9;
     transform: translateX(-50%) scale(1.06);
+  }
+}
+
+@keyframes questHeadSweep {
+  0%,
+  16% {
+    opacity: 0;
+    transform: translateX(0) rotate(-12deg);
+  }
+  42% {
+    opacity: 0.72;
+  }
+  74%,
+  100% {
+    opacity: 0;
+    transform: translateX(390px) rotate(-12deg);
+  }
+}
+
+@keyframes questWatermarkDrift {
+  0%,
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 0.84;
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes questItemIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes questCurrentSheen {
+  0%,
+  18% {
+    opacity: 0;
+    transform: translateX(0) rotate(-14deg);
+  }
+  42% {
+    opacity: 0.82;
+  }
+  74%,
+  100% {
+    opacity: 0;
+    transform: translateX(360px) rotate(-14deg);
+  }
+}
+
+@keyframes questNodePulse {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+  50% {
+    opacity: 0.46;
+    transform: translate(-50%, -50%) scale(1.38);
+  }
+}
+
+@keyframes diaryHeadSweep {
+  0%,
+  16% {
+    opacity: 0;
+    transform: translateX(0) rotate(-12deg);
+  }
+  42% {
+    opacity: 0.72;
+  }
+  74%,
+  100% {
+    opacity: 0;
+    transform: translateX(390px) rotate(-12deg);
+  }
+}
+
+@keyframes diaryWatermarkDrift {
+  0%,
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 0.84;
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes diaryThreadSweep {
+  0%,
+  12% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  28% {
+    opacity: 1;
+  }
+  78% {
+    opacity: 0.42;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(520px);
+  }
+}
+
+@keyframes diaryItemIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes diaryCurrentSheen {
+  0%,
+  18% {
+    opacity: 0;
+    transform: translateX(0) rotate(-14deg);
+  }
+  42% {
+    opacity: 0.84;
+  }
+  74%,
+  100% {
+    opacity: 0;
+    transform: translateX(360px) rotate(-14deg);
   }
 }
 

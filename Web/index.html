@@ -76,9 +76,13 @@
 
             <section id="screen-quest" class="screen quest-screen" data-screen="quest" aria-labelledby="quest-title">
               <div class="ambient-orb quest-orb" aria-hidden="true"></div>
-              <header class="tab-head">
-                <h1 id="quest-title">クエスト</h1>
-                <p>QUEST · Niloが見つけた探求を残す</p>
+              <header class="tab-head quest-head">
+                <div class="quest-head-main">
+                  <h1 id="quest-title">クエスト</h1>
+                  <p>QUEST · Niloが見つけた探求を残す</p>
+                </div>
+                <span class="quest-field-pill">NILO FIELD</span>
+                <strong aria-hidden="true">QUEST</strong>
               </header>
               <div class="tab-scroll quest-scroll" data-scroll>
                 <section class="lit-questions" aria-labelledby="lit-questions-title">
@@ -94,10 +98,8 @@
               <header class="tab-head diary-head">
                 <div>
                   <h1 id="diary-title">日記</h1>
-                  <p class="diary-sub">二つの川が、合流する場所</p>
+                  <p class="diary-sub">これまでの日々</p>
                 </div>
-                <span id="diary-month">JUNE 2026</span>
-                <strong aria-hidden="true">水無月</strong>
               </header>
               <div class="tab-scroll diary-scroll" data-scroll>
                 <div id="diary-list" class="diary-list"></div>

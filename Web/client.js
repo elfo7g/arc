@@ -225,11 +225,6 @@ const dom = {
   statusTime: $("#status-time"),
   litQuestionList: $("#lit-question-list"),
   diaryList: $("#diary-list"),
-  diaryMonth: $("#diary-month"),
-  diaryWatermark: $("#diary-watermark"),
-  diaryRecentCount: $("#diary-recent-count"),
-  diaryArchiveCount: $("#diary-archive-count"),
-  diaryQuestCount: $("#diary-quest-count"),
   chapterList: $("#chapter-list"),
   niloDate: $("#nilo-date"),
   niloQuestion: $("#nilo-question-text"),
@@ -398,29 +393,21 @@ function renderHome() {
 function renderQuest() {
   const questEntries = state.entries.filter((entry) => entry.source === "quest" || entry.questText);
   dom.litQuestionList.innerHTML = questEntries.length
-    ? questEntries.map((entry) => `
-      <button class="lit-item" type="button" data-action="open-entry" data-entry-id="${escapeHtml(entry.id)}">
-        <span class="lit-meta"><span>${escapeHtml(entry.dateLabel || entry.jdate)}</span><span>QUEST</span></span>
+    ? questEntries.map((entry, index) => `
+      <button class="lit-item ${index === 0 ? "is-current" : ""}" style="--quest-index:${index}" type="button" data-action="open-entry" data-entry-id="${escapeHtml(entry.id)}">
+        <span class="lit-node" aria-hidden="true"></span>
+        <span class="lit-meta"><span>${escapeHtml(entry.dateLabel || entry.jdate)}</span><em>QUEST</em></span>
         <strong>${escapeHtml(entry.questText || entry.title || "灯した問い")}</strong>
         <span>${escapeHtml(entry.summary)}</span>
       </button>
     `).join("")
-    : `<div class="lit-item"><strong>最初の問いが、まだ灯る前です。</strong></div>`;
+    : `<div class="lit-empty"><strong>最初の問いが、まだ灯る前です。</strong></div>`;
 }
 
 function renderDiary() {
   const entries = state.entries || [];
-  const recentCount = Math.min(entries.length, 3);
-  const archiveCount = Math.max(0, entries.length - recentCount);
-  const questCount = entries.filter((entry) => entry.source === "quest").length;
-  const now = new Date();
-  dom.diaryMonth.textContent = monthLabel(now);
-  dom.diaryWatermark.textContent = japaneseMonthNames[now.getMonth()];
-  dom.diaryRecentCount.textContent = String(recentCount);
-  dom.diaryArchiveCount.textContent = String(archiveCount);
-  dom.diaryQuestCount.textContent = String(questCount);
   dom.diaryList.innerHTML = entries.length ? entries.map((entry, index) => `
-    <button class="diary-item ${index === 0 ? "is-current" : ""} ${index > 2 ? "is-old" : ""}" type="button" data-action="open-entry" data-entry-id="${escapeHtml(entry.id)}">
+    <button class="diary-item ${index === 0 ? "is-current" : ""}" style="--diary-index:${index}" type="button" data-action="open-entry" data-entry-id="${escapeHtml(entry.id)}">
       <span class="diary-meta">
         <span>${escapeHtml(entry.jdate)}</span>
         ${entry.tonight || entry.dateKey === dateKey() ? "<em>TONIGHT</em>" : ""}
@@ -429,7 +416,7 @@ function renderDiary() {
       <strong>${escapeHtml(entry.title || entry.questText || "静かな記録")}</strong>
       <p>${escapeHtml(entry.summary)}</p>
     </button>
-  `).join("") : `<div class="diary-empty">この二週間は、まだ静かです。</div>`;
+  `).join("") : `<div class="diary-empty">まだ日記はありません。</div>`;
 }
 
 function renderChapter() {

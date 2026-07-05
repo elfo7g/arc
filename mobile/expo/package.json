@@ -4,15 +4,20 @@
   "private": true,
   "main": "index.js",
   "scripts": {
-    "start": "expo start",
-    "ios": "expo start --ios",
-    "android": "expo start --android",
+    "start": "expo start --go",
+    "start:go": "expo start --go",
+    "start:dev-client": "expo start --dev-client",
+    "ios": "expo start --go --ios",
+    "android": "expo start --go --android",
+    "ios:dev-client": "expo start --dev-client --ios",
+    "android:dev-client": "expo start --dev-client --android",
     "web": "expo start --web"
   },
   "dependencies": {
     "@expo-google-fonts/cormorant-garamond": "^0.4.1",
     "@expo-google-fonts/shippori-mincho": "^0.4.1",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@sentry/react-native": "~7.2.0",
     "@supabase/supabase-js": "^2.107.0",
     "crypto-js": "^4.2.0",
     "expo": "~54.0.0",
