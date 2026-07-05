@@ -1,6 +1,14 @@
 const storageKey = "arc.life.archive.v2";
 const tabs = ["home", "quest", "diary", "chapter"];
 
+// Public Supabase project URL + anon key (safe to ship client-side; RLS and
+// the encrypted user_state RPCs are what actually guard data). Nilo runs as
+// a Supabase Edge Function now, so the Web client calls it directly instead
+// of going through a Vercel /api/nilo/* proxy.
+const SUPABASE_URL = "https://fbpczitkbxefjxudcqmq.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZicGN6aXRrYnhlZmp4dWRjcW1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1NzUzNzQsImV4cCI6MjA5NjE1MTM3NH0.D-px_VfX4FRr8yz_OGZSJryeEcZl-Ue587bS5F0GQAU";
+const japaneseMonthNames = ["睦月", "如月", "弥生", "卯月", "皐月", "水無月", "文月", "葉月", "長月", "神無月", "霜月", "師走"];
+
 const seedEntries = [
   {
     id: "entry-2026-06-28-home",
@@ -218,6 +226,10 @@ const dom = {
   litQuestionList: $("#lit-question-list"),
   diaryList: $("#diary-list"),
   diaryMonth: $("#diary-month"),
+  diaryWatermark: $("#diary-watermark"),
+  diaryRecentCount: $("#diary-recent-count"),
+  diaryArchiveCount: $("#diary-archive-count"),
+  diaryQuestCount: $("#diary-quest-count"),
   chapterList: $("#chapter-list"),
   niloDate: $("#nilo-date"),
   niloQuestion: $("#nilo-question-text"),
@@ -397,17 +409,27 @@ function renderQuest() {
 }
 
 function renderDiary() {
-  dom.diaryMonth.textContent = monthLabel(new Date());
-  dom.diaryList.innerHTML = state.entries.map((entry, index) => `
-    <button class="diary-item ${index > 1 ? "is-old" : ""}" type="button" data-action="open-entry" data-entry-id="${escapeHtml(entry.id)}">
+  const entries = state.entries || [];
+  const recentCount = Math.min(entries.length, 3);
+  const archiveCount = Math.max(0, entries.length - recentCount);
+  const questCount = entries.filter((entry) => entry.source === "quest").length;
+  const now = new Date();
+  dom.diaryMonth.textContent = monthLabel(now);
+  dom.diaryWatermark.textContent = japaneseMonthNames[now.getMonth()];
+  dom.diaryRecentCount.textContent = String(recentCount);
+  dom.diaryArchiveCount.textContent = String(archiveCount);
+  dom.diaryQuestCount.textContent = String(questCount);
+  dom.diaryList.innerHTML = entries.length ? entries.map((entry, index) => `
+    <button class="diary-item ${index === 0 ? "is-current" : ""} ${index > 2 ? "is-old" : ""}" type="button" data-action="open-entry" data-entry-id="${escapeHtml(entry.id)}">
       <span class="diary-meta">
         <span>${escapeHtml(entry.jdate)}</span>
         ${entry.tonight || entry.dateKey === dateKey() ? "<em>TONIGHT</em>" : ""}
         ${entry.source === "quest" ? "<em>QUEST</em>" : ""}
       </span>
+      <strong>${escapeHtml(entry.title || entry.questText || "静かな記録")}</strong>
       <p>${escapeHtml(entry.summary)}</p>
     </button>
-  `).join("");
+  `).join("") : `<div class="diary-empty">この二週間は、まだ静かです。</div>`;
 }
 
 function renderChapter() {
@@ -535,10 +557,15 @@ async function submitDialogue(text) {
 }
 
 async function askNilo(forceFinish = false) {
-  const response = await fetch("/api/nilo/night-ritual", {
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/nilo`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": SUPABASE_ANON_KEY,
+      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+    },
     body: JSON.stringify({
+      route: "night-ritual",
       messages: state.dialogue.messages,
       questionCount: state.dialogue.questionCount,
       forceFinish,
