@@ -2,13 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>ArcAPIBaseURL</key>
-	<string>http://localhost:4173</string>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
-	</dict>
+	<key>SupabaseURL</key>
+	<string>https://fbpczitkbxefjxudcqmq.supabase.co</string>
+	<key>SupabaseAnonKey</key>
+	<string>eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZicGN6aXRrYnhlZmp4dWRjcW1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1NzUzNzQsImV4cCI6MjA5NjE1MTM3NH0.D-px_VfX4FRr8yz_OGZSJryeEcZl-Ue587bS5F0GQAU</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>app.arc.nilo.native</string>
+			</array>
+		</dict>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

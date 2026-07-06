@@ -1,56 +1,50 @@
 # Arc iOS
 
-SwiftUI native prototype for Arc.
+Native SwiftUI client for Arc, talking directly to the same Supabase backend
+as `mobile/expo` (auth, `user_state` sync, and the `nilo` Edge Function).
 
 ## Open
 
-Open this project on a Mac with Xcode:
+Open this project on a Mac with Xcode 16+:
 
 ```text
 mobile/iOS/Arc.xcodeproj
 ```
 
-Recommended first run:
+Build the `Arc` target for an iPhone simulator or device. There is no local
+server involved anymore — the app talks to Supabase directly using the URL
+and anon key in `Arc/Info.plist`.
 
-1. Start the Web API server from `Web`.
-2. In Xcode, choose an iPhone simulator.
-3. Build and run the `Arc` scheme.
+## Auth
 
-```powershell
-cd C:\Users\g048fnu\Documents\The_Arc\Web
-npm start
-```
+- Google OAuth via `ASWebAuthenticationSession` + PKCE (`ArcSupabase.swift`).
+  Requires the `app.arc.nilo.native://auth-callback` redirect URL to be added
+  to the Supabase project's allowed redirect URLs.
+- Email OTP (`auth/v1/otp` + `auth/v1/verify`), same as the RN app.
+- Session tokens are stored in the iOS Keychain, never `UserDefaults`.
 
-The iOS app reads `ArcAPIBaseURL` from `Arc/Info.plist`.
+## Current scope
 
-Default:
+- Native SwiftUI shell: Home / Quest / Journal / Story tabs (Quest and Story
+  are placeholders for now).
+- Night Ritual input flow backed by the real `nilo` Edge Function.
+- `user_state` synced via `get_user_state`/`set_user_state` RPCs. Only
+  `journal` is strongly modeled; everything else round-trips untouched via
+  `UserStateBlob.rest` so this client can't clobber fields only the RN app
+  understands yet.
+- Liquid Glass (`.buttonStyle(.glass)`, tab bar chrome) applied only where
+  iOS 26 is available, and only to navigation-layer chrome, not content cards.
 
-```text
-http://localhost:4173
-```
+## Not built yet
 
-For a real iPhone, replace this with your Mac's LAN address, for example:
+Chapters, full quest proposals UI, notifications, settings beyond sign-out,
+and everything else in the RN app's later feature set (Diary v1 typography,
+Nilo Variation dialogue devices, retention-design items). This is a first
+pass proving the pipe end-to-end.
 
-```text
-http://192.168.1.20:4173
-```
+## CI
 
-For a deployed backend, replace it with the production URL after `GEMINI_API_KEY` is configured there.
-
-## Current Scope
-
-- Native SwiftUI shell.
-- Home / Journal / Quest / Story / Memory tabs.
-- Night Ritual input flow backed by the local Web API.
-- Journal entries saved to local `UserDefaults`.
-- Quest tab kept as an exploration surface, not a daily checklist.
-- Settings sheet with profile and day count.
-- Nilo and Arc visual assets shared with the broader app.
-
-## Retired
-
-Daily task-style quests, daily quest generation, manual completion, and square quest tiles have been removed.
-
-## Notes
-
-This scaffold was created from Windows, so `xcodebuild` verification still needs to be run on macOS.
+`.github/workflows/ios-build.yml` builds the `Arc` target on `macos-latest`
+for the iOS Simulator on every push/PR touching `mobile/iOS/**`. There is no
+local Mac in this workflow, so CI is the primary verification loop — push and
+iterate against its output rather than expecting a first-try green build.

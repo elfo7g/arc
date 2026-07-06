@@ -1,40 +1,33 @@
 import Foundation
 
+/// Calls the deployed `nilo` Supabase Edge Function (see
+/// `supabase/functions/nilo/index.ts`) instead of the old local Web API this
+/// prototype originally pointed at.
 struct ArcAPI {
-    var baseURL: URL {
-        let value = Bundle.main.object(forInfoDictionaryKey: "ArcAPIBaseURL") as? String
-        return URL(string: value ?? "http://localhost:4173")!
-    }
+    let supabase: ArcSupabaseClient
 
     func sendNightRitual(messages: [RitualMessage], questionCount: Int, forceFinish: Bool) async throws -> NightRitualResponse {
-        let url = baseURL.appendingPathComponent("api/nilo/night-ritual")
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(NightRitualRequest(
-            messages: messages.map { .init(role: $0.role.rawValue, text: $0.text) },
-            questionCount: questionCount,
-            forceFinish: forceFinish,
-            activeQuests: []
-        ))
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, 200..<300 ~= httpResponse.statusCode else {
-            throw URLError(.badServerResponse)
-        }
-
+        let body: [String: Any] = [
+            "messages": messages.map { ["role": $0.role == .nilo ? "nilo" : "user", "text": $0.text] },
+            "questionCount": questionCount,
+            "forceFinish": forceFinish,
+            "activeQuests": []
+        ]
+        let data = try await supabase.invokeNilo(route: "night-ritual", body: body)
         return try JSONDecoder().decode(NightRitualResponse.self, from: data)
     }
-}
 
-private struct NightRitualRequest: Encodable {
-    var messages: [Message]
-    var questionCount: Int
-    var forceFinish: Bool
-    var activeQuests: [String]
+    func fetchChapterProposals(memories: [[String: Any]]) async throws -> ChaptersResponse {
+        let data = try await supabase.invokeNilo(route: "chapters", body: ["memories": memories])
+        return try JSONDecoder().decode(ChaptersResponse.self, from: data)
+    }
 
-    struct Message: Encodable {
-        var role: String
-        var text: String
+    func fetchQuestProposals(memories: [[String: Any]], declinedThemes: [String], ongoingThemes: [String]) async throws -> QuestProposalsResponse {
+        let data = try await supabase.invokeNilo(route: "quest-proposals", body: [
+            "memories": memories,
+            "declinedThemes": declinedThemes,
+            "ongoingThemes": ongoingThemes
+        ])
+        return try JSONDecoder().decode(QuestProposalsResponse.self, from: data)
     }
 }

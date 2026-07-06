@@ -41,7 +41,8 @@
     "plugins": [
       "expo-web-browser",
       "expo-audio",
-      "@sentry/react-native"
+      "@sentry/react-native",
+      "expo-secure-store"
     ],
     "owner": "erfo7g",
     "runtimeVersion": {

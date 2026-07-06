@@ -1,4 +1,4 @@
-﻿import Foundation
+import Foundation
 import SwiftUI
 
 @MainActor
@@ -8,29 +8,72 @@ final class ArcStore: ObservableObject {
         RitualMessage(role: .nilo, text: "今日、一番印象に残ったことは？")
     ]
     @Published var journal: [JournalEntry] = []
-    @Published var memories: [MemoryEntry] = []
-    @Published var profile = ArcProfile()
     @Published var isSettingsPresented = false
     @Published var isSending = false
+    @Published var isLoadingState = false
+    @Published var authErrorMessage: String?
 
-    private let api = ArcAPI()
-    private let storageKey = "arc.ios.state.v1"
+    let supabase = ArcSupabaseClient()
+    private lazy var api = ArcAPI(supabase: supabase)
+    private var userState = UserStateBlob()
     private var questionCount = 1
 
-    init() {
-        load()
+    var isSignedIn: Bool { supabase.isSignedIn }
+
+    var latestEntry: JournalEntry? { journal.first }
+
+    func loadStateIfSignedIn() async {
+        guard isSignedIn else { return }
+        isLoadingState = true
+        defer { isLoadingState = false }
+        do {
+            userState = try await supabase.getUserState()
+            journal = userState.journal
+        } catch {
+            authErrorMessage = "同期に失敗しました。もう一度お試しください。"
+        }
     }
 
-    var latestEntry: JournalEntry? {
-        journal.first
+    func signInWithGoogle() async {
+        do {
+            try await supabase.signInWithGoogle()
+            await loadStateIfSignedIn()
+        } catch {
+            authErrorMessage = "Googleサインインに失敗しました。"
+        }
+    }
+
+    func sendEmailOTP(email: String) async {
+        do {
+            try await supabase.sendEmailOTP(email: email)
+        } catch {
+            authErrorMessage = "確認コードの送信に失敗しました。"
+        }
+    }
+
+    func verifyEmailOTP(email: String, token: String) async {
+        do {
+            try await supabase.verifyEmailOTP(email: email, token: token)
+            await loadStateIfSignedIn()
+        } catch {
+            authErrorMessage = "確認コードが正しくありません。"
+        }
+    }
+
+    func signOut() {
+        supabase.signOut()
+        journal = []
+        userState = UserStateBlob()
+        resetRitual()
     }
 
     func submitNightLine(_ text: String) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isSending else { return }
 
-        ritualMessages.append(RitualMessage(role: .user, text: String(trimmed.prefix(50))))
+        ritualMessages.append(RitualMessage(role: .user, text: String(trimmed.prefix(200))))
         isSending = true
+        defer { isSending = false }
 
         do {
             let shouldFinish = questionCount >= 5
@@ -39,39 +82,23 @@ final class ArcStore: ObservableObject {
                 questionCount: questionCount,
                 forceFinish: shouldFinish
             )
-            apply(response)
+            await apply(response)
         } catch {
             applyFallback()
         }
-
-        isSending = false
-        save()
     }
 
-    func saveProfile(name: String, birthdate: Date?) {
-        profile.name = name
-        profile.birthdate = birthdate
-        save()
-    }
-
-    func daysSinceBirth() -> Int? {
-        guard let birthdate = profile.birthdate else { return nil }
-        let calendar = Calendar.current
-        let start = calendar.startOfDay(for: birthdate)
-        let today = calendar.startOfDay(for: Date())
-        return calendar.dateComponents([.day], from: start, to: today).day
-    }
-
-    private func apply(_ response: NightRitualResponse) {
+    private func apply(_ response: NightRitualResponse) async {
         if response.done {
             let closing = response.closingMessage ?? response.niloMessage ?? "ここまでで、今夜の記録にしましょう。"
             ritualMessages.append(RitualMessage(role: .nilo, text: closing))
             journal.insert(JournalEntry(
                 title: response.title ?? "今夜の記録",
-                summaryLines: response.summaryLines?.prefix(5).map(String.init) ?? ["今日の言葉を短く残しました。"],
+                summaryLines: response.summaryLines.map { Array($0.prefix(5)) } ?? ["今日の言葉を短く残しました。"],
                 niloLine: response.niloLine ?? closing
             ), at: 0)
             resetRitual()
+            await persistState()
         } else {
             questionCount = min(5, questionCount + 1)
             ritualMessages.append(RitualMessage(
@@ -99,21 +126,13 @@ final class ArcStore: ObservableObject {
         ritualMessages = [RitualMessage(role: .nilo, text: "今日、一番印象に残ったことは？")]
     }
 
-    private func save() {
-        let state = PersistedArcState(journal: journal, memories: memories, profile: profile)
-        if let data = try? JSONEncoder().encode(state) {
-            UserDefaults.standard.set(data, forKey: storageKey)
+    private func persistState() async {
+        userState.journal = journal
+        do {
+            try await supabase.setUserState(userState)
+        } catch {
+            // Sync failure is non-fatal for this pass; the entry is still visible
+            // locally, and the next successful sync will carry it up.
         }
-    }
-
-    private func load() {
-        guard
-            let data = UserDefaults.standard.data(forKey: storageKey),
-            let state = try? JSONDecoder().decode(PersistedArcState.self, from: data)
-        else { return }
-
-        journal = state.journal
-        memories = state.memories
-        profile = state.profile
     }
 }
