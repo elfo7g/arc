@@ -2,8 +2,9 @@ const primaryGeminiModel = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
 const fallbackGeminiModel = Deno.env.get("GEMINI_FALLBACK_MODEL") || "gemini-2.5-flash";
 const geminiModels = Array.from(new Set([primaryGeminiModel, fallbackGeminiModel].filter(Boolean)));
 
-// ARCがサポートする6言語。Nilo自身の対話生成もユーザーの選択言語に合わせる。
-const SUPPORTED_LANGUAGES = ["ja", "en", "fr", "de", "zh", "ko"] as const;
+// ARCがサポートする7言語（mobile/src/i18n.js の LANGUAGES と揃える）。
+// Nilo自身の対話生成もユーザーの選択言語に合わせる。
+const SUPPORTED_LANGUAGES = ["ja", "en", "es", "fr", "de", "zh", "ko"] as const;
 type SupportedLanguage = typeof SUPPORTED_LANGUAGES[number];
 
 function normalizeLanguage(value: unknown): SupportedLanguage {
@@ -15,6 +16,7 @@ function normalizeLanguage(value: unknown): SupportedLanguage {
 const LANGUAGE_NAMES_FOR_PROMPT: Record<SupportedLanguage, string> = {
   ja: "Japanese (日本語)",
   en: "English",
+  es: "Spanish (Español)",
   fr: "French (Français)",
   de: "German (Deutsch)",
   zh: "Simplified Chinese (简体中文)",
@@ -48,6 +50,21 @@ const STRINGS: Record<SupportedLanguage, Record<string, string>> = {
     defaultTag: "Night Ritual",
     emptyRitualLog: "The Night Ritual conversation log is empty.",
     emptyChapterMemories: "There are no memories yet to form a chapter.",
+    unknownRoute: "Unknown Nilo route.",
+    geminiKeyMissing: "GEMINI_API_KEY is not set.",
+    geminiNotJson: "Gemini response was not JSON.",
+    geminiRequestFailed: "Gemini API request failed.",
+    functionError: "Nilo function error."
+  },
+  es: {
+    defaultTitle: "El registro de esta noche",
+    defaultSummaryLine: "Se guardó una breve huella de las palabras de hoy.",
+    defaultMoodLabel: "Registrado",
+    defaultNiloMessage: "Dejemos esto como el registro de esta noche.",
+    defaultClosingMessage: "El registro de esta noche se ha guardado, en silencio.",
+    defaultTag: "Night Ritual",
+    emptyRitualLog: "El registro de conversación del Night Ritual está vacío.",
+    emptyChapterMemories: "Aún no hay recuerdos para formar un capítulo.",
     unknownRoute: "Unknown Nilo route.",
     geminiKeyMissing: "GEMINI_API_KEY is not set.",
     geminiNotJson: "Gemini response was not JSON.",
@@ -151,37 +168,134 @@ function extractJson(text: string) {
   }
 }
 
+// --- Vertex AI (EUリージョン) 対応 -----------------------------------------
+// GDPR対応: VERTEX_* シークレットが揃っている場合、Gemini呼び出しを Vertex AI の
+// EUリージョン(既定: europe-west3 = フランクフルト)に向ける。日記の内容が
+// リージョン保証のない AI Studio API を通らなくなる。未設定なら従来どおり
+// GEMINI_API_KEY で AI Studio API にフォールバックするので、GCP側の準備が
+// 済むまでは何も壊れない。generateContent のリクエスト/レスポンス形は両者共通。
+const vertexProjectId = Deno.env.get("VERTEX_PROJECT_ID") || "";
+const vertexLocation = Deno.env.get("VERTEX_LOCATION") || "europe-west3";
+const vertexSaEmail = Deno.env.get("VERTEX_SA_EMAIL") || "";
+const vertexSaKeyPem = Deno.env.get("VERTEX_SA_PRIVATE_KEY") || "";
+const vertexEnabled = Boolean(vertexProjectId && vertexSaEmail && vertexSaKeyPem);
+
+let cachedVertexToken: { token: string; expiresAt: number } | null = null;
+
+function base64UrlEncode(data: Uint8Array | string): string {
+  const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function importServiceAccountKey(pem: string): Promise<CryptoKey> {
+  // supabase secrets は改行を \n リテラルで持つことがあるので戻してから剥がす。
+  const normalized = pem.replace(/\\n/g, "\n");
+  const body = normalized.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
+  const raw = Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
+  return crypto.subtle.importKey(
+    "pkcs8",
+    raw,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+}
+
+// サービスアカウントの署名付きJWTをOAuth2アクセストークンに交換する。
+// トークンは約1時間有効なので、失効60秒前までモジュールスコープで使い回す。
+async function getVertexAccessToken(): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  if (cachedVertexToken && cachedVertexToken.expiresAt - 60 > now) return cachedVertexToken.token;
+
+  const header = base64UrlEncode(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const claims = base64UrlEncode(JSON.stringify({
+    iss: vertexSaEmail,
+    scope: "https://www.googleapis.com/auth/cloud-platform",
+    aud: "https://oauth2.googleapis.com/token",
+    iat: now,
+    exp: now + 3600
+  }));
+  const key = await importServiceAccountKey(vertexSaKeyPem);
+  const signature = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    key,
+    new TextEncoder().encode(`${header}.${claims}`)
+  );
+  const assertion = `${header}.${claims}.${base64UrlEncode(new Uint8Array(signature))}`;
+
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion })
+  });
+  if (!response.ok) {
+    throw new Error(`Vertex AI auth failed: ${await response.text()}`);
+  }
+  const data = await response.json();
+  cachedVertexToken = { token: String(data.access_token), expiresAt: now + Number(data.expires_in || 3600) };
+  return cachedVertexToken.token;
+}
+
 async function callGeminiJson(prompt: string, options: { temperature?: number } = {}) {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
-  if (!apiKey) throw new Error("GEMINI_API_KEY is not set.");
+  if (!vertexEnabled && !apiKey) throw new Error("GEMINI_API_KEY is not set.");
 
   const temperature = Number.isFinite(Number(options.temperature)) ? Number(options.temperature) : 0.7;
   let lastDetail = "";
 
-  for (const model of geminiModels) {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey
-      },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature,
-          responseMimeType: "application/json"
-        }
-      })
-    });
+  // 一時的な失敗（429/5xx/ネットワーク断）に限り、全モデル失敗後に一度だけ
+  // 短く置いて再試行する（対話品質仕様 P4）。恒久的な失敗は即フォールバックへ。
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let retryable = false;
 
-    if (!response.ok) {
-      lastDetail = await response.text();
-      continue;
+    for (const model of geminiModels) {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      let endpoint: string;
+      let response: Response;
+      try {
+        if (vertexEnabled) {
+          endpoint = `https://${vertexLocation}-aiplatform.googleapis.com/v1/projects/${vertexProjectId}/locations/${vertexLocation}/publishers/google/models/${model}:generateContent`;
+          headers["Authorization"] = `Bearer ${await getVertexAccessToken()}`;
+        } else {
+          endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+          headers["x-goog-api-key"] = apiKey!;
+        }
+
+        response = await fetch(endpoint, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature,
+              responseMimeType: "application/json"
+            }
+          })
+        });
+      } catch (err) {
+        lastDetail = String((err as Error)?.message || err);
+        retryable = true;
+        continue;
+      }
+
+      if (!response.ok) {
+        lastDetail = await response.text();
+        if (response.status === 429 || response.status >= 500) retryable = true;
+        continue;
+      }
+
+      const data = await response.json();
+      const textResponse = data?.candidates?.[0]?.content?.parts?.map((part: any) => part.text || "").join("") || "";
+      return extractJson(textResponse);
     }
 
-    const data = await response.json();
-    const textResponse = data?.candidates?.[0]?.content?.parts?.map((part: any) => part.text || "").join("") || "";
-    return extractJson(textResponse);
+    if (attempt === 0 && retryable) {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      continue;
+    }
+    break;
   }
 
   const error = new Error("Gemini API request failed.");
@@ -189,7 +303,19 @@ async function callGeminiJson(prompt: string, options: { temperature?: number } 
   throw error;
 }
 
-function normalizeNightRitual(value: JsonRecord) {
+// ユーザーに見えるすべての出力を選択言語で返すよう、各プロンプトの末尾に付ける共通指示。
+function buildLanguageInstruction(lang: SupportedLanguage) {
+  return [
+    "出力言語:",
+    `- JSON内のユーザーに見えるすべてのテキストは、必ず ${LANGUAGE_NAMES_FOR_PROMPT[lang]} で書いてください。`,
+    "- ユーザーの発言が別の言語で書かれていても、この言語で返してください。",
+    lang === "ja"
+      ? ""
+      : "- このプロンプト内の日本語の言い回し例（「〜ですね」「〜てみますか」など）は機能の例です。出力言語で同じ静かな役割を果たす自然な言い回しに置き換えてください。"
+  ].filter(Boolean).join("\n");
+}
+
+function normalizeNightRitual(value: JsonRecord, strings: Record<string, string>) {
   const done = Boolean(value.done);
   const summaryLines = toStrList(value.summaryLines, 5, 90);
   const relatedQuests = toStrList(value.relatedQuests, 5, 36);
@@ -206,19 +332,19 @@ function normalizeNightRitual(value: JsonRecord) {
   return {
     done,
     nextQuestion: done ? "" : String(value.nextQuestion || "").slice(0, 40),
-    title: String(value.title || "今夜の記録").slice(0, 32),
+    title: String(value.title || strings.defaultTitle).slice(0, 32),
     summaryLines: done && summaryLines.length < 3
-      ? summaryLines.concat(["今日の印象を、あとで戻れる記録として残しました。"]).slice(0, 3)
+      ? summaryLines.concat([strings.defaultSummaryLine]).slice(0, 3)
       : summaryLines,
     relatedQuests,
     questSuggestion: value.questSuggestion ? String(value.questSuggestion).slice(0, 36) : "",
     quests,
-    moodLabel: String(value.moodLabel || "記録済み").slice(0, 16),
+    moodLabel: String(value.moodLabel || strings.defaultMoodLabel).slice(0, 16),
     moodScore: Number.isFinite(Number(value.moodScore)) ? Math.max(1, Math.min(10, Number(value.moodScore))) : null,
     niloLine: String(value.niloLine || "").slice(0, 90),
-    niloMessage: String(value.niloMessage || "ここまでで、今夜の記録にしましょう。").slice(0, 80),
-    closingMessage: String(value.closingMessage || value.niloMessage || "今夜の記録を、静かに残しました。").slice(0, 56),
-    tag: String(value.tag || "Night Ritual").slice(0, 20),
+    niloMessage: String(value.niloMessage || strings.defaultNiloMessage).slice(0, 80),
+    closingMessage: String(value.closingMessage || value.niloMessage || strings.defaultClosingMessage).slice(0, 56),
+    tag: String(value.tag || strings.defaultTag).slice(0, 20),
     xpGain: Number.isFinite(Number(value.xpGain)) ? Math.max(1, Math.min(30, Number(value.xpGain))) : 5,
     questUpdates: Array.isArray(value.questUpdates)
       ? value.questUpdates.slice(0, 5).map((update: any) => ({
@@ -236,7 +362,7 @@ function normalizeNightRitual(value: JsonRecord) {
 // ここでは口調そのものではなく「何を優先するか」という機能レベルの指針だけを渡す。
 const NILO_DIALOGUE_STYLES: Record<string, string> = {
   empathetic: "感情に寄り添い、静かに受け止めることを優先する。問いよりも、まず気持ちを言葉にして返す。",
-  questioning: "哲学的な問いを投げかけることを優先する。出来事の奥にある動機や意味を尋ねる。",
+  questioning: "出来事の背景や経緯を一歩だけ尋ねることを優先する。「何があったか」「いつから」「誰と」のような具体の深掘りに留め、意味・象徴・人生観の階層へこちらから持ち上げない。",
   organizing: "論理的に構造化することを優先する。起きたことを要素に分けて静かに整理してから、次を尋ねる。",
   silent: "最小限の介入に留める。解釈や共感の言葉を足さず、記録を促す短い問いだけを返す。"
 };
@@ -251,15 +377,26 @@ const NILO_PERSPECTIVE_SHIFTS: Record<string, string> = {
   naming: "感情に名前をつけてもらう視点。既存の感情語彙に頼らず、その感じ方をどう呼ぶか尋ねる。"
 };
 
-function pickVariationGuidance({ currentQuestionCount, activeQuests, pastMemories }: {
+// 「短い発話」の判定は文字数の意味密度が言語で違う（漢字20字は一段落、ラテン文字
+// 20字は4単語）。儀式の入力上限（日中韓150/その他250）と同じ思想で言語連動させる。
+const SHORT_ANSWER_THRESHOLD: Record<string, number> = { ja: 20, zh: 20, ko: 20 };
+const SHORT_ANSWER_THRESHOLD_DEFAULT = 40;
+
+function pickVariationGuidance({ currentQuestionCount, activeQuests, pastMemories, chapterEchoes, latestAnswer, lang }: {
   currentQuestionCount: number;
   activeQuests: JsonRecord[];
   pastMemories: JsonRecord[];
+  chapterEchoes: JsonRecord[];
+  latestAnswer: string;
+  lang: SupportedLanguage;
 }) {
   const blocks: string[] = [];
 
   // 視点のゆらぎ: 毎回は発火させない。1問目・最終問には触れない。
-  if (currentQuestionCount >= 2 && currentQuestionCount <= 4 && Math.random() < 0.45) {
+  // 直前の発話が短い夜（「今日は疲れた」等）は拾える具体語がなく、ゆらぎを適用すると
+  // 問いが抽象・詩的方向に飛ぶため、発火自体を止める。
+  const hasEnoughMaterial = latestAnswer.trim().length >= (SHORT_ANSWER_THRESHOLD[lang] ?? SHORT_ANSWER_THRESHOLD_DEFAULT);
+  if (hasEnoughMaterial && currentQuestionCount >= 2 && currentQuestionCount <= 4 && Math.random() < 0.45) {
     const keys = Object.keys(NILO_PERSPECTIVE_SHIFTS);
     const chosen = keys[Math.floor(Math.random() * keys.length)];
     blocks.push(`視点のゆらぎ（今回だけ採用）:\n${NILO_PERSPECTIVE_SHIFTS[chosen]}\nこの視点を使う場合も、直前のユーザーの発言にある具体的な言葉・固有名詞・比喩を優先して拾い、その言葉を通してこの視点の問いを組み立てること。拾える言葉がなければ無理にこの視点を使わなくてよい。`);
@@ -274,7 +411,9 @@ function pickVariationGuidance({ currentQuestionCount, activeQuests, pastMemorie
 
   // Echo: 過去の記録との偶発的な再会。見つかっても毎回は出さない。
   const safePastMemories = pastMemories.slice(0, 60);
+  let echoFired = false;
   if (currentQuestionCount >= 2 && safePastMemories.length && Math.random() < 0.25) {
+    echoFired = true;
     const memoryLines = safePastMemories.map((memory, index) => {
       const date = String(memory.dateKey || memory.dateLabel || "").slice(0, 10);
       const essence = String(memory.essence || memory.keptPhrase || "").slice(0, 100);
@@ -283,10 +422,22 @@ function pickVariationGuidance({ currentQuestionCount, activeQuests, pastMemorie
     blocks.push(`過去との再会（今回だけ、任意）:\n直前のユーザーの発言のテーマと、意味的に近い過去の記録が下にあれば、そっと一度だけ「〇〇のエントリーで、近いことに触れていましたね」のように事実だけを差し出してよい。解釈や意味づけはこちらから結論として渡さず、話を広げるかどうかはユーザーに委ねる。近いものが本当に見当たらなければ、無理に触れなくてよい。\n過去の記録:\n${memoryLines}`);
   }
 
+  // 章との再会: 確定した章の中の、ユーザー自身の言葉が儀式に一度だけ帰ってくる。
+  // 過去との再会と同時には発火させない（再会が二重になると儀式が重くなる）。
+  const safeChapterEchoes = chapterEchoes.slice(0, 3);
+  if (!echoFired && currentQuestionCount >= 2 && safeChapterEchoes.length && Math.random() < 0.2) {
+    const chapterLines = safeChapterEchoes.map((echo, index) => {
+      const title = String((echo as any).title || "").slice(0, 40);
+      const quote = String((echo as any).quote || "").slice(0, 100);
+      return `${index + 1}. 章「${title}」 / 「${quote}」`;
+    }).join("\n");
+    blocks.push(`章との再会（今回だけ、任意）:\n直前のユーザーの発言のテーマと響き合うものが下の章の言葉にあれば、そっと一度だけ「章『〇〇』のころ、あなたはこう書いていました——「…」」のように、ユーザー自身の言葉を逐語で差し出してよい。引用は必ず下の言葉をそのまま使い、書き換えないこと。解釈や比較（成長した・変わった等の評価）は加えない。響き合うものが本当に見当たらなければ、無理に触れなくてよい。\n章の言葉:\n${chapterLines}`);
+  }
+
   return blocks.join("\n\n");
 }
 
-function buildAdaptiveNightRitualPrompt(body: JsonRecord) {
+function buildAdaptiveNightRitualPrompt(body: JsonRecord, lang: SupportedLanguage) {
   const messages = Array.isArray(body.messages) ? body.messages as JsonRecord[] : [];
   const safeMessages = messages.slice(-10).map((message, index) => {
     const speaker = message.role === "user" ? "User" : "Nilo";
@@ -304,7 +455,8 @@ function buildAdaptiveNightRitualPrompt(body: JsonRecord) {
   const niloStyle = String(body.niloStyle || "empathetic");
   const styleGuidance = NILO_DIALOGUE_STYLES[niloStyle] || NILO_DIALOGUE_STYLES.empathetic;
   const pastMemories = Array.isArray(body.pastMemories) ? body.pastMemories as JsonRecord[] : [];
-  const variationGuidance = mustFinish ? "" : pickVariationGuidance({ currentQuestionCount, activeQuests, pastMemories });
+  const chapterEchoes = Array.isArray(body.chapterEchoes) ? body.chapterEchoes as JsonRecord[] : [];
+  const variationGuidance = mustFinish ? "" : pickVariationGuidance({ currentQuestionCount, activeQuests, pastMemories, chapterEchoes, latestAnswer, lang });
 
   return `
 あなたは人生アプリ ARC の Nilo です。
@@ -316,9 +468,12 @@ Niloの話し方:
 - アドバイスより記録を手伝う
 - 旅の記録係のように、場面をそっと拾う
 
+${buildLanguageInstruction(lang)}
+
 会話ルール:
 - 質問は最大5問です。5問すべて聞く必要はありません。
 - 直前の回答内容に基づく短い質問で自然に深掘りしてください。
+- 問いの抽象度はユーザーの発話の抽象度を超えないでください。ユーザーが事実や状態を短く話したら（例:「今日は疲れた」）、事実の側を一歩だけ深掘りします（何があったか・いつから・誰と）。こちらから意味・象徴・比喩・人生観の階層に持ち上げないでください。「その疲れは何を語り掛けているのか」のような詩的・哲学的な問いは、Niloの役割（記録係）を超えています。
 - 質問は1つだけ。複数質問を混ぜないでください。
 - 十分に記録できたら5問未満でも done:true にしてください。
 - forceFinish が true、または現在の質問数が5以上なら必ず done:true にしてください。
@@ -416,7 +571,7 @@ function normalizeChapters(value: JsonRecord) {
   return { proposals };
 }
 
-function buildChapterPrompt(body: JsonRecord) {
+function buildChapterPrompt(body: JsonRecord, lang: SupportedLanguage) {
   const memories = Array.isArray(body.memories) ? body.memories as JsonRecord[] : [];
   const split = Boolean(body.split);
   const safeMemories = memories.slice(0, 160).map((memory, index) => {
@@ -437,6 +592,8 @@ function buildChapterPrompt(body: JsonRecord) {
 渡された記憶は、すでに十分に時間が経った「過去」のものだけです。
 章は数週間ではなく、数ヶ月から数年にわたる大きなまとまりであるべきです。
 本当に新しい時代が始まったと感じるときだけ章を分け、迷ったらひとつにまとめてください。${split ? "\nただし今回は、提示された記憶群が一つの章には大きすぎると感じられたため、より細かい変化点で必ず2つ以上の候補に分けてください。" : ""}
+
+${buildLanguageInstruction(lang)}
 
 記憶一覧（古い順）:
 ${safeMemories || "なし"}
@@ -469,6 +626,100 @@ ${safeMemories || "なし"}
 `.trim();
 }
 
+// 章の封(chapter-seal): 章の確定時に一度だけ、Niloの手紙・願い・章同士の再会・
+// 特徴語を生成する。再会のquoteは、クライアントが渡した他章の言葉(ユーザー自身の
+// keptPhrase)からの逐語引用のみを許す — 捏造された「あなたの言葉」を作らせない。
+function normalizeChapterSeal(value: JsonRecord, allowedQuotes: string[]) {
+  const letter = String(value?.letter || "").slice(0, 400);
+
+  const rawWish = (value?.wish && typeof value.wish === "object") ? value.wish as JsonRecord : null;
+  const wish = rawWish && rawWish.theme
+    ? { theme: String(rawWish.theme || "").slice(0, 60), line: String(rawWish.line || "").slice(0, 120) }
+    : null;
+
+  const rawReunion = (value?.reunion && typeof value.reunion === "object") ? value.reunion as JsonRecord : null;
+  let reunion: { chapterId: string; quote: string } | null = null;
+  if (rawReunion && rawReunion.quote) {
+    const quote = String(rawReunion.quote || "").slice(0, 120);
+    // 逐語一致のみ許可。前後の鉤括弧や空白の差だけは吸収する。
+    const clean = (text: string) => text.replace(/^[「『\s]+|[」』\s]+$/g, "");
+    if (allowedQuotes.some((allowed) => clean(allowed) === clean(quote))) {
+      reunion = { chapterId: String(rawReunion.chapterId || "").slice(0, 80), quote };
+    }
+  }
+
+  const words = Array.isArray(value?.words)
+    ? value.words.slice(0, 10).map((word: any) => ({
+      text: String(word?.text || "").slice(0, 16),
+      weight: Number.isFinite(Number(word?.weight)) ? Math.max(1, Math.min(3, Math.round(Number(word.weight)))) : 2
+    })).filter((word) => word.text)
+    : [];
+
+  return { letter, wish, reunion, words };
+}
+
+function buildChapterSealPrompt(body: JsonRecord, lang: SupportedLanguage) {
+  const chapter = (body.chapter && typeof body.chapter === "object") ? body.chapter as JsonRecord : {};
+  const memories = Array.isArray(body.memories) ? body.memories as JsonRecord[] : [];
+  const otherChapters = Array.isArray(body.otherChapters) ? body.otherChapters as JsonRecord[] : [];
+
+  const safeMemories = memories.slice(0, 160).map((memory, index) => {
+    const date = String(memory.dateKey || memory.dateLabel || "").slice(0, 10);
+    const essence = String(memory.essence || "").slice(0, 120);
+    const kept = String(memory.keptPhrase || "").slice(0, 100);
+    const mood = String(memory.moodLabel || "").slice(0, 16);
+    return `- id:${String(memory.id || index)} / ${date || "日付不明"} / 意味:${essence}${kept ? ` / 言葉:「${kept}」` : ""}${mood ? ` / 気分:${mood}` : ""}`;
+  }).join("\n");
+
+  const otherChapterLines = otherChapters.slice(0, 8).map((other) => {
+    const quotes = toStrList((other as any).quotes, 3, 100);
+    return `- chapterId:${String((other as any).id || "").slice(0, 80)} / ${String((other as any).title || "").slice(0, 40)}（${String((other as any).period || "").slice(0, 40)}）\n${quotes.map((quote) => `  言葉:「${quote}」`).join("\n")}`;
+  }).join("\n");
+
+  const title = String(chapter.title || "").slice(0, 40);
+  const period = String(chapter.period || "").slice(0, 40);
+  const observation = String(chapter.observation || "").slice(0, 200);
+  const meaningFrom = String(chapter.meaningFrom || "").slice(0, 120);
+  const meaningTo = String(chapter.meaningTo || "").slice(0, 120);
+
+  return `
+あなたは人生アプリ ARC の Nilo です。
+ユーザーがひとつの「章」を確定し、名前をつけました。あなたはこの章を一度だけ「封」します。
+封とは、章に手紙を添え、章の中に流れていた願いと言葉をそっと拾い上げることです。
+
+Niloの原則（この作業でも一貫して守る）:
+- 断定しない、評価しない、励まさない、助言しない
+- 成長・改善・達成のような物差しを当てない
+- ユーザー自身の言葉を何より尊重する
+
+${buildLanguageInstruction(lang)}
+
+確定した章:
+- 名前: ${title || "（まだ名前がない）"}
+- 時期: ${period || "不明"}
+- 変化点の観察: ${observation || "なし"}
+${meaningFrom || meaningTo ? `- 意味づけの流れ: ${meaningFrom || "?"} → ${meaningTo || "?"}` : ""}
+
+この章に含まれる記録（古い順）:
+${safeMemories || "なし"}
+
+${otherChapterLines ? `他の章とその中の言葉:\n${otherChapterLines}\n` : ""}
+生成するもの:
+- letter: この章へのNiloからの短い手紙。旅の記録係として、この章のあいだ隣で見ていたことを静かに書く。3〜5文。記録にある具体的な言葉を1つは引用してよい。
+- wish: この章の記録に繰り返し現れていた「願い」がもしあれば { "theme": 願いの短い名前, "line": その願いについての静かな一文 }。回数や統計などの数値は絶対に作らないこと。本当に見当たらなければ null。
+- reunion: 他の章が渡されている場合のみ。この章と静かに響き合う言葉が他の章にあれば { "chapterId": その章のid, "quote": その言葉 }。quoteは渡された「言葉:」を一字も変えずそのまま引用すること。見当たらなければ null。他の章が渡されていなければ必ず null。
+- words: この章の記録の「言葉:」によく現れていた特徴的な語（名詞や短い言い回し）を3〜10個。{ "text": 語, "weight": 1〜3 }。weightは現れた頻度の体感（3=章を象徴する）。記録にない語を作らないこと。
+
+次のJSONだけを返してください。Markdownは不要です。
+{
+  "letter": "Niloからの手紙",
+  "wish": { "theme": "願いの名前", "line": "静かな一文" },
+  "reunion": { "chapterId": "id", "quote": "他の章の言葉の逐語引用" },
+  "words": [ { "text": "語", "weight": 2 } ]
+}
+`.trim();
+}
+
 function normalizeQuestProposals(value: JsonRecord) {
   const proposals = Array.isArray(value?.proposals)
     ? value.proposals.slice(0, 3).map((p: any) => ({
@@ -481,7 +732,7 @@ function normalizeQuestProposals(value: JsonRecord) {
   return { proposals };
 }
 
-function buildQuestProposalPrompt(body: JsonRecord) {
+function buildQuestProposalPrompt(body: JsonRecord, lang: SupportedLanguage) {
   const memories = Array.isArray(body.memories) ? body.memories as JsonRecord[] : [];
   const safeMemories = memories.slice(0, 120).map((memory) => {
     const date = String(memory.dateKey || memory.dateLabel || "").slice(0, 10);
@@ -507,6 +758,8 @@ function buildQuestProposalPrompt(body: JsonRecord) {
 - observation: 気づきの共有。「〜ですね」で終わる静かな一文。断定・評価・助言はしない。
 - invitation: 誘い。「〜てみますか。」で終わる一文。命令やタスク化はしない。
 
+${buildLanguageInstruction(lang)}
+
 記録一覧（古い順）:
 ${safeMemories || "なし"}
 ${avoid.length ? `\n次のテーマは既に差し出したか、いま探求の途中です。重複する候補は出さないでください:\n${avoid.map((theme) => `- ${theme}`).join("\n")}` : ""}
@@ -518,28 +771,40 @@ ${avoid.length ? `\n次のテーマは既に差し出したか、いま探求の
 }
 
 async function handleRoute(route: string, body: JsonRecord) {
+  const lang = normalizeLanguage(body.language);
+  const strings = STRINGS[lang];
+
   if (route === "night-ritual") {
     const messages = Array.isArray(body.messages) ? body.messages : [];
-    if (!messages.length) return jsonResponse(400, { message: "Night Ritualの会話ログが空です。" });
-    const json = await callGeminiJson(buildAdaptiveNightRitualPrompt(body), { temperature: 0.82 });
-    return jsonResponse(200, normalizeNightRitual(json));
+    if (!messages.length) return jsonResponse(400, { message: strings.emptyRitualLog });
+    const json = await callGeminiJson(buildAdaptiveNightRitualPrompt(body, lang), { temperature: 0.82 });
+    return jsonResponse(200, normalizeNightRitual(json, strings));
   }
 
   if (route === "chapters") {
     const memories = Array.isArray(body.memories) ? body.memories : [];
-    if (!memories.length) return jsonResponse(400, { message: "章にする記憶がまだありません。" });
-    const json = await callGeminiJson(buildChapterPrompt(body), { temperature: 0.7 });
+    if (!memories.length) return jsonResponse(400, { message: strings.emptyChapterMemories });
+    const json = await callGeminiJson(buildChapterPrompt(body, lang), { temperature: 0.7 });
     return jsonResponse(200, normalizeChapters(json));
+  }
+
+  if (route === "chapter-seal") {
+    const memories = Array.isArray(body.memories) ? body.memories : [];
+    if (!memories.length) return jsonResponse(400, { message: strings.emptyChapterMemories });
+    const otherChapters = Array.isArray(body.otherChapters) ? body.otherChapters as JsonRecord[] : [];
+    const allowedQuotes = otherChapters.flatMap((other) => toStrList((other as any).quotes, 3, 100));
+    const json = await callGeminiJson(buildChapterSealPrompt(body, lang), { temperature: 0.7 });
+    return jsonResponse(200, normalizeChapterSeal(json, allowedQuotes));
   }
 
   if (route === "quest-proposals") {
     const memories = Array.isArray(body.memories) ? body.memories : [];
     if (memories.length < 5) return jsonResponse(200, { proposals: [] });
-    const json = await callGeminiJson(buildQuestProposalPrompt(body), { temperature: 0.7 });
+    const json = await callGeminiJson(buildQuestProposalPrompt(body, lang), { temperature: 0.7 });
     return jsonResponse(200, normalizeQuestProposals(json));
   }
 
-  return jsonResponse(404, { message: "Unknown Nilo route." });
+  return jsonResponse(404, { message: strings.unknownRoute });
 }
 
 Deno.serve(async (req) => {

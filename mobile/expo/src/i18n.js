@@ -47,6 +47,7 @@ export const NILO_LANGUAGE_NAMES = {
 
 const ja = {
   tabs: { home: "ホーム", quests: "クエスト", journal: "日記", story: "章" },
+  header: { openNotifications: "通知を開く", openSettings: "設定を開く" },
 
   terms: {
     sections: [
@@ -89,7 +90,7 @@ const ja = {
     beginButton: "はじめる"
   },
 
-  encryption: { notice: "あなた以外には読めない構造になっています" },
+  encryption: { notice: "暗号化して、たいせつに保存しています" },
 
   support: {
     body: "もし今、抱えているものが重すぎると感じたら。あなたの話を、評価せずに聞いてくれる場所があります。",
@@ -100,6 +101,8 @@ const ja = {
     googleUrlError: "GoogleログインURLを作成できませんでした。",
     authCodeError: "認証コードを取得できませんでした。",
     googleLoginFailed: "Googleログインに失敗しました。",
+    appleUrlError: "AppleログインURLを作成できませんでした。",
+    appleLoginFailed: "Appleログインに失敗しました。",
     emailRequired: "メールアドレスを入力してください。",
     emailCodeSent: "メールに届いた6桁のコードを入力してください。",
     emailLoginFailed: "メールログインの送信に失敗しました。",
@@ -123,6 +126,7 @@ const ja = {
     readyBody: "はじめる前に、あなたを確かめさせてください。",
     connecting: "接続中...",
     googleLogin: "Googleでログイン",
+    appleLogin: "Appleでログイン",
     or: "または",
     emailPlaceholder: "メールアドレス",
     sendingCode: "送信中...",
@@ -157,6 +161,7 @@ const ja = {
   },
 
   ritual: {
+    yourWordsLabel: "あなたの言葉",
     startEnabled: "ふれて、今日を書く",
     startDisabled: "今夜は記録済み",
     placeholder: "ここに、こたえを書く",
@@ -193,6 +198,10 @@ const ja = {
     acceptProposal: "一緒に見てみる",
     declineProposal: "今は、そのままに",
     noProposalsNote: "いまは、静かなときです。\n日々の記録の中に繰り返し現れるものを見つけたら、\nNiloがここにそっと差し出します。",
+    scanningNote: "Niloが、最近の記録を静かに読み返しています…",
+    declinedNote: "そのままにしました。",
+    undoDecline: "もどす",
+    acceptedNote: "この探求は、そばに置かれました。\nこれからの夜の問いに、Niloがそっと織り込みます。",
     ongoingGroup: "過去を辿る探求",
     noOngoingNote: "いま、続いている探求はありません。",
     futureGroup: "未来に向かう探求",
@@ -206,12 +215,14 @@ const ja = {
   journal: {
     title: "日記",
     goldLabel: "これまでの日々",
+    cumulativeNights: (n) => `重ねた夜 ${n}`,
     emptyRecent: "まだ日記はありません。",
     nowLabel: "いま",
     questLabel: "クエスト",
     storyGuideText: "それより前の日々は、章のなかで眠っています。",
     storyGuideLink: "章を読む →",
     lastYearEchoLabel: "一年前のこの頃",
+    weeksAgoEchoLabel: (n) => `${n}週間前の今夜`,
     entriesUnitSuffix: "篇",
     defaultMeaning: "静かな記録",
     defaultDate: "今日"
@@ -222,12 +233,18 @@ const ja = {
     ordinalSuffix: "章",
     endLabel: "この先の章",
     endNote: "日々の記録の中に意味の変化が見えたら、\nNiloが次の章の区切りを、そっと差し出します。",
+    foreshadow: "この頃の記録に、章になりそうな流れが見えはじめています。\n名前をつけるのは、まだ先でかまいません。",
     findBusy: "見つめています…",
     findAgain: "もう一度、章を探す",
     findFirst: "章を探す",
     nowInChapter: "—— いま、この章の中に",
     sectionRecords: "この章の記録",
     sectionRecordsNote: (n) => `${n}の記録から`,
+    statsRecords: (n) => `${n}の記録`,
+    statsSpanYearsMonths: (y, m) => (m ? `${y}年と${m}ヶ月` : `${y}年`),
+    statsSpanMonths: (m) => `${m}ヶ月`,
+    statsSpanDays: (d) => `${d}日間`,
+    statsEmotion: (label) => `中心にあった感情 ・ ${label}`,
     sectionReunion: "過去との再会",
     sectionWish: "この章の願い",
     sectionWords: "よく現れた言葉",
@@ -281,14 +298,18 @@ const ja = {
     setTimeLink: "通知の時刻を設定する ›",
     todayPrefix: "今日",
     newChapterProposal: "Niloから、新しい章の提案があります",
-    newQuestProposal: "Niloから、探求の提案があります"
+    newQuestProposal: "Niloから、探求の提案があります",
+    niloFirstLetterTitle: "Niloからの最初の手紙",
+    niloFirstLetterBody: (quote) => `「${quote}」— あなたは今週、そう言っていました。`,
+    whisperPrompt: { title: "夜のささやき", body: "そろそろ、今夜の問いを灯す時間です。", later: "あとで", light: "灯す" }
   },
 
   entryDetail: {
     tonightFallback: "今夜",
     similarNightsLabel: "Niloがそっと差し出す、似た夜",
     footer: "この記録は、消すことができません。",
-    niloAsleepLabel: "NILO ねむる"
+    niloAsleepLabel: "NILO ねむる",
+    summaryLabel: "Niloの覚え書き"
   },
 
   memory: {
@@ -302,7 +323,11 @@ const ja = {
   common: {
     cancel: "キャンセル",
     delete: "削除",
-    confirm: "確認"
+    confirm: "確認",
+    back: "戻る",
+    close: "閉じる",
+    volumeDown: "音量を下げる",
+    volumeUp: "音量を上げる"
   },
 
   settings: {
@@ -330,7 +355,7 @@ const ja = {
       disclosureTitle: "アクセス権の予約公開",
       disclosureBody: "時間と相手を指定して公開する",
       encryptionStatusTitle: "暗号化ステータス",
-      encryptionStatusBody: "あなた以外には読めない構造",
+      encryptionStatusBody: "保存時は、常に暗号化",
       recoveryKeyTitle: "リカバリーキー",
       recoveryKeyBody: "緊急時の復旧手段",
       emergencyContactTitle: "緊急連絡先（証人）",
@@ -396,6 +421,15 @@ const ja = {
       allConfirmBody: "日記、クエスト、記憶、章をこの端末から削除します。この操作は元に戻せません。",
       archiveConfirmTitle: "アーカイブを削除しますか？",
       archiveConfirmBody: "この端末のすべての記録が消去されます。取り消せません。続ける前に書き出しをおすすめします。",
+      accountLabel: "アカウントの完全削除",
+      accountNote: "アカウントと、サーバーに保存されたすべての記録（日記・記憶・章）を完全に削除します。この端末の記録も消え、取り消せません。",
+      accountButton: "アカウントと全データを削除する",
+      accountConfirmTitle: "アカウントを削除しますか？",
+      accountConfirmBody: "サーバーに保存されたすべての記録が完全に削除されます。書き出しは今のうちにおすすめします。",
+      accountFinalTitle: "最終確認",
+      accountFinalBody: "この操作は取り消せません。アカウントとすべての記録を、完全に削除します。",
+      accountDeleting: "削除しています...",
+      accountFailed: "削除に失敗しました。通信環境を確認して、もう一度お試しください。",
       keepBack: "やめておく",
       finalConfirmTitle: "最終確認",
       finalConfirmBody: "本当に削除しますか？",
@@ -438,8 +472,8 @@ const ja = {
     security: {
       encryptionTitle: "暗号化ステータス",
       encryptionBody: "技術的な安全を、人間の言葉で届けます。",
-      encryptionLabel: "🔒 あなた以外には読めない構造",
-      encryptionNote: "記録の鍵はこの端末で生成・管理されます。ARCのサーバーでも、記録の内容は見えません。あなた以外には読めない形で守られています。",
+      encryptionLabel: "🔒 保存時は、常に暗号化",
+      encryptionNote: "あなたの記録は、暗号化された形でサーバーに保存されます。復号の鍵はサーバー側で管理され、Niloがあなたの記録に応えるときだけ、サーバーの中で復号されます。Niloが読めるようにするため、完全なエンドツーエンド暗号化ではありません。それも含めて、ありのままをお伝えします。",
       lockTitle: "この場所を守る",
       lockBody: "Face IDでロックします。",
       recoveryTitle: "リカバリーキー",
@@ -613,6 +647,7 @@ const ja = {
 
 const en = {
   tabs: { home: "Home", quests: "Quests", journal: "Diary", story: "Chapters" },
+  header: { openNotifications: "Open notifications", openSettings: "Open settings" },
 
   terms: {
     sections: [
@@ -655,7 +690,7 @@ const en = {
     beginButton: "Begin"
   },
 
-  encryption: { notice: "Structured so that no one but you can read it" },
+  encryption: { notice: "Encrypted and kept with care" },
 
   support: {
     body: "If what you're carrying right now feels too heavy — there are places that will listen without judging.",
@@ -666,6 +701,8 @@ const en = {
     googleUrlError: "Couldn't create a Google sign-in link.",
     authCodeError: "Couldn't retrieve the authentication code.",
     googleLoginFailed: "Google sign-in failed.",
+    appleUrlError: "Couldn't create an Apple sign-in link.",
+    appleLoginFailed: "Apple sign-in failed.",
     emailRequired: "Please enter your email address.",
     emailCodeSent: "Please enter the 6-digit code sent to your email.",
     emailLoginFailed: "Failed to send the email sign-in link.",
@@ -689,6 +726,7 @@ const en = {
     readyBody: "Before we begin, let's confirm it's you.",
     connecting: "Connecting...",
     googleLogin: "Sign in with Google",
+    appleLogin: "Sign in with Apple",
     or: "or",
     emailPlaceholder: "Email address",
     sendingCode: "Sending...",
@@ -723,6 +761,7 @@ const en = {
   },
 
   ritual: {
+    yourWordsLabel: "Your words",
     startEnabled: "Touch, and write today",
     startDisabled: "Recorded for tonight",
     placeholder: "Write your answer here",
@@ -759,6 +798,10 @@ const en = {
     acceptProposal: "Let's look at it together",
     declineProposal: "Leave it be for now",
     noProposalsNote: "It's quiet right now.\nWhen something keeps recurring in your daily records,\nNilo will quietly offer it here.",
+    scanningNote: "Nilo is quietly rereading your recent records…",
+    declinedNote: "Left as it is.",
+    undoDecline: "Undo",
+    acceptedNote: "This exploration now rests beside you.\nNilo will quietly weave it into the nights to come.",
     ongoingGroup: "Explorations from the past",
     noOngoingNote: "There are no explorations underway right now.",
     futureGroup: "Explorations toward the future",
@@ -772,12 +815,14 @@ const en = {
   journal: {
     title: "Diary",
     goldLabel: "Your days so far",
+    cumulativeNights: (n) => n === 1 ? "1 night gathered" : `${n} nights gathered`,
     emptyRecent: "There's no diary yet.",
     nowLabel: "now",
     questLabel: "Quest",
     storyGuideText: "Days before this are resting inside your chapters.",
     storyGuideLink: "Read the chapters →",
     lastYearEchoLabel: "Around this time last year",
+    weeksAgoEchoLabel: (n) => (n === 1 ? "One week ago tonight" : `${n} weeks ago tonight`),
     entriesUnitSuffix: " entries",
     defaultMeaning: "A quiet record",
     defaultDate: "Today"
@@ -788,12 +833,18 @@ const en = {
     ordinalSuffix: "",
     endLabel: "Chapters yet to come",
     endNote: "When a shift in meaning appears in your daily records,\nNilo will quietly offer the next chapter break.",
+    foreshadow: "A current that could become a chapter is beginning to show in your records.\nThere's no hurry to name it.",
     findBusy: "Looking closely…",
     findAgain: "Search for a chapter again",
     findFirst: "Search for a chapter",
     nowInChapter: "—— Right now, inside this chapter",
     sectionRecords: "Records from this chapter",
     sectionRecordsNote: (n) => `from ${n} records`,
+    statsRecords: (n) => (n === 1 ? "1 record" : `${n} records`),
+    statsSpanYearsMonths: (y, m) => `${y} ${y === 1 ? "year" : "years"}${m ? ` and ${m} ${m === 1 ? "month" : "months"}` : ""}`,
+    statsSpanMonths: (m) => `${m} ${m === 1 ? "month" : "months"}`,
+    statsSpanDays: (d) => `${d} ${d === 1 ? "day" : "days"}`,
+    statsEmotion: (label) => `The feeling at the center ・ ${label}`,
     sectionReunion: "A reunion with the past",
     sectionWish: "This chapter's wish",
     sectionWords: "Words that often appeared",
@@ -847,14 +898,18 @@ const en = {
     setTimeLink: "Set notification time ›",
     todayPrefix: "Today",
     newChapterProposal: "Nilo has a proposal for a new chapter",
-    newQuestProposal: "Nilo has a proposal for an exploration"
+    newQuestProposal: "Nilo has a proposal for an exploration",
+    niloFirstLetterTitle: "Nilo's first letter",
+    niloFirstLetterBody: (quote) => `"${quote}" — that's what you said this week.`,
+    whisperPrompt: { title: "Night whisper", body: "It's almost time to light tonight's question.", later: "Later", light: "Light it" }
   },
 
   entryDetail: {
     tonightFallback: "Tonight",
     similarNightsLabel: "A similar night Nilo quietly offers",
     footer: "This record cannot be deleted.",
-    niloAsleepLabel: "NILO ASLEEP"
+    niloAsleepLabel: "NILO ASLEEP",
+    summaryLabel: "Nilo’s note"
   },
 
   memory: {
@@ -865,7 +920,7 @@ const en = {
     emptyBody: "Once you finish a night's reflection, that day's meaning will light up here."
   },
 
-  common: { cancel: "Cancel", delete: "Delete", confirm: "Confirm" },
+  common: { cancel: "Cancel", delete: "Delete", confirm: "Confirm", back: "Back", close: "Close", volumeDown: "Volume down", volumeUp: "Volume up" },
 
   settings: {
     header: "Settings",
@@ -892,7 +947,7 @@ const en = {
       disclosureTitle: "Scheduled access disclosure",
       disclosureBody: "Reveal specific chapters to someone at a set time",
       encryptionStatusTitle: "Encryption status",
-      encryptionStatusBody: "Structured so no one but you can read it",
+      encryptionStatusBody: "Always encrypted at rest",
       recoveryKeyTitle: "Recovery key",
       recoveryKeyBody: "A 24-word key for emergency recovery",
       emergencyContactTitle: "Emergency contact (witness)",
@@ -958,6 +1013,15 @@ const en = {
       allConfirmBody: "This will delete your diary, quests, memories, and chapters from this device. This action cannot be undone.",
       archiveConfirmTitle: "Delete the archive?",
       archiveConfirmBody: "All records on this device will be erased. This cannot be undone. We recommend exporting first.",
+      accountLabel: "Delete account",
+      accountNote: "Permanently deletes your account and every record stored on the server (diary, memories, chapters). Records on this device are erased too. This cannot be undone.",
+      accountButton: "Delete account and all data",
+      accountConfirmTitle: "Delete your account?",
+      accountConfirmBody: "Every record stored on the server will be permanently deleted. We recommend exporting first.",
+      accountFinalTitle: "Final confirmation",
+      accountFinalBody: "This cannot be undone. Your account and every record will be permanently deleted.",
+      accountDeleting: "Deleting...",
+      accountFailed: "Deletion failed. Please check your connection and try again.",
       keepBack: "Never mind",
       finalConfirmTitle: "Final confirmation",
       finalConfirmBody: "Are you sure you want to delete?",
@@ -1000,8 +1064,8 @@ const en = {
     security: {
       encryptionTitle: "Encryption status",
       encryptionBody: "Technical safety, explained in human terms.",
-      encryptionLabel: "🔒 Structured so no one but you can read it",
-      encryptionNote: "The key to your records is generated and managed on this device. Even ARC's servers can't see your records' contents. They're protected in a form only you can read.",
+      encryptionLabel: "🔒 Always encrypted at rest",
+      encryptionNote: "Your records are stored on the server in encrypted form. The decryption key is managed server-side, and your records are decrypted inside the server only when Nilo responds to you. Because Nilo reads them, this is not full end-to-end encryption. We tell you this as it is.",
       lockTitle: "Protect this place",
       lockBody: "Lock it with Face ID.",
       recoveryTitle: "Recovery key",
@@ -1175,6 +1239,7 @@ const en = {
 
 const fr = {
   tabs: { home: "Accueil", quests: "Quêtes", journal: "Journal", story: "Chapitres" },
+  header: { openNotifications: "Ouvrir les notifications", openSettings: "Ouvrir les réglages" },
 
   terms: {
     sections: [
@@ -1217,7 +1282,7 @@ const fr = {
     beginButton: "Commencer"
   },
 
-  encryption: { notice: "Structuré pour que personne d'autre que vous ne puisse le lire" },
+  encryption: { notice: "Chiffré et conservé avec soin" },
 
   support: {
     body: "Si ce que vous portez en ce moment vous semble trop lourd — il existe des endroits qui écoutent sans juger.",
@@ -1228,6 +1293,8 @@ const fr = {
     googleUrlError: "Impossible de créer le lien de connexion Google.",
     authCodeError: "Impossible de récupérer le code d'authentification.",
     googleLoginFailed: "Échec de la connexion avec Google.",
+    appleUrlError: "Impossible de créer le lien de connexion Apple.",
+    appleLoginFailed: "Échec de la connexion avec Apple.",
     emailRequired: "Veuillez saisir votre adresse e-mail.",
     emailCodeSent: "Veuillez saisir le code à 6 chiffres reçu par e-mail.",
     emailLoginFailed: "Échec de l'envoi du lien de connexion par e-mail.",
@@ -1251,6 +1318,7 @@ const fr = {
     readyBody: "Avant de commencer, confirmons que c'est bien vous.",
     connecting: "Connexion...",
     googleLogin: "Se connecter avec Google",
+    appleLogin: "Se connecter avec Apple",
     or: "ou",
     emailPlaceholder: "Adresse e-mail",
     sendingCode: "Envoi...",
@@ -1285,6 +1353,7 @@ const fr = {
   },
 
   ritual: {
+    yourWordsLabel: "Vos mots",
     startEnabled: "Touchez, et écrivez sur aujourd'hui",
     startDisabled: "Enregistré pour ce soir",
     placeholder: "Écrivez votre réponse ici",
@@ -1321,6 +1390,10 @@ const fr = {
     acceptProposal: "Regardons cela ensemble",
     declineProposal: "Laisser cela de côté pour l'instant",
     noProposalsNote: "Tout est calme en ce moment.\nQuand quelque chose revient sans cesse dans vos enregistrements quotidiens,\nNilo vous le proposera ici, tranquillement.",
+    scanningNote: "Nilo relit doucement vos derniers enregistrements…",
+    declinedNote: "Laissé tel quel.",
+    undoDecline: "Annuler",
+    acceptedNote: "Cette exploration est désormais à vos côtés.\nNilo la glissera doucement dans les nuits à venir.",
     ongoingGroup: "Explorations venues du passé",
     noOngoingNote: "Aucune exploration n'est en cours actuellement.",
     futureGroup: "Explorations tournées vers l'avenir",
@@ -1334,12 +1407,14 @@ const fr = {
   journal: {
     title: "Journal",
     goldLabel: "Vos journées jusqu'ici",
+    cumulativeNights: (n) => n === 1 ? "1 nuit recueillie" : `${n} nuits recueillies`,
     emptyRecent: "Il n'y a pas encore de journal.",
     nowLabel: "maintenant",
     questLabel: "Quête",
     storyGuideText: "Les jours antérieurs à ceux-ci reposent dans vos chapitres.",
     storyGuideLink: "Lire les chapitres →",
     lastYearEchoLabel: "À la même période l'an dernier",
+    weeksAgoEchoLabel: (n) => (n === 1 ? "Il y a une semaine, ce même soir" : `Il y a ${n} semaines, ce même soir`),
     entriesUnitSuffix: " entrées",
     defaultMeaning: "Un enregistrement tranquille",
     defaultDate: "Aujourd'hui"
@@ -1350,12 +1425,18 @@ const fr = {
     ordinalSuffix: "",
     endLabel: "Chapitres à venir",
     endNote: "Quand un changement de sens apparaît dans vos enregistrements quotidiens,\nNilo proposera tranquillement la prochaine coupure de chapitre.",
+    foreshadow: "Un courant qui pourrait devenir un chapitre commence à apparaître dans vos enregistrements.\nRien ne presse de le nommer.",
     findBusy: "En train d'observer…",
     findAgain: "Chercher un chapitre à nouveau",
     findFirst: "Chercher un chapitre",
     nowInChapter: "—— En ce moment, dans ce chapitre",
     sectionRecords: "Enregistrements de ce chapitre",
     sectionRecordsNote: (n) => `parmi ${n} enregistrements`,
+    statsRecords: (n) => (n === 1 ? "1 enregistrement" : `${n} enregistrements`),
+    statsSpanYearsMonths: (y, m) => `${y} an${y > 1 ? "s" : ""}${m ? ` et ${m} mois` : ""}`,
+    statsSpanMonths: (m) => `${m} mois`,
+    statsSpanDays: (d) => `${d} jour${d > 1 ? "s" : ""}`,
+    statsEmotion: (label) => `L'émotion au centre ・ ${label}`,
     sectionReunion: "Retrouvailles avec le passé",
     sectionWish: "Le vœu de ce chapitre",
     sectionWords: "Mots qui sont souvent revenus",
@@ -1409,14 +1490,18 @@ const fr = {
     setTimeLink: "Définir l'heure de notification ›",
     todayPrefix: "Aujourd'hui",
     newChapterProposal: "Nilo a une proposition de nouveau chapitre",
-    newQuestProposal: "Nilo a une proposition d'exploration"
+    newQuestProposal: "Nilo a une proposition d'exploration",
+    niloFirstLetterTitle: "La première lettre de Nilo",
+    niloFirstLetterBody: (quote) => `« ${quote} » — voilà ce que vous avez dit cette semaine.`,
+    whisperPrompt: { title: "Murmure nocturne", body: "C'est bientôt l'heure d'éclairer la question de ce soir.", later: "Plus tard", light: "Éclairer" }
   },
 
   entryDetail: {
     tonightFallback: "Ce soir",
     similarNightsLabel: "Une nuit similaire que Nilo propose tranquillement",
     footer: "Cet enregistrement ne peut pas être supprimé.",
-    niloAsleepLabel: "NILO ENDORMI"
+    niloAsleepLabel: "NILO ENDORMI",
+    summaryLabel: "La note de Nilo"
   },
 
   memory: {
@@ -1427,7 +1512,7 @@ const fr = {
     emptyBody: "Une fois une réflexion nocturne terminée, le sens de cette journée s'allumera ici."
   },
 
-  common: { cancel: "Annuler", delete: "Supprimer", confirm: "Confirmer" },
+  common: { cancel: "Annuler", delete: "Supprimer", confirm: "Confirmer", back: "Retour", close: "Fermer", volumeDown: "Baisser le volume", volumeUp: "Augmenter le volume" },
 
   settings: {
     header: "Paramètres",
@@ -1454,7 +1539,7 @@ const fr = {
       disclosureTitle: "Divulgation d'accès programmée",
       disclosureBody: "Révéler certains chapitres à quelqu'un à un moment donné",
       encryptionStatusTitle: "État du chiffrement",
-      encryptionStatusBody: "Structuré pour que personne d'autre que vous ne puisse le lire",
+      encryptionStatusBody: "Toujours chiffré au repos",
       recoveryKeyTitle: "Clé de récupération",
       recoveryKeyBody: "Une clé de 24 mots pour une récupération d'urgence",
       emergencyContactTitle: "Contact d'urgence (témoin)",
@@ -1520,6 +1605,15 @@ const fr = {
       allConfirmBody: "Cela supprimera votre journal, vos quêtes, souvenirs et chapitres de cet appareil. Cette action est irréversible.",
       archiveConfirmTitle: "Supprimer l'archive ?",
       archiveConfirmBody: "Tous les enregistrements de cet appareil seront effacés. Cette action est irréversible. Nous recommandons d'exporter d'abord.",
+      accountLabel: "Supprimer le compte",
+      accountNote: "Supprime définitivement votre compte et tous les enregistrements stockés sur le serveur (journal, souvenirs, chapitres). Les enregistrements de cet appareil sont aussi effacés. Cette action est irréversible.",
+      accountButton: "Supprimer le compte et toutes les données",
+      accountConfirmTitle: "Supprimer votre compte ?",
+      accountConfirmBody: "Tous les enregistrements stockés sur le serveur seront définitivement supprimés. Nous recommandons d'exporter d'abord.",
+      accountFinalTitle: "Confirmation finale",
+      accountFinalBody: "Cette action est irréversible. Votre compte et tous les enregistrements seront définitivement supprimés.",
+      accountDeleting: "Suppression en cours...",
+      accountFailed: "La suppression a échoué. Vérifiez votre connexion et réessayez.",
       keepBack: "Laisser tomber",
       finalConfirmTitle: "Confirmation finale",
       finalConfirmBody: "Voulez-vous vraiment supprimer ?",
@@ -1562,8 +1656,8 @@ const fr = {
     security: {
       encryptionTitle: "État du chiffrement",
       encryptionBody: "La sécurité technique, expliquée en termes humains.",
-      encryptionLabel: "🔒 Structuré pour que personne d'autre que vous ne puisse le lire",
-      encryptionNote: "La clé de vos enregistrements est générée et gérée sur cet appareil. Même les serveurs d'ARC ne peuvent pas voir le contenu de vos enregistrements. Ils sont protégés d'une façon que seul vous pouvez lire.",
+      encryptionLabel: "🔒 Toujours chiffré au repos",
+      encryptionNote: "Vos enregistrements sont stockés sur le serveur sous forme chiffrée. La clé de déchiffrement est gérée côté serveur, et vos enregistrements ne sont déchiffrés au sein du serveur que lorsque Nilo vous répond. Parce que Nilo les lit, ce n'est pas un chiffrement de bout en bout complet. Nous vous le disons tel quel.",
       lockTitle: "Protéger cet endroit",
       lockBody: "Verrouiller avec Face ID.",
       recoveryTitle: "Clé de récupération",
@@ -1737,6 +1831,7 @@ const fr = {
 
 const de = {
   tabs: { home: "Start", quests: "Quests", journal: "Tagebuch", story: "Kapitel" },
+  header: { openNotifications: "Benachrichtigungen öffnen", openSettings: "Einstellungen öffnen" },
 
   terms: {
     sections: [
@@ -1779,7 +1874,7 @@ const de = {
     beginButton: "Beginnen"
   },
 
-  encryption: { notice: "So aufgebaut, dass niemand außer dir es lesen kann" },
+  encryption: { notice: "Verschlüsselt und sorgsam aufbewahrt" },
 
   support: {
     body: "Wenn sich das, was du gerade trägst, zu schwer anfühlt – es gibt Orte, die zuhören, ohne zu urteilen.",
@@ -1790,6 +1885,8 @@ const de = {
     googleUrlError: "Der Google-Anmeldelink konnte nicht erstellt werden.",
     authCodeError: "Der Authentifizierungscode konnte nicht abgerufen werden.",
     googleLoginFailed: "Die Anmeldung mit Google ist fehlgeschlagen.",
+    appleUrlError: "Der Apple-Anmeldelink konnte nicht erstellt werden.",
+    appleLoginFailed: "Die Anmeldung mit Apple ist fehlgeschlagen.",
     emailRequired: "Bitte gib deine E-Mail-Adresse ein.",
     emailCodeSent: "Bitte gib den per E-Mail erhaltenen 6-stelligen Code ein.",
     emailLoginFailed: "Der E-Mail-Anmeldelink konnte nicht gesendet werden.",
@@ -1813,6 +1910,7 @@ const de = {
     readyBody: "Bevor wir beginnen, lass uns bestätigen, dass du es bist.",
     connecting: "Verbindung wird hergestellt...",
     googleLogin: "Mit Google anmelden",
+    appleLogin: "Mit Apple anmelden",
     or: "oder",
     emailPlaceholder: "E-Mail-Adresse",
     sendingCode: "Wird gesendet...",
@@ -1847,6 +1945,7 @@ const de = {
   },
 
   ritual: {
+    yourWordsLabel: "Deine Worte",
     startEnabled: "Berühren und heute schreiben",
     startDisabled: "Für heute Nacht bereits festgehalten",
     placeholder: "Schreibe deine Antwort hier",
@@ -1883,6 +1982,10 @@ const de = {
     acceptProposal: "Schauen wir es uns gemeinsam an",
     declineProposal: "Vorerst so lassen",
     noProposalsNote: "Gerade ist es still.\nWenn sich etwas in deinen täglichen Aufzeichnungen wiederholt,\nwird Nilo es dir hier still vorschlagen.",
+    scanningNote: "Nilo liest still deine letzten Aufzeichnungen noch einmal…",
+    declinedNote: "So belassen.",
+    undoDecline: "Rückgängig",
+    acceptedNote: "Diese Erkundung liegt nun an deiner Seite.\nNilo wird sie still in die kommenden Nächte einweben.",
     ongoingGroup: "Erkundungen aus der Vergangenheit",
     noOngoingNote: "Im Moment läuft keine Erkundung.",
     futureGroup: "Erkundungen für die Zukunft",
@@ -1896,12 +1999,14 @@ const de = {
   journal: {
     title: "Tagebuch",
     goldLabel: "Deine bisherigen Tage",
+    cumulativeNights: (n) => n === 1 ? "1 gesammelte Nacht" : `${n} gesammelte Nächte`,
     emptyRecent: "Es gibt noch kein Tagebuch.",
     nowLabel: "jetzt",
     questLabel: "Quest",
     storyGuideText: "Tage davor ruhen in deinen Kapiteln.",
     storyGuideLink: "Kapitel lesen →",
     lastYearEchoLabel: "Um diese Zeit vor einem Jahr",
+    weeksAgoEchoLabel: (n) => (n === 1 ? "Vor einer Woche, heute Nacht" : `Vor ${n} Wochen, heute Nacht`),
     entriesUnitSuffix: " Einträge",
     defaultMeaning: "Eine stille Aufzeichnung",
     defaultDate: "Heute"
@@ -1912,12 +2017,18 @@ const de = {
     ordinalSuffix: "",
     endLabel: "Kommende Kapitel",
     endNote: "Wenn sich ein Bedeutungswandel in deinen täglichen Aufzeichnungen zeigt,\nwird Nilo dir still den nächsten Kapitelabschnitt vorschlagen.",
+    foreshadow: "In deinen Aufzeichnungen zeichnet sich eine Strömung ab, die ein Kapitel werden könnte.\nEs hat keine Eile, ihr einen Namen zu geben.",
     findBusy: "Betrachtet gerade genau…",
     findAgain: "Erneut nach einem Kapitel suchen",
     findFirst: "Nach einem Kapitel suchen",
     nowInChapter: "—— Gerade jetzt, in diesem Kapitel",
     sectionRecords: "Aufzeichnungen dieses Kapitels",
     sectionRecordsNote: (n) => `aus ${n} Aufzeichnungen`,
+    statsRecords: (n) => (n === 1 ? "1 Aufzeichnung" : `${n} Aufzeichnungen`),
+    statsSpanYearsMonths: (y, m) => `${y} Jahr${y > 1 ? "e" : ""}${m ? ` und ${m} Monat${m > 1 ? "e" : ""}` : ""}`,
+    statsSpanMonths: (m) => `${m} Monat${m > 1 ? "e" : ""}`,
+    statsSpanDays: (d) => `${d} Tag${d > 1 ? "e" : ""}`,
+    statsEmotion: (label) => `Das Gefühl in der Mitte ・ ${label}`,
     sectionReunion: "Ein Wiedersehen mit der Vergangenheit",
     sectionWish: "Der Wunsch dieses Kapitels",
     sectionWords: "Wörter, die oft vorkamen",
@@ -1971,14 +2082,18 @@ const de = {
     setTimeLink: "Benachrichtigungszeit einstellen ›",
     todayPrefix: "Heute",
     newChapterProposal: "Nilo hat einen Vorschlag für ein neues Kapitel",
-    newQuestProposal: "Nilo hat einen Vorschlag für eine Erkundung"
+    newQuestProposal: "Nilo hat einen Vorschlag für eine Erkundung",
+    niloFirstLetterTitle: "Nilos erster Brief",
+    niloFirstLetterBody: (quote) => `„${quote}“ — das hast du diese Woche gesagt.`,
+    whisperPrompt: { title: "Nächtliches Flüstern", body: "Es ist bald Zeit, die Frage für heute Nacht zu entzünden.", later: "Später", light: "Entzünden" }
   },
 
   entryDetail: {
     tonightFallback: "Heute Nacht",
     similarNightsLabel: "Eine ähnliche Nacht, die Nilo still vorschlägt",
     footer: "Diese Aufzeichnung kann nicht gelöscht werden.",
-    niloAsleepLabel: "NILO SCHLÄFT"
+    niloAsleepLabel: "NILO SCHLÄFT",
+    summaryLabel: "Nilos Notiz"
   },
 
   memory: {
@@ -1989,7 +2104,7 @@ const de = {
     emptyBody: "Sobald eine nächtliche Reflexion abgeschlossen ist, leuchtet die Bedeutung dieses Tages hier auf."
   },
 
-  common: { cancel: "Abbrechen", delete: "Löschen", confirm: "Bestätigen" },
+  common: { cancel: "Abbrechen", delete: "Löschen", confirm: "Bestätigen", back: "Zurück", close: "Schließen", volumeDown: "Leiser", volumeUp: "Lauter" },
 
   settings: {
     header: "Einstellungen",
@@ -2016,7 +2131,7 @@ const de = {
       disclosureTitle: "Geplante Zugriffsfreigabe",
       disclosureBody: "Bestimmte Kapitel jemandem zu einem festgelegten Zeitpunkt zeigen",
       encryptionStatusTitle: "Verschlüsselungsstatus",
-      encryptionStatusBody: "So aufgebaut, dass niemand außer dir es lesen kann",
+      encryptionStatusBody: "Immer verschlüsselt gespeichert",
       recoveryKeyTitle: "Wiederherstellungsschlüssel",
       recoveryKeyBody: "Ein 24-Wörter-Schlüssel für die Wiederherstellung im Notfall",
       emergencyContactTitle: "Notfallkontakt (Zeuge)",
@@ -2082,6 +2197,15 @@ const de = {
       allConfirmBody: "Dies löscht dein Tagebuch, deine Quests, Erinnerungen und Kapitel von diesem Gerät. Diese Aktion kann nicht rückgängig gemacht werden.",
       archiveConfirmTitle: "Archiv löschen?",
       archiveConfirmBody: "Alle Aufzeichnungen auf diesem Gerät werden gelöscht. Dies kann nicht rückgängig gemacht werden. Wir empfehlen, vorher zu exportieren.",
+      accountLabel: "Konto löschen",
+      accountNote: "Löscht dein Konto und alle auf dem Server gespeicherten Aufzeichnungen (Tagebuch, Erinnerungen, Kapitel) endgültig. Auch die Aufzeichnungen auf diesem Gerät werden gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      accountButton: "Konto und alle Daten löschen",
+      accountConfirmTitle: "Konto löschen?",
+      accountConfirmBody: "Alle auf dem Server gespeicherten Aufzeichnungen werden endgültig gelöscht. Wir empfehlen, vorher zu exportieren.",
+      accountFinalTitle: "Letzte Bestätigung",
+      accountFinalBody: "Dies kann nicht rückgängig gemacht werden. Dein Konto und alle Aufzeichnungen werden endgültig gelöscht.",
+      accountDeleting: "Wird gelöscht...",
+      accountFailed: "Löschen fehlgeschlagen. Bitte prüfe deine Verbindung und versuche es erneut.",
       keepBack: "Doch nicht",
       finalConfirmTitle: "Letzte Bestätigung",
       finalConfirmBody: "Möchtest du wirklich löschen?",
@@ -2124,8 +2248,8 @@ const de = {
     security: {
       encryptionTitle: "Verschlüsselungsstatus",
       encryptionBody: "Technische Sicherheit, in menschlichen Worten erklärt.",
-      encryptionLabel: "🔒 So aufgebaut, dass niemand außer dir es lesen kann",
-      encryptionNote: "Der Schlüssel zu deinen Aufzeichnungen wird auf diesem Gerät erzeugt und verwaltet. Selbst ARCs Server können den Inhalt deiner Aufzeichnungen nicht sehen. Sie sind so geschützt, dass nur du sie lesen kannst.",
+      encryptionLabel: "🔒 Immer verschlüsselt gespeichert",
+      encryptionNote: "Deine Aufzeichnungen werden verschlüsselt auf dem Server gespeichert. Der Entschlüsselungsschlüssel wird serverseitig verwaltet, und deine Aufzeichnungen werden nur innerhalb des Servers entschlüsselt – genau dann, wenn Nilo dir antwortet. Weil Nilo sie liest, ist dies keine vollständige Ende-zu-Ende-Verschlüsselung. Wir sagen es dir, wie es ist.",
       lockTitle: "Diesen Ort schützen",
       lockBody: "Mit Face ID sperren.",
       recoveryTitle: "Wiederherstellungsschlüssel",
@@ -2299,6 +2423,7 @@ const de = {
 
 const zh = {
   tabs: { home: "首页", quests: "探索", journal: "日记", story: "章节" },
+  header: { openNotifications: "打开通知", openSettings: "打开设置" },
 
   terms: {
     sections: [
@@ -2341,7 +2466,7 @@ const zh = {
     beginButton: "开始"
   },
 
-  encryption: { notice: "已设计为除你之外无人可读" },
+  encryption: { notice: "已加密，妥善保存" },
 
   support: {
     body: "如果此刻心中所承受的一切让你感到太过沉重——这里有可以倾听而不评判你的地方。",
@@ -2352,6 +2477,8 @@ const zh = {
     googleUrlError: "无法创建Google登录链接。",
     authCodeError: "无法获取验证码。",
     googleLoginFailed: "Google登录失败。",
+    appleUrlError: "无法创建Apple登录链接。",
+    appleLoginFailed: "Apple登录失败。",
     emailRequired: "请输入电子邮件地址。",
     emailCodeSent: "请输入发送到你邮箱的6位验证码。",
     emailLoginFailed: "发送邮箱登录链接失败。",
@@ -2375,6 +2502,7 @@ const zh = {
     readyBody: "开始之前，请让我确认一下是你。",
     connecting: "连接中...",
     googleLogin: "使用Google登录",
+    appleLogin: "使用Apple登录",
     or: "或",
     emailPlaceholder: "电子邮件地址",
     sendingCode: "发送中...",
@@ -2409,6 +2537,7 @@ const zh = {
   },
 
   ritual: {
+    yourWordsLabel: "你的话",
     startEnabled: "触碰，记录今天",
     startDisabled: "今晚已经记录过了",
     placeholder: "在这里写下你的回答",
@@ -2445,6 +2574,10 @@ const zh = {
     acceptProposal: "一起来看看吧",
     declineProposal: "现在先保持原样",
     noProposalsNote: "现在是安静的时刻。\n当日常记录中反复出现某些东西时，\nNilo会在这里悄悄地提出来。",
+    scanningNote: "Nilo正在静静地重读你最近的记录…",
+    declinedNote: "已保持原样。",
+    undoDecline: "撤销",
+    acceptedNote: "这场探索已放在你身边。\nNilo会悄悄把它织进今后的夜晚。",
     ongoingGroup: "追溯过去的探索",
     noOngoingNote: "目前没有正在进行的探索。",
     futureGroup: "面向未来的探索",
@@ -2458,12 +2591,14 @@ const zh = {
   journal: {
     title: "日记",
     goldLabel: "至今为止的日子",
+    cumulativeNights: (n) => `积攒的夜晚 ${n}`,
     emptyRecent: "还没有日记。",
     nowLabel: "现在",
     questLabel: "探索",
     storyGuideText: "更早的日子，正安眠在你的章节之中。",
     storyGuideLink: "阅读章节 →",
     lastYearEchoLabel: "去年的这个时候",
+    weeksAgoEchoLabel: (n) => `${n}周前的今夜`,
     entriesUnitSuffix: "篇",
     defaultMeaning: "一段安静的记录",
     defaultDate: "今天"
@@ -2474,12 +2609,18 @@ const zh = {
     ordinalSuffix: "章",
     endLabel: "未来的章节",
     endNote: "当日常记录中显现出意义的转变时，\nNilo会静静地为你提出下一个章节的分界。",
+    foreshadow: "你的记录中，开始浮现出可能成为章节的脉络。\n不必急着为它命名。",
     findBusy: "正在细细端详…",
     findAgain: "再次寻找章节",
     findFirst: "寻找章节",
     nowInChapter: "—— 此刻，正身处这一章之中",
     sectionRecords: "本章的记录",
     sectionRecordsNote: (n) => `来自${n}条记录`,
+    statsRecords: (n) => `${n}条记录`,
+    statsSpanYearsMonths: (y, m) => (m ? `${y}年${m}个月` : `${y}年`),
+    statsSpanMonths: (m) => `${m}个月`,
+    statsSpanDays: (d) => `${d}天`,
+    statsEmotion: (label) => `位于中心的情感 ・ ${label}`,
     sectionReunion: "与过去的重逢",
     sectionWish: "本章的愿望",
     sectionWords: "常常出现的词语",
@@ -2533,14 +2674,18 @@ const zh = {
     setTimeLink: "设置通知时间 ›",
     todayPrefix: "今天",
     newChapterProposal: "Nilo提出了新章节的提议",
-    newQuestProposal: "Nilo提出了探索的提议"
+    newQuestProposal: "Nilo提出了探索的提议",
+    niloFirstLetterTitle: "Nilo的第一封信",
+    niloFirstLetterBody: (quote) => `「${quote}」——这是你本周说过的话。`,
+    whisperPrompt: { title: "夜的低语", body: "差不多是时候点亮今夜的问题了。", later: "稍后", light: "点亮" }
   },
 
   entryDetail: {
     tonightFallback: "今晚",
     similarNightsLabel: "Nilo悄悄提出的、相似的一夜",
     footer: "这条记录无法被删除。",
-    niloAsleepLabel: "NILO 沉睡中"
+    niloAsleepLabel: "NILO 沉睡中",
+    summaryLabel: "Nilo的手记"
   },
 
   memory: {
@@ -2551,7 +2696,7 @@ const zh = {
     emptyBody: "完成一次夜晚的回顾后，那一天的意义便会在这里点亮。"
   },
 
-  common: { cancel: "取消", delete: "删除", confirm: "确认" },
+  common: { cancel: "取消", delete: "删除", confirm: "确认", back: "返回", close: "关闭", volumeDown: "调低音量", volumeUp: "调高音量" },
 
   settings: {
     header: "设置",
@@ -2578,7 +2723,7 @@ const zh = {
       disclosureTitle: "预约公开访问权限",
       disclosureBody: "指定时间与对象，逐步公开特定章节",
       encryptionStatusTitle: "加密状态",
-      encryptionStatusBody: "已设计为除你之外无人可读",
+      encryptionStatusBody: "存储时始终加密",
       recoveryKeyTitle: "恢复密钥",
       recoveryKeyBody: "用于紧急恢复的24词密钥",
       emergencyContactTitle: "紧急联系人（见证人）",
@@ -2644,6 +2789,15 @@ const zh = {
       allConfirmBody: "此操作将从本设备删除日记、探索、记忆与章节。此操作无法撤销。",
       archiveConfirmTitle: "要删除档案吗？",
       archiveConfirmBody: "本设备上的所有记录都将被清除。此操作无法撤销。建议在继续前先导出备份。",
+      accountLabel: "彻底删除账户",
+      accountNote: "将彻底删除您的账户以及服务器上保存的所有记录（日记、记忆与章节）。本设备上的记录也会被清除。此操作无法撤销。",
+      accountButton: "删除账户与全部数据",
+      accountConfirmTitle: "要删除账户吗？",
+      accountConfirmBody: "服务器上保存的所有记录都将被彻底删除。建议先导出备份。",
+      accountFinalTitle: "最终确认",
+      accountFinalBody: "此操作无法撤销。您的账户和所有记录将被彻底删除。",
+      accountDeleting: "正在删除...",
+      accountFailed: "删除失败。请检查网络连接后重试。",
       keepBack: "还是算了",
       finalConfirmTitle: "最终确认",
       finalConfirmBody: "真的要删除吗？",
@@ -2686,8 +2840,8 @@ const zh = {
     security: {
       encryptionTitle: "加密状态",
       encryptionBody: "用人性化的语言，传达技术层面的安全。",
-      encryptionLabel: "🔒 已设计为除你之外无人可读",
-      encryptionNote: "记录的密钥在本设备上生成并管理。即便是ARC的服务器，也无法看到记录的内容。它们以除你之外无人可读的方式受到保护。",
+      encryptionLabel: "🔒 存储时始终加密",
+      encryptionNote: "你的记录以加密形式保存在服务器上。解密密钥由服务器端管理，只有当Nilo回应你的记录时，才会在服务器内部解密。因为Nilo需要阅读记录，这并不是完整的端到端加密。我们如实相告。",
       lockTitle: "守护这个地方",
       lockBody: "使用Face ID锁定。",
       recoveryTitle: "恢复密钥",
@@ -2861,6 +3015,7 @@ const zh = {
 
 const ko = {
   tabs: { home: "홈", quests: "퀘스트", journal: "일기", story: "챕터" },
+  header: { openNotifications: "알림 열기", openSettings: "설정 열기" },
 
   terms: {
     sections: [
@@ -2903,7 +3058,7 @@ const ko = {
     beginButton: "시작하기"
   },
 
-  encryption: { notice: "당신 외에는 읽을 수 없는 구조로 되어 있습니다" },
+  encryption: { notice: "암호화하여 소중히 보관하고 있습니다" },
 
   support: {
     body: "지금 짊어지고 있는 것이 너무 무겁게 느껴진다면. 당신의 이야기를 평가하지 않고 들어주는 곳이 있습니다.",
@@ -2914,6 +3069,8 @@ const ko = {
     googleUrlError: "Google 로그인 URL을 생성할 수 없었습니다.",
     authCodeError: "인증 코드를 가져올 수 없었습니다.",
     googleLoginFailed: "Google 로그인에 실패했습니다.",
+    appleUrlError: "Apple 로그인 URL을 생성할 수 없었습니다.",
+    appleLoginFailed: "Apple 로그인에 실패했습니다.",
     emailRequired: "이메일 주소를 입력해 주세요.",
     emailCodeSent: "이메일로 받은 6자리 코드를 입력해 주세요.",
     emailLoginFailed: "이메일 로그인 전송에 실패했습니다.",
@@ -2937,6 +3094,7 @@ const ko = {
     readyBody: "시작하기 전에, 당신이 맞는지 확인하겠습니다.",
     connecting: "연결 중...",
     googleLogin: "Google로 로그인",
+    appleLogin: "Apple로 로그인",
     or: "또는",
     emailPlaceholder: "이메일 주소",
     sendingCode: "전송 중...",
@@ -2971,6 +3129,7 @@ const ko = {
   },
 
   ritual: {
+    yourWordsLabel: "당신의 말",
     startEnabled: "터치하고, 오늘을 쓰기",
     startDisabled: "오늘 밤은 이미 기록했습니다",
     placeholder: "여기에 답을 적어주세요",
@@ -3007,6 +3166,10 @@ const ko = {
     acceptProposal: "함께 살펴볼게요",
     declineProposal: "지금은 그대로 둘게요",
     noProposalsNote: "지금은 조용한 시간입니다.\n일상의 기록 속에서 반복해서 나타나는 것을 발견하면,\nNilo가 여기에 살며시 건네드립니다.",
+    scanningNote: "Nilo가 최근의 기록을 조용히 다시 읽고 있습니다…",
+    declinedNote: "그대로 두었습니다.",
+    undoDecline: "되돌리기",
+    acceptedNote: "이 탐구는 이제 곁에 놓였습니다.\nNilo가 앞으로의 밤에 살며시 엮어 넣을 거예요.",
     ongoingGroup: "과거를 더듬는 탐구",
     noOngoingNote: "지금 진행 중인 탐구는 없습니다.",
     futureGroup: "미래를 향한 탐구",
@@ -3020,12 +3183,14 @@ const ko = {
   journal: {
     title: "일기",
     goldLabel: "지금까지의 나날",
+    cumulativeNights: (n) => `쌓아온 밤 ${n}`,
     emptyRecent: "아직 일기가 없습니다.",
     nowLabel: "지금",
     questLabel: "퀘스트",
     storyGuideText: "그 이전의 나날은, 챕터 속에서 잠들어 있습니다.",
     storyGuideLink: "챕터 읽기 →",
     lastYearEchoLabel: "1년 전 이맘때",
+    weeksAgoEchoLabel: (n) => `${n}주 전의 오늘 밤`,
     entriesUnitSuffix: "편",
     defaultMeaning: "조용한 기록",
     defaultDate: "오늘"
@@ -3036,12 +3201,18 @@ const ko = {
     ordinalSuffix: "장",
     endLabel: "앞으로의 챕터",
     endNote: "일상의 기록 속에서 의미의 변화가 보이면,\nNilo가 다음 챕터의 경계를 살며시 건네드립니다.",
+    foreshadow: "당신의 기록 속에, 챕터가 될 듯한 흐름이 보이기 시작합니다.\n이름을 붙이는 건 서두르지 않아도 됩니다.",
     findBusy: "가만히 들여다보고 있습니다…",
     findAgain: "다시 한 번 챕터 찾기",
     findFirst: "챕터 찾기",
     nowInChapter: "—— 지금, 이 챕터 안에서",
     sectionRecords: "이 챕터의 기록",
     sectionRecordsNote: (n) => `${n}개의 기록 중에서`,
+    statsRecords: (n) => `${n}개의 기록`,
+    statsSpanYearsMonths: (y, m) => (m ? `${y}년 ${m}개월` : `${y}년`),
+    statsSpanMonths: (m) => `${m}개월`,
+    statsSpanDays: (d) => `${d}일간`,
+    statsEmotion: (label) => `중심에 있던 감정 ・ ${label}`,
     sectionReunion: "과거와의 재회",
     sectionWish: "이 챕터의 소망",
     sectionWords: "자주 나타난 말들",
@@ -3095,14 +3266,18 @@ const ko = {
     setTimeLink: "알림 시각 설정하기 ›",
     todayPrefix: "오늘",
     newChapterProposal: "Nilo로부터 새로운 챕터 제안이 있습니다",
-    newQuestProposal: "Nilo로부터 탐구 제안이 있습니다"
+    newQuestProposal: "Nilo로부터 탐구 제안이 있습니다",
+    niloFirstLetterTitle: "Nilo의 첫 편지",
+    niloFirstLetterBody: (quote) => `"${quote}" — 이번 주에 당신이 한 말입니다.`,
+    whisperPrompt: { title: "밤의 속삭임", body: "슬슬 오늘 밤의 질문을 밝힐 시간입니다.", later: "나중에", light: "밝히기" }
   },
 
   entryDetail: {
     tonightFallback: "오늘 밤",
     similarNightsLabel: "Nilo가 살며시 건네는, 비슷한 밤",
     footer: "이 기록은 삭제할 수 없습니다.",
-    niloAsleepLabel: "NILO 잠듦"
+    niloAsleepLabel: "NILO 잠듦",
+    summaryLabel: "Nilo의 메모"
   },
 
   memory: {
@@ -3113,7 +3288,7 @@ const ko = {
     emptyBody: "밤의 성찰을 마치면, 그날의 의미가 이곳에 켜집니다."
   },
 
-  common: { cancel: "취소", delete: "삭제", confirm: "확인" },
+  common: { cancel: "취소", delete: "삭제", confirm: "확인", back: "뒤로", close: "닫기", volumeDown: "음량 낮추기", volumeUp: "음량 높이기" },
 
   settings: {
     header: "설정",
@@ -3140,7 +3315,7 @@ const ko = {
       disclosureTitle: "접근 권한 예약 공개",
       disclosureBody: "시간과 상대를 지정해 공개합니다",
       encryptionStatusTitle: "암호화 상태",
-      encryptionStatusBody: "당신 외에는 읽을 수 없는 구조",
+      encryptionStatusBody: "저장 시 항상 암호화",
       recoveryKeyTitle: "복구 키",
       recoveryKeyBody: "긴급 시 복구를 위한 24개 단어의 키",
       emergencyContactTitle: "긴급 연락처(증인)",
@@ -3206,6 +3381,15 @@ const ko = {
       allConfirmBody: "이 기기에서 일기, 퀘스트, 기억, 챕터가 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
       archiveConfirmTitle: "아카이브를 삭제하시겠어요?",
       archiveConfirmBody: "이 기기의 모든 기록이 삭제됩니다. 되돌릴 수 없습니다. 진행 전 내보내기를 권장합니다.",
+      accountLabel: "계정 완전 삭제",
+      accountNote: "계정과 서버에 저장된 모든 기록(일기·기억·챕터)을 완전히 삭제합니다. 이 기기의 기록도 삭제되며, 되돌릴 수 없습니다.",
+      accountButton: "계정과 모든 데이터 삭제하기",
+      accountConfirmTitle: "계정을 삭제하시겠어요?",
+      accountConfirmBody: "서버에 저장된 모든 기록이 완전히 삭제됩니다. 먼저 내보내기를 권장합니다.",
+      accountFinalTitle: "최종 확인",
+      accountFinalBody: "이 작업은 되돌릴 수 없습니다. 계정과 모든 기록이 완전히 삭제됩니다.",
+      accountDeleting: "삭제하는 중...",
+      accountFailed: "삭제에 실패했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
       keepBack: "그만두기",
       finalConfirmTitle: "최종 확인",
       finalConfirmBody: "정말 삭제하시겠어요?",
@@ -3248,8 +3432,8 @@ const ko = {
     security: {
       encryptionTitle: "암호화 상태",
       encryptionBody: "기술적인 안전을, 사람의 언어로 전합니다.",
-      encryptionLabel: "🔒 당신 외에는 읽을 수 없는 구조",
-      encryptionNote: "기록의 키는 이 기기에서 생성 및 관리됩니다. ARC의 서버에서도 기록의 내용은 보이지 않습니다. 당신 외에는 읽을 수 없는 형태로 보호되고 있습니다.",
+      encryptionLabel: "🔒 저장 시 항상 암호화",
+      encryptionNote: "당신의 기록은 암호화된 형태로 서버에 저장됩니다. 복호화 키는 서버 측에서 관리되며, Nilo가 당신의 기록에 응답할 때만 서버 안에서 복호화됩니다. Nilo가 읽을 수 있도록 하기 위해, 완전한 종단간 암호화는 아닙니다. 이 점도 있는 그대로 전해 드립니다.",
       lockTitle: "이 장소를 지키기",
       lockBody: "Face ID로 잠급니다.",
       recoveryTitle: "복구 키",
@@ -3441,6 +3625,7 @@ function mergeTranslation(base = {}, overrides = {}) {
 
 const es = mergeTranslation(en, {
   tabs: { home: "Inicio", quests: "Misiones", journal: "Diario", story: "Capítulos" },
+  header: { openNotifications: "Abrir notificaciones", openSettings: "Abrir ajustes" },
 
   terms: {
     sections: [
@@ -3483,7 +3668,7 @@ const es = mergeTranslation(en, {
     beginButton: "Comenzar"
   },
 
-  encryption: { notice: "Estructurado para que nadie más que tú pueda leerlo" },
+  encryption: { notice: "Cifrado y guardado con cuidado" },
 
   support: {
     body: "Si lo que llevas ahora se siente demasiado pesado, hay lugares que escuchan sin juzgar.",
@@ -3494,6 +3679,8 @@ const es = mergeTranslation(en, {
     googleUrlError: "No se pudo crear el enlace de inicio de sesión con Google.",
     authCodeError: "No se pudo recuperar el código de autenticación.",
     googleLoginFailed: "Falló el inicio de sesión con Google.",
+    appleUrlError: "No se pudo crear el enlace de inicio de sesión con Apple.",
+    appleLoginFailed: "Falló el inicio de sesión con Apple.",
     emailRequired: "Introduce tu correo electrónico.",
     emailCodeSent: "Introduce el código de 6 dígitos enviado a tu correo.",
     emailLoginFailed: "No se pudo enviar el enlace de inicio de sesión por correo.",
@@ -3516,6 +3703,7 @@ const es = mergeTranslation(en, {
     readyBody: "Antes de empezar, confirmemos que eres tú.",
     connecting: "Conectando...",
     googleLogin: "Iniciar sesión con Google",
+    appleLogin: "Iniciar sesión con Apple",
     or: "o",
     emailPlaceholder: "Correo electrónico",
     sendingCode: "Enviando...",
@@ -3550,6 +3738,7 @@ const es = mergeTranslation(en, {
   },
 
   ritual: {
+    yourWordsLabel: "Tus palabras",
     startEnabled: "Toca y escribe hoy",
     startDisabled: "Registrado por esta noche",
     placeholder: "Escribe tu respuesta aquí",
@@ -3586,6 +3775,10 @@ const es = mergeTranslation(en, {
     acceptProposal: "Mirémoslo juntos",
     declineProposal: "Dejarlo por ahora",
     noProposalsNote: "Ahora está tranquilo.\nCuando algo vuelva una y otra vez en tus registros diarios,\nNilo lo ofrecerá aquí en silencio.",
+    scanningNote: "Nilo está releyendo en silencio tus registros recientes…",
+    declinedNote: "Se dejó tal cual.",
+    undoDecline: "Deshacer",
+    acceptedNote: "Esta exploración ahora descansa a tu lado.\nNilo la entretejerá en silencio en las noches por venir.",
     ongoingGroup: "Exploraciones del pasado",
     noOngoingNote: "Ahora no hay exploraciones en curso.",
     futureGroup: "Exploraciones hacia el futuro",
@@ -3599,12 +3792,14 @@ const es = mergeTranslation(en, {
   journal: {
     title: "Diario",
     goldLabel: "Tus días hasta ahora",
+    cumulativeNights: (n) => n === 1 ? "1 noche reunida" : `${n} noches reunidas`,
     emptyRecent: "Todavía no hay diario.",
     nowLabel: "ahora",
     questLabel: "Misión",
     storyGuideText: "Los días anteriores descansan dentro de tus capítulos.",
     storyGuideLink: "Leer los capítulos >",
     lastYearEchoLabel: "Alrededor de esta fecha el año pasado",
+    weeksAgoEchoLabel: (n) => (n === 1 ? "Hace una semana, esta misma noche" : `Hace ${n} semanas, esta misma noche`),
     entriesUnitSuffix: " entradas",
     defaultMeaning: "Un registro tranquilo",
     defaultDate: "Hoy"
@@ -3615,12 +3810,18 @@ const es = mergeTranslation(en, {
     ordinalSuffix: "",
     endLabel: "Capítulos por venir",
     endNote: "Cuando aparezca un cambio de significado en tus registros diarios,\nNilo ofrecerá en silencio el siguiente corte de capítulo.",
+    foreshadow: "En tus registros empieza a asomar una corriente que podría convertirse en un capítulo.\nNo hay prisa por nombrarla.",
     findBusy: "Mirando de cerca...",
     findAgain: "Buscar un capítulo otra vez",
     findFirst: "Buscar un capítulo",
     nowInChapter: "Ahora, dentro de este capítulo",
     sectionRecords: "Registros de este capítulo",
     sectionRecordsNote: (n) => `desde ${n} registros`,
+    statsRecords: (n) => (n === 1 ? "1 registro" : `${n} registros`),
+    statsSpanYearsMonths: (y, m) => `${y} ${y === 1 ? "año" : "años"}${m ? ` y ${m} ${m === 1 ? "mes" : "meses"}` : ""}`,
+    statsSpanMonths: (m) => `${m} ${m === 1 ? "mes" : "meses"}`,
+    statsSpanDays: (d) => `${d} ${d === 1 ? "día" : "días"}`,
+    statsEmotion: (label) => `La emoción en el centro ・ ${label}`,
     sectionReunion: "Un reencuentro con el pasado",
     sectionWish: "El deseo de este capítulo",
     sectionWords: "Palabras que aparecieron a menudo",
@@ -3674,14 +3875,18 @@ const es = mergeTranslation(en, {
     setTimeLink: "Configurar hora de notificación >",
     todayPrefix: "Hoy",
     newChapterProposal: "Nilo tiene una propuesta para un nuevo capítulo",
-    newQuestProposal: "Nilo tiene una propuesta para una exploración"
+    newQuestProposal: "Nilo tiene una propuesta para una exploración",
+    niloFirstLetterTitle: "La primera carta de Nilo",
+    niloFirstLetterBody: (quote) => `«${quote}» — eso dijiste esta semana.`,
+    whisperPrompt: { title: "Susurro nocturno", body: "Ya casi es hora de encender la pregunta de esta noche.", later: "Más tarde", light: "Encender" }
   },
 
   entryDetail: {
     tonightFallback: "Esta noche",
     similarNightsLabel: "Una noche similar que Nilo ofrece en silencio",
     footer: "Este registro no se puede eliminar.",
-    niloAsleepLabel: "NILO DORMIDO"
+    niloAsleepLabel: "NILO DORMIDO",
+    summaryLabel: "La nota de Nilo"
   },
 
   memory: {
@@ -3692,7 +3897,7 @@ const es = mergeTranslation(en, {
     emptyBody: "Cuando termines una reflexión nocturna, el significado de ese día se encenderá aquí."
   },
 
-  common: { cancel: "Cancelar", delete: "Eliminar", confirm: "Confirmar" },
+  common: { cancel: "Cancelar", delete: "Eliminar", confirm: "Confirmar", back: "Atrás", close: "Cerrar", volumeDown: "Bajar el volumen", volumeUp: "Subir el volumen" },
 
   settings: {
     header: "Ajustes",
@@ -3719,7 +3924,7 @@ const es = mergeTranslation(en, {
       disclosureTitle: "Divulgación programada",
       disclosureBody: "Revelar capítulos concretos a alguien en una fecha",
       encryptionStatusTitle: "Estado de cifrado",
-      encryptionStatusBody: "Estructurado para que nadie más que tú pueda leerlo",
+      encryptionStatusBody: "Siempre cifrado al guardarse",
       recoveryKeyTitle: "Clave de recuperación",
       recoveryKeyBody: "Una clave de 24 palabras para recuperación de emergencia",
       emergencyContactTitle: "Contacto de emergencia (testigo)",
@@ -3743,6 +3948,35 @@ const es = mergeTranslation(en, {
       privacyPolicyTitle: "Política de privacidad",
       accountTitle: "Cuenta",
       versionFooter: "VERSIÓN 1.0 - Significado que no se apaga, para los días que pasan."
+    },
+    security: {
+      encryptionTitle: "Estado del cifrado",
+      encryptionBody: "La seguridad técnica, explicada en términos humanos.",
+      encryptionLabel: "🔒 Siempre cifrado en reposo",
+      encryptionNote: "Tus registros se guardan cifrados en el servidor. La clave de descifrado se gestiona en el servidor, y tus registros solo se descifran dentro del servidor cuando Nilo te responde. Como Nilo los lee, no es un cifrado de extremo a extremo completo. Te lo contamos tal como es.",
+      lockTitle: "Protege este lugar",
+      lockBody: "Bloquéalo con Face ID.",
+      recoveryTitle: "Clave de recuperación",
+      recoveryBody: "Una clave de 24 palabras para recuperar tus registros en una emergencia.",
+      recoveryLabel: "Recuperación de emergencia",
+      recoveryNote: "Guarda la clave de recuperación de 24 palabras en un lugar seguro y sin conexión. Si la pierdes, no podrás recuperar tus registros.",
+      recoveryIssuedNote: "Ya se ha emitido una clave de recuperación. Al reemitirla se sustituye por una nueva.",
+      recoveryReissue: "Reemitir clave de recuperación",
+      recoveryIssue: "Emitir clave de recuperación",
+      copyButton: "Copiar",
+      recoveryIssuedStatus: "Guarda esta clave en un lugar seguro. No podrá mostrarse de nuevo al salir de esta pantalla.",
+      recoveryIssueFailed: "No se pudo emitir la clave. Inténtalo de nuevo.",
+      copiedStatus: "Copiada. Pégala en un lugar seguro.",
+      copyFailedStatus: "No se pudo copiar. Anótala a mano.",
+      emergencyTitle: "Contacto de emergencia (testigo)",
+      emergencyBody: "Alguien que actuará como tu testigo durante la recuperación.",
+      emergencyLabel: "Contacto de emergencia (testigo)",
+      emergencyNote: "Durante la recuperación, un contacto registrado previamente actuará como tu testigo.",
+      emergencyAddButton: "Añadir contacto de emergencia",
+      emergencyNoneYet: "Aún no hay contactos de emergencia registrados.",
+      emergencyReviewNote: "La recuperación incluye un periodo de revisión de 72 horas — tiempo para confirmar que realmente eres tú.",
+      emailInvalid: "Comprueba la dirección de correo electrónico.",
+      addedContact: "Contacto de emergencia añadido."
     },
     ownership: {
       title: "Política de propiedad",
@@ -3783,6 +4017,15 @@ const es = mergeTranslation(en, {
       memoriesConfirmBody: "Esto eliminará los recuerdos y capítulos guardados en este dispositivo.",
       allConfirmTitle: "¿Eliminar todos los registros?",
       allConfirmBody: "Esto eliminará diario, misiones, recuerdos y capítulos de este dispositivo. No se puede deshacer.",
+      accountLabel: "Eliminar la cuenta",
+      accountNote: "Elimina permanentemente tu cuenta y todos los registros guardados en el servidor (diario, recuerdos y capítulos). Los registros de este dispositivo también se borran. No se puede deshacer.",
+      accountButton: "Eliminar la cuenta y todos los datos",
+      accountConfirmTitle: "¿Eliminar tu cuenta?",
+      accountConfirmBody: "Todos los registros guardados en el servidor se eliminarán permanentemente. Recomendamos exportar primero.",
+      accountFinalTitle: "Confirmación final",
+      accountFinalBody: "No se puede deshacer. Tu cuenta y todos los registros se eliminarán permanentemente.",
+      accountDeleting: "Eliminando...",
+      accountFailed: "La eliminación falló. Comprueba tu conexión e inténtalo de nuevo.",
       keepBack: "Mejor no",
       finalConfirmTitle: "Confirmación final",
       finalConfirmBody: "¿Seguro que quieres eliminar?",

@@ -47,10 +47,15 @@ import { supabase } from "./src/supabase";
 import { collectSyncedState, fetchRemoteUserState, saveRemoteUserState } from "./src/userState";
 import {
   LANGUAGES,
+  LOCALE_TAGS,
   LanguageContext,
   useT,
   useLang,
   translate,
+  formatMonthDay,
+  formatWeekday,
+  formatQuestSince as formatLocalizedQuestSince,
+  formatQuestDuration as formatLocalizedQuestDuration,
   formatNotificationTimestamp,
   CRISIS_STRONG_SIGNALS_ALL,
   CRISIS_SOFT_SIGNALS_ALL
@@ -79,12 +84,43 @@ const deepGrainTexture = require("./assets/textures/grain-deep.png");
 // Web preview draw with a CSS radial-gradient (which RN can't do natively).
 const niloOrbTexture = require("./assets/nilo-orb.png");
 
+const DEFAULT_LANGUAGE = "ja";
+const SUPPORTED_LANGUAGE_CODES = new Set(LANGUAGES.map(([value]) => value));
+
+function normalizeLanguageCode(value) {
+  return SUPPORTED_LANGUAGE_CODES.has(value) ? value : DEFAULT_LANGUAGE;
+}
+
+function migrateSavedSettings(current, savedSettings) {
+  const safeSaved = savedSettings && typeof savedSettings === "object" ? savedSettings : {};
+  const next = {
+    ...(current || {}),
+    ...safeSaved,
+    ritual: { ...((current || {}).ritual || {}), ...(safeSaved.ritual || {}) },
+    privacy: { ...((current || {}).privacy || {}), ...(safeSaved.privacy || {}) },
+    reflection: { ...((current || {}).reflection || {}), ...(safeSaved.reflection || {}) },
+    security: { ...((current || {}).security || {}), ...(safeSaved.security || {}) },
+    inheritance: { ...((current || {}).inheritance || {}), ...(safeSaved.inheritance || {}) }
+  };
+  next.language = normalizeLanguageCode(next.language);
+
+  // A language picker was added after existing dev data already existed.
+  // If that older local state accidentally saved Chinese, keep the app in its
+  // Japanese source voice until the user explicitly changes the language again.
+  if (DEV_MODE && safeSaved.language === "zh" && safeSaved.languageExplicitlySelected !== true) {
+    next.language = DEFAULT_LANGUAGE;
+  }
+
+  return next;
+}
+
 function getTabs(lang) {
+  const safeLang = normalizeLanguageCode(lang);
   return [
-    { id: "home", label: translate(lang, "tabs.home") },
-    { id: "quests", label: translate(lang, "tabs.quests") },
-    { id: "journal", label: translate(lang, "tabs.journal") },
-    { id: "story", label: translate(lang, "tabs.story") }
+    { id: "home", label: translate(safeLang, "tabs.home") },
+    { id: "quests", label: translate(safeLang, "tabs.quests") },
+    { id: "journal", label: translate(safeLang, "tabs.journal") },
+    { id: "story", label: translate(safeLang, "tabs.story") }
   ];
 }
 
@@ -124,6 +160,13 @@ function chapterCutoffKey(days = CHAPTER_DELAY_DAYS) {
   cutoff.setDate(cutoff.getDate() - days);
   return cutoff.toISOString().slice(0, 10);
 }
+// 90日設計（cpo/specs/arc_first_90_days.md）: 返礼のタイミングは設計変数として
+// ここに集め、CSO対話の結果で調整できるようにする。
+const QUEST_FIRST_PROPOSAL_MIN_MEMORIES = 5; // 最初の探求提案（2〜3週目相当）
+const NILO_FIRST_LETTER_MIN_NIGHTS = 3;      // Niloの最初の手紙（3〜7夜目）
+const NILO_FIRST_LETTER_MAX_NIGHTS = 10;     // これを過ぎた既存ユーザーには送らない
+const ECHO_FALLBACK_MIN_DAYS = 21;           // 初年の「◯週間前の今夜」に必要な最小距離
+const FIRST_BAND_SEEN_KEY = "arc.firstMonthBandSeen.v1";
 const DEV_MODE = true;
 // 初回起動フロー（Onboarding Spec v1.0）をDEV_MODEでも通しで確認したいときだけ true。
 const DEV_SHOW_ONBOARDING = false;
@@ -179,6 +222,16 @@ function getReflectionQuestions(lang) {
   return [translate(lang, "ritual.sentinelQuestion")];
 }
 const maxReflectionQuestions = 5;
+
+// 儀式の回答入力上限（創業者決定 2026-07-10）。文字あたりの意味密度が言語で
+// 違うため言語連動: 漢字圏(日中韓)100字 / ラテン文字ほか200字。50字刻みを保つ(§4.6)。
+const RITUAL_ANSWER_LIMIT_CJK = 100;
+const RITUAL_ANSWER_LIMIT_DEFAULT = 200;
+function getRitualAnswerLimit(lang) {
+  return lang === "ja" || lang === "zh" || lang === "ko"
+    ? RITUAL_ANSWER_LIMIT_CJK
+    : RITUAL_ANSWER_LIMIT_DEFAULT;
+}
 
 async function invokeNilo(route, body) {
   const { data, error } = await supabase.functions.invoke("nilo", {
@@ -271,6 +324,114 @@ const demoJournalEntries = [
     emotions: ["#決意", "#内省"]
   },
   {
+    id: "demo-journal-evening-light",
+    dateKey: demoDaysAgoKey(1),
+    source: "home",
+    event: "帰り道、ビルの窓に夕焼けが反射していた。",
+    meaning: "同じ街なのに、今日は少しだけやわらかく見えた。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "帰り道、ビルの窓に夕焼けが反射していた。" },
+      { role: "nilo", text: "その光は、どんな気持ちを連れてきた？" },
+      { role: "user", text: "同じ街なのに、今日は少しだけやわらかく見えた。" }
+    ],
+    emotions: ["#夕方", "#安堵"]
+  },
+  {
+    id: "demo-journal-library",
+    dateKey: demoDaysAgoKey(3),
+    source: "home",
+    meaning: "ページをめくる音だけで、少し落ち着いた。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "図書館の隅で、しばらく本を読んでいた。" },
+      { role: "user", text: "ページをめくる音だけで、少し落ち着いた。" }
+    ],
+    emotions: ["#静けさ", "#集中"]
+  },
+  {
+    id: "demo-journal-small-win",
+    dateKey: demoDaysAgoKey(4),
+    source: "quest",
+    questText: "今日の小さな勝ちは？",
+    event: "先延ばしにしていた返信を、ひとつ送れた。",
+    meaning: "大きく進んでいなくても、止まってはいなかった。",
+    dialogue: [
+      { role: "nilo", text: "今日の小さな勝ちは？" },
+      { role: "user", text: "先延ばしにしていた返信を、ひとつ送れた。" },
+      { role: "nilo", text: "それを終えたあと、体はどう変わった？" },
+      { role: "user", text: "大きく進んでいなくても、止まってはいなかった。" }
+    ],
+    emotions: ["#前進", "#軽さ"]
+  },
+  {
+    id: "demo-journal-coffee",
+    dateKey: demoDaysAgoKey(7),
+    source: "home",
+    event: "朝のコーヒーが、いつもより苦く感じた。",
+    meaning: "疲れは、気分より先に舌に出るのかもしれない。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "朝のコーヒーが、いつもより苦く感じた。" },
+      { role: "nilo", text: "その違和感は、何を知らせていた？" },
+      { role: "user", text: "疲れは、気分より先に舌に出るのかもしれない。" }
+    ],
+    emotions: ["#疲れ", "#気づき"]
+  },
+  {
+    id: "demo-journal-train",
+    dateKey: demoDaysAgoKey(11),
+    source: "home",
+    meaning: "知らない駅で降りただけで、一日の輪郭が変わった。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "いつもと違う駅で降りて、遠回りして帰った。" },
+      { role: "user", text: "知らない駅で降りただけで、一日の輪郭が変わった。" }
+    ],
+    emotions: ["#寄り道", "#変化"]
+  },
+  {
+    id: "demo-journal-cleanup",
+    dateKey: demoDaysAgoKey(17),
+    source: "quest",
+    questText: "いま一番軽くしたい場所は？",
+    event: "机の上を片づけた。古いメモをいくつか捨てた。",
+    meaning: "場所が空くと、考えにも少し余白が戻ってくる。",
+    dialogue: [
+      { role: "nilo", text: "いま一番軽くしたい場所は？" },
+      { role: "user", text: "机の上を片づけた。古いメモをいくつか捨てた。" },
+      { role: "nilo", text: "捨てたあと、何が残った？" },
+      { role: "user", text: "場所が空くと、考えにも少し余白が戻ってくる。" }
+    ],
+    emotions: ["#整理", "#余白"]
+  },
+  {
+    id: "demo-journal-letter",
+    dateKey: demoDaysAgoKey(21),
+    source: "home",
+    event: "昔の自分に向けて、短い手紙を書いた。",
+    meaning: "あの頃の不安を、いまなら少しだけ抱え直せる。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "昔の自分に向けて、短い手紙を書いた。" },
+      { role: "nilo", text: "いまのあなたなら、何を渡してあげたい？" },
+      { role: "user", text: "あの頃の不安を、いまなら少しだけ抱え直せる。" }
+    ],
+    emotions: ["#過去", "#やさしさ"]
+  },
+  {
+    id: "demo-journal-morning-stretch",
+    dateKey: demoDaysAgoKey(27),
+    source: "home",
+    meaning: "肩の力を抜いたら、予定も少しだけ小さく見えた。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "朝、窓を開けて少しだけ体を伸ばした。" },
+      { role: "user", text: "肩の力を抜いたら、予定も少しだけ小さく見えた。" }
+    ],
+    emotions: ["#身体", "#朝"]
+  },
+  {
     id: "demo-journal-m1a",
     dateKey: demoDaysAgoKey(35),
     source: "home",
@@ -304,6 +465,46 @@ const demoJournalEntries = [
     emotions: ["#習慣", "#静けさ"]
   },
   {
+    id: "demo-journal-m1d",
+    dateKey: demoDaysAgoKey(49),
+    source: "quest",
+    questText: "最近、何度も戻ってくる言葉は？",
+    event: "ノートの端に「急がなくていい」と書いていた。",
+    meaning: "自分に言い聞かせている言葉ほど、必要な言葉なのかもしれない。",
+    dialogue: [
+      { role: "nilo", text: "最近、何度も戻ってくる言葉は？" },
+      { role: "user", text: "急がなくていい、かな。ノートの端にも書いていた。" },
+      { role: "user", text: "自分に言い聞かせている言葉ほど、必要な言葉なのかもしれない。" }
+    ],
+    emotions: ["#言葉", "#焦り"]
+  },
+  {
+    id: "demo-journal-m1e",
+    dateKey: demoDaysAgoKey(54),
+    source: "home",
+    meaning: "誰かの笑い声に、思ったより救われていた。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "コンビニの前で、知らない人たちが楽しそうに笑っていた。" },
+      { role: "user", text: "誰かの笑い声に、思ったより救われていた。" }
+    ],
+    emotions: ["#人", "#ぬくもり"]
+  },
+  {
+    id: "demo-journal-m1f",
+    dateKey: demoDaysAgoKey(59),
+    source: "home",
+    event: "夜、部屋の明かりを少し暗くした。",
+    meaning: "暗さは怖いだけじゃなくて、休むための場所にもなる。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "夜、部屋の明かりを少し暗くした。" },
+      { role: "nilo", text: "その暗さは、どんな感じがした？" },
+      { role: "user", text: "暗さは怖いだけじゃなくて、休むための場所にもなる。" }
+    ],
+    emotions: ["#夜", "#休息"]
+  },
+  {
     id: "demo-journal-m2a",
     dateKey: demoDaysAgoKey(66),
     source: "home",
@@ -326,6 +527,44 @@ const demoJournalEntries = [
     emotions: ["#季節", "#前進"]
   },
   {
+    id: "demo-journal-m2c",
+    dateKey: demoDaysAgoKey(78),
+    source: "home",
+    meaning: "待つことにも、ちゃんと体力がいる。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "返事を待っている時間が、思ったより長く感じた。" },
+      { role: "user", text: "待つことにも、ちゃんと体力がいる。" }
+    ],
+    emotions: ["#待つ", "#緊張"]
+  },
+  {
+    id: "demo-journal-m2d",
+    dateKey: demoDaysAgoKey(86),
+    source: "quest",
+    questText: "最近、守りたいものは？",
+    event: "朝の静かな時間だけは、予定を入れずに残した。",
+    meaning: "小さな領域を守ることが、自分を守ることにつながる。",
+    dialogue: [
+      { role: "nilo", text: "最近、守りたいものは？" },
+      { role: "user", text: "朝の静かな時間だけは、予定を入れずに残した。" },
+      { role: "user", text: "小さな領域を守ることが、自分を守ることにつながる。" }
+    ],
+    emotions: ["#境界線", "#静けさ"]
+  },
+  {
+    id: "demo-journal-m2e",
+    dateKey: demoDaysAgoKey(94),
+    source: "home",
+    meaning: "思い出せない名前より、覚えている空気のほうが濃かった。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "古い写真を見つけた。名前は思い出せない人もいた。" },
+      { role: "user", text: "思い出せない名前より、覚えている空気のほうが濃かった。" }
+    ],
+    emotions: ["#写真", "#記憶"]
+  },
+  {
     id: "demo-journal-m3a",
     dateKey: demoDaysAgoKey(100),
     source: "home",
@@ -335,6 +574,57 @@ const demoJournalEntries = [
       { role: "user", text: "始まりの日の緊張を、忘れたくない。" }
     ],
     emotions: ["#緊張", "#始まり"]
+  },
+  {
+    id: "demo-journal-m3b",
+    dateKey: demoDaysAgoKey(112),
+    source: "home",
+    meaning: "言葉にする前から、答えは少し体に出ていた。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "予定を断る前、胸が少し軽くなっていた。" },
+      { role: "user", text: "言葉にする前から、答えは少し体に出ていた。" }
+    ],
+    emotions: ["#身体", "#選択"]
+  },
+  {
+    id: "demo-journal-m3c",
+    dateKey: demoDaysAgoKey(132),
+    source: "quest",
+    questText: "いまの自分に足りないやさしさは？",
+    event: "眠る前に、明日の自分へ水を一杯置いた。",
+    meaning: "未来の自分を少し信じている行動だった。",
+    dialogue: [
+      { role: "nilo", text: "いまの自分に足りないやさしさは？" },
+      { role: "user", text: "眠る前に、明日の自分へ水を一杯置いた。" },
+      { role: "user", text: "未来の自分を少し信じている行動だった。" }
+    ],
+    emotions: ["#未来", "#やさしさ"]
+  },
+  {
+    id: "demo-journal-m4a",
+    dateKey: demoDaysAgoKey(155),
+    source: "home",
+    meaning: "遠くの灯りを見ていると、急がなくても帰れる気がした。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "バスの窓から、遠くの灯りをずっと見ていた。" },
+      { role: "user", text: "遠くの灯りを見ていると、急がなくても帰れる気がした。" }
+    ],
+    emotions: ["#帰り道", "#安心"]
+  },
+  {
+    id: "demo-journal-m4b",
+    dateKey: demoDaysAgoKey(181),
+    source: "home",
+    event: "久しぶりに、誰にも見せない絵を描いた。",
+    meaning: "評価されない場所でだけ、戻ってくる自分がいる。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "久しぶりに、誰にも見せない絵を描いた。" },
+      { role: "user", text: "評価されない場所でだけ、戻ってくる自分がいる。" }
+    ],
+    emotions: ["#創作", "#自由"]
   },
   {
     id: "demo-journal-old-a",
@@ -357,6 +647,32 @@ const demoJournalEntries = [
       { role: "user", text: "冬の朝の光は、静かに公平だった。" }
     ],
     emotions: ["#静けさ"]
+  },
+  {
+    id: "demo-journal-old-c",
+    dateKey: demoDaysAgoKey(270),
+    source: "home",
+    meaning: "あのときの沈黙は、拒絶ではなく保留だったのかもしれない。",
+    dialogue: [
+      { role: "nilo", text: "今日、一番心が動いたことは？" },
+      { role: "user", text: "昔の会話をふと思い出した。言えなかった言葉ばかりだった。" },
+      { role: "user", text: "あのときの沈黙は、拒絶ではなく保留だったのかもしれない。" }
+    ],
+    emotions: ["#沈黙", "#理解"]
+  },
+  {
+    id: "demo-journal-old-d",
+    dateKey: demoDaysAgoKey(330),
+    source: "quest",
+    questText: "一年前の自分に、今なら何を言う？",
+    event: "焦っていた頃のメモを読み返した。",
+    meaning: "遅れているんじゃなくて、まだ育っている途中だった。",
+    dialogue: [
+      { role: "nilo", text: "一年前の自分に、今なら何を言う？" },
+      { role: "user", text: "焦っていた頃のメモを読み返した。" },
+      { role: "user", text: "遅れているんじゃなくて、まだ育っている途中だった。" }
+    ],
+    emotions: ["#一年", "#成長"]
   },
   {
     id: "demo-journal-lastyear",
@@ -534,13 +850,13 @@ const demoOngoingQuests = [
   }
 ];
 
-function getEmailOtpErrorMessage(error) {
+function getEmailOtpErrorMessage(error, lang) {
   const message = String(error?.message || "");
   const status = error?.status;
   if (status === 403 || /expired|invalid|token|otp|code/i.test(message)) {
-    return "コードが無効、または期限切れです。新しい6桁コードを再送して、もう一度お試しください。";
+    return translate(lang, "auth.otpInvalid");
   }
-  return message || "コードを確認できませんでした。少し時間をおいてもう一度お試しください。";
+  return message || translate(lang, "auth.otpGeneric");
 }
 
 function AppContent() {
@@ -660,7 +976,7 @@ function AppContent() {
   // 子ツリーが描画される前に styles を差し替える（書体サイズ設定の反映）。
   applyFontScale(settings.fontScale);
 
-  const lang = settings.language || "ja";
+  const lang = normalizeLanguageCode(settings.language);
   const t = (key, ...args) => translate(lang, key, ...args);
   const tabs = getTabs(lang);
   const bgmTracks = getBgmTracks(lang);
@@ -874,15 +1190,7 @@ function AppContent() {
       }
     }
     if (saved.settings && typeof saved.settings === "object") {
-      setSettings((current) => ({
-        ...(current || {}),
-        ...saved.settings,
-        ritual: { ...((current || {}).ritual || {}), ...(saved.settings.ritual || {}) },
-        privacy: { ...((current || {}).privacy || {}), ...(saved.settings.privacy || {}) },
-        reflection: { ...((current || {}).reflection || {}), ...(saved.settings.reflection || {}) },
-        security: { ...((current || {}).security || {}), ...(saved.settings.security || {}) },
-        inheritance: { ...((current || {}).inheritance || {}), ...(saved.settings.inheritance || {}) }
-      }));
+      setSettings((current) => migrateSavedSettings(current, saved.settings));
     }
   }
 
@@ -909,6 +1217,16 @@ function AppContent() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    // The ritual's opening question is seeded in Japanese before the saved
+    // language preference loads from AsyncStorage. Re-sync it once hydration
+    // completes, but only if the user hasn't already started answering.
+    if (!hydrated || questionCount !== 1 || ritualLocked) return;
+    const question = getReflectionQuestions(lang)[0];
+    setCurrentReflectionQuestion(question);
+    setRitualMessages([{ role: "nilo", text: question }]);
+  }, [hydrated, lang]);
 
   useEffect(() => {
     // Persist only after hydration so initial defaults never overwrite saved data.
@@ -977,6 +1295,24 @@ function AppContent() {
   }, [hydrated, activeTab]);
 
   useEffect(() => {
+    // Niloの最初の手紙（90日設計）: 3〜7夜目のあいだに一度だけ届く。
+    // 要約せず評価せず、その週のユーザー自身の言葉をひとつ引用して返すだけ。
+    if (!hydrated) return;
+    const entries = (Array.isArray(journal) ? journal : []).filter((entry) => entry && entry.dateKey);
+    const nights = new Set(entries.map((entry) => entry.dateKey)).size;
+    if (nights < NILO_FIRST_LETTER_MIN_NIGHTS || nights > NILO_FIRST_LETTER_MAX_NIGHTS) return;
+    if (notifications.some((item) => item.refId === "nilo-letter-first")) return;
+    const quote = pickFirstLetterQuote(entries);
+    if (!quote) return;
+    addNotifications([{
+      refId: "nilo-letter-first",
+      tag: "NILO",
+      title: t("notifications.niloFirstLetterTitle"),
+      body: t("notifications.niloFirstLetterBody", quote)
+    }]);
+  }, [hydrated, journal, notifications]);
+
+  useEffect(() => {
     if (!hydrated || !profileComplete || !settings.notificationsEnabled) return undefined;
 
     const checkNightWhisper = () => {
@@ -987,18 +1323,18 @@ function AppContent() {
       const today = getJournalDateKey();
       setSettings((current) => ({ ...current, lastNotificationDateKey: today }));
       confirmDialog(
-        "夜のささやき",
-        "そろそろ、今夜の問いを灯す時間です。",
+        t("notifications.whisperPrompt.title"),
+        t("notifications.whisperPrompt.body"),
         [
           {
-            text: "あとで",
+            text: t("notifications.whisperPrompt.later"),
             style: "cancel",
             onPress: () => {
               notificationPromptRef.current = false;
             }
           },
           {
-            text: "灯す",
+            text: t("notifications.whisperPrompt.light"),
             onPress: () => {
               notificationPromptRef.current = false;
               setActiveTab("home");
@@ -1168,19 +1504,19 @@ function AppContent() {
       });
 
       if (error) throw error;
-      if (!data?.url) throw new Error("GoogleログインURLを作成できませんでした。");
+      if (!data?.url) throw new Error(t("auth.googleUrlError"));
 
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUri);
       if (result.type !== "success") return;
 
       const parsedUrl = new URL(result.url);
       const code = parsedUrl.searchParams.get("code");
-      if (!code) throw new Error("認証コードを取得できませんでした。");
+      if (!code) throw new Error(t("auth.authCodeError"));
 
       const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
       if (exchangeError) throw exchangeError;
     } catch (error) {
-      setAuthError(error.message || "Googleログインに失敗しました。");
+      setAuthError(error.message || t("auth.googleLoginFailed"));
     } finally {
       setAuthBusy(false);
     }
@@ -1189,7 +1525,7 @@ function AppContent() {
   async function sendEmailLogin(email) {
     const trimmedEmail = String(email || "").trim();
     if (!trimmedEmail) {
-      setAuthError("メールアドレスを入力してください。");
+      setAuthError(t("auth.emailRequired"));
       return false;
     }
 
@@ -1200,10 +1536,10 @@ function AppContent() {
     try {
       const { error } = await supabase.auth.signInWithOtp({ email: trimmedEmail });
       if (error) throw error;
-      setAuthNotice("メールに届いた6桁のコードを入力してください。");
+      setAuthNotice(t("auth.emailCodeSent"));
       return true;
     } catch (error) {
-      setAuthError(error.message || "メールログインの送信に失敗しました。");
+      setAuthError(error.message || t("auth.emailLoginFailed"));
       return false;
     } finally {
       setAuthBusy(false);
@@ -1214,11 +1550,11 @@ function AppContent() {
     const trimmedEmail = String(email || "").trim();
     const trimmedToken = String(token || "").trim();
     if (!trimmedEmail || !trimmedToken) {
-      setAuthError("メールアドレスとコードを入力してください。");
+      setAuthError(t("auth.emailAndCodeRequired"));
       return;
     }
     if (!/^\d{6}$/.test(trimmedToken)) {
-      setAuthError("6桁のコードを入力してください。");
+      setAuthError(t("auth.codeSixDigitsRequired"));
       return;
     }
 
@@ -1234,7 +1570,7 @@ function AppContent() {
       if (error) throw error;
       setAuthNotice("");
     } catch (error) {
-      setAuthError(getEmailOtpErrorMessage(error));
+      setAuthError(getEmailOtpErrorMessage(error, lang));
     } finally {
       setAuthBusy(false);
     }
@@ -1245,7 +1581,7 @@ function AppContent() {
       setSession(DEV_SESSION);
       setProfile(DEV_PROFILE);
       setAuthError("");
-      setAuthNotice("DEV_MODE is enabled. Supabase auth is bypassed.");
+      setAuthNotice(t("auth.devModeBypass"));
       return;
     }
 
@@ -1261,7 +1597,7 @@ function AppContent() {
     playUiSound();
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert("写真を選択できません", "プロフィール写真を変更するには、写真ライブラリへのアクセスを許可してください。");
+      Alert.alert(t("auth.photoPermissionTitle"), t("auth.photoPermissionBody"));
       return;
     }
 
@@ -1293,9 +1629,9 @@ function AppContent() {
   }
 
   function getLockedTabNotice(tabId) {
-    if (tabId === "quests") return "3日間の記録で開放";
-    if (tabId === "journal") return "1日目の記録で開放";
-    if (tabId === "story" || tabId === "memory") return "10日間の記憶で開放";
+    if (tabId === "quests") return t("lockedTab.quests");
+    if (tabId === "journal") return t("lockedTab.journal");
+    if (tabId === "story" || tabId === "memory") return t("lockedTab.story");
     return "";
   }
 
@@ -1445,7 +1781,7 @@ function AppContent() {
   ];
 
   async function submitRitual() {
-    const text = input.trim().slice(0, 50);
+    const text = input.trim().slice(0, getRitualAnswerLimit(lang));
     if (!text || isSending || !reflectionInputEnabled) return;
 
     playUiSound();
@@ -1514,8 +1850,8 @@ function AppContent() {
     Keyboard.dismiss();
     setSealActive(true);
     showReflectionQuestion(closing);
-    // はじめての記録に限り、封の間だけ鍵と「あなた以外には読めない構造に
-    // なっています」を灯す（Onboarding Spec: 暗号化可視化の最小版）。
+    // はじめての記録に限り、封の間だけ鍵と「暗号化して、たいせつに保存して
+    // います」を灯す（Onboarding Spec: 暗号化可視化の最小版）。
     if (firstRecordSealRef.current) {
       firstRecordSealRef.current = false;
       setEncryptionNoticeVisible(true);
@@ -1546,8 +1882,8 @@ function AppContent() {
           id: journalId,
           dateKey: entryDateKey,
           dateLabel: formatDotDate(entryDateKey),
-          title: result.title || "今夜の記録",
-          lines: result.summaryLines?.length ? result.summaryLines : ["今日の言葉を短く残しました。"],
+          title: result.title || t("ritual.defaultTitle"),
+          lines: result.summaryLines?.length ? result.summaryLines : [t("ritual.defaultSummaryLine")],
           // 二層構造: 出来事=最初の回答、意味=対話の最後に立ち上がった言葉。
           event: userAnswers[0] || "",
           meaning: userAnswers[userAnswers.length - 1] || result.title || "",
@@ -1594,7 +1930,7 @@ function AppContent() {
   function completeFallback(messages) {
     const userLines = messages.filter((message) => message.role === "user").map((message) => message.text);
     const entryDateKey = getJournalDateKey();
-    const closing = "今夜の記録を、静かに残しました。";
+    const closing = t("ritual.closingDefault");
     const journalId = createId("journal");
     const finalMessages = [...messages, { role: "nilo", text: closing }];
     if (settings.ritual?.autoSaveJournal === false) {
@@ -1608,8 +1944,8 @@ function AppContent() {
         id: journalId,
         dateKey: entryDateKey,
         dateLabel: formatDotDate(entryDateKey),
-        title: userLines[0] || "今夜の記録",
-        lines: userLines.length ? userLines : ["今日の印象を短く残しました。"],
+        title: userLines[0] || t("ritual.defaultTitle"),
+        lines: userLines.length ? userLines : [t("ritual.defaultSummaryLineFallback")],
         event: userLines[0] || "",
         meaning: userLines[userLines.length - 1] || "",
         source: "home",
@@ -1629,13 +1965,13 @@ function AppContent() {
   function createLocalFollowUpQuestion(messages) {
     const latestAnswer = [...messages].reverse().find((message) => message.role === "user")?.text || "";
     const seed = latestAnswer.replace(/[、。,.!?！？\s]/g, "").slice(0, 12);
-    if (seed) return `「${seed}」の何が残っていますか？`;
-    return "もう少しだけ、残しておきますか？";
+    if (seed) return t("ritual.followUpQuestion", seed);
+    return t("ritual.followUpFallback");
   }
 
   function getShortClosingComment(result) {
-    const text = result.closingMessage || result.niloMessage || result.niloLine || "今夜の記録を、静かに残しました。";
-    return String(text).replace(/\s+/g, " ").trim().slice(0, 42) || "今夜の記録を、静かに残しました。";
+    const text = result.closingMessage || result.niloMessage || result.niloLine || t("ritual.closingDefault");
+    return String(text).replace(/\s+/g, " ").trim().slice(0, 42) || t("ritual.closingDefault");
   }
 
   function addRitualMemory({ messages, journalId, entryDateKey, essence, closing, result }) {
@@ -1662,7 +1998,7 @@ function AppContent() {
       keptPhrase,
       moodLabel: result?.moodLabel || "",
       moodScore: Number.isFinite(Number(result?.moodScore)) ? Number(result.moodScore) : null,
-      tag: result?.tag || "振り返り",
+      tag: result?.tag || t("ritual.tag"),
       journalId
     };
 
@@ -1710,7 +2046,7 @@ function AppContent() {
         addNotifications(next.map((proposal) => ({
           refId: `chapter-${proposal.period}`,
           tag: "STORY",
-          title: "Niloから、新しい章の提案があります",
+          title: t("notifications.newChapterProposal"),
           body: proposal.observation || "",
           tab: "story"
         })));
@@ -1797,7 +2133,9 @@ function AppContent() {
     }
     const today = getJournalDateKey();
     if (questScanDateKey === today) return;
-    if (memories.length < 5) return;
+    // 初回提案は「アプリが聴いていた」ことの最初の証明（90日設計）。
+    // 早すぎると浅く、遅すぎると死ぬ — 閾値は設計変数で管理する。
+    if (memories.length < QUEST_FIRST_PROPOSAL_MIN_MEMORIES) return;
     questScanRef.current = true;
     try {
       const result = await invokeNilo("quest-proposals", {
@@ -1818,7 +2156,7 @@ function AppContent() {
       addNotifications(next.map((proposal) => ({
         refId: `quest-${proposal.theme}`,
         tag: "QUEST",
-        title: "Niloから、探求の提案があります",
+        title: t("notifications.newQuestProposal"),
         body: proposal.theme,
         tab: "quests"
       })));
@@ -2115,6 +2453,7 @@ function AppContent() {
           setInput={setInput}
           enabled={reflectionInputEnabled}
           support={supportVisible}
+          answerLimit={getRitualAnswerLimit(lang)}
           onSubmit={submitRitual}
           onExit={requestExitNightRitual}
           exitConfirmOpen={exitConfirmOpen}
@@ -2169,6 +2508,11 @@ function AppContent() {
           setMemories={setMemories}
           chapters={chapters}
           setChapters={setChapters}
+          exportState={collectSyncedState({
+            journal, memories, chapters, chapterNotes, profile, settings,
+            questProposals, explorations, declinedQuestThemes, questScanDateKey, notifications,
+            onboardingComplete
+          })}
           session={session}
           authLoading={authLoading}
           authBusy={authBusy}
@@ -2249,16 +2593,19 @@ export default function App() {
 }
 
 function Header({ onAccount, onNotifications, showTitle, showSettings = true, showNotifications = true, unreadNotifications = 0 }) {
+  const t = useT();
   return (
     <View style={styles.header}>
       <View style={styles.headerSide} />
       {showTitle && <Text style={styles.headerTitle}>ARC</Text>}
       {showNotifications && (
         <Pressable
-          accessibilityLabel="通知を開く"
+          accessibilityRole="button"
+          accessibilityLabel={t("header.openNotifications")}
           onPress={onNotifications}
           focusable={false}
-          style={({ pressed }) => [styles.notificationButton, pressed && styles.touchPressedTight]}
+          hitSlop={8}
+          style={({ pressed }) => [styles.headerRoundButton, styles.notificationButton, pressed && styles.touchPressedTight]}
         >
           <NotificationBellGlyph />
           {unreadNotifications > 0 && <View pointerEvents="none" style={styles.notificationBellDot} />}
@@ -2266,10 +2613,12 @@ function Header({ onAccount, onNotifications, showTitle, showSettings = true, sh
       )}
       {showSettings && (
         <Pressable
-          accessibilityLabel="設定を開く"
+          accessibilityRole="button"
+          accessibilityLabel={t("header.openSettings")}
           onPress={onAccount}
           focusable={false}
-          style={({ pressed }) => [styles.settingsSunButton, pressed && styles.touchPressedTight]}
+          hitSlop={8}
+          style={({ pressed }) => [styles.headerRoundButton, styles.settingsSunButton, pressed && styles.touchPressedTight]}
         >
           <SettingsSunGlyph />
         </Pressable>
@@ -2278,29 +2627,42 @@ function Header({ onAccount, onNotifications, showTitle, showSettings = true, sh
   );
 }
 
+// ヘッダーの二つのグリフはSVGで引く。Viewの組み木より線が痩せず、
+// 夜の金の線(Niloの光と同じ系統)として細部まで揃えられる。
+const headerGlyphStroke = "rgba(228,209,175,0.66)";
+
 function NotificationBellGlyph() {
   return (
-    <View pointerEvents="none" style={styles.notificationBellGlyph}>
-      <View style={styles.notificationBellBody} />
-      <View style={styles.notificationBellBase} />
-      <View style={styles.notificationBellClapper} />
-    </View>
+    <Svg pointerEvents="none" width={18} height={18} viewBox="0 0 18 18" fill="none">
+      <Path
+        d="M9 2.7c-2.5 0-4 1.9-4 4.3 0 2.8-.8 3.9-1.5 4.6h11c-.7-.7-1.5-1.8-1.5-4.6 0-2.4-1.5-4.3-4-4.3Z"
+        stroke={headerGlyphStroke}
+        strokeWidth={1.3}
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M7.4 14.2a1.7 1.7 0 0 0 3.2 0"
+        stroke={headerGlyphStroke}
+        strokeWidth={1.3}
+        strokeLinecap="round"
+      />
+    </Svg>
   );
 }
 
 function SettingsSunGlyph() {
   return (
-    <View pointerEvents="none" style={styles.settingsSunGlyph}>
-      <View style={styles.settingsSunCore} />
-      <View style={[styles.settingsSunRay, styles.settingsSunRayTop]} />
-      <View style={[styles.settingsSunRay, styles.settingsSunRayBottom]} />
-      <View style={[styles.settingsSunRay, styles.settingsSunRayLeft]} />
-      <View style={[styles.settingsSunRay, styles.settingsSunRayRight]} />
-      <View style={[styles.settingsSunRay, styles.settingsSunRaySlashA]} />
-      <View style={[styles.settingsSunRay, styles.settingsSunRaySlashB]} />
-      <View style={[styles.settingsSunRay, styles.settingsSunRaySlashC]} />
-      <View style={[styles.settingsSunRay, styles.settingsSunRaySlashD]} />
-    </View>
+    <Svg pointerEvents="none" width={18} height={18} viewBox="0 0 18 18" fill="none">
+      <Circle cx={9} cy={9} r={3.1} stroke={headerGlyphStroke} strokeWidth={1.3} />
+      <Line x1={9} y1={1.4} x2={9} y2={3.4} stroke={headerGlyphStroke} strokeWidth={1.3} strokeLinecap="round" />
+      <Line x1={9} y1={14.6} x2={9} y2={16.6} stroke={headerGlyphStroke} strokeWidth={1.3} strokeLinecap="round" />
+      <Line x1={1.4} y1={9} x2={3.4} y2={9} stroke={headerGlyphStroke} strokeWidth={1.3} strokeLinecap="round" />
+      <Line x1={14.6} y1={9} x2={16.6} y2={9} stroke={headerGlyphStroke} strokeWidth={1.3} strokeLinecap="round" />
+      <Line x1={3.6} y1={3.6} x2={5.05} y2={5.05} stroke={headerGlyphStroke} strokeWidth={1.3} strokeLinecap="round" />
+      <Line x1={12.95} y1={12.95} x2={14.4} y2={14.4} stroke={headerGlyphStroke} strokeWidth={1.3} strokeLinecap="round" />
+      <Line x1={12.95} y1={5.05} x2={14.4} y2={3.6} stroke={headerGlyphStroke} strokeWidth={1.3} strokeLinecap="round" />
+      <Line x1={3.6} y1={14.4} x2={5.05} y2={12.95} stroke={headerGlyphStroke} strokeWidth={1.3} strokeLinecap="round" />
+    </Svg>
   );
 }
 
@@ -2855,6 +3217,7 @@ function GlyphBloomText({ text, textStyle, charDelay = 44, duration = 640, initi
 }
 
 function AnswerPreview({ answer, fading, compact }) {
+  const t = useT();
   const fade = useRef(new Animated.Value(0)).current;
   const text = answer?.text || "";
 
@@ -2886,7 +3249,7 @@ function AnswerPreview({ answer, fading, compact }) {
 
   return (
     <Animated.View style={[styles.answerPreview, compact && styles.answerPreviewCompact, { opacity: fade }]}>
-      <Text style={styles.answerPreviewMark}>あなたの言葉</Text>
+      <Text style={styles.answerPreviewMark}>{t("ritual.yourWordsLabel")}</Text>
       <GlyphBloomText text={text} textStyle={styles.answerPreviewText} charDelay={26} duration={520} rise={5} />
     </Animated.View>
   );
@@ -2945,6 +3308,7 @@ function AuthGate({
   onSendEmailLogin,
   onVerifyEmailLogin
 }) {
+  const t = useT();
   const [email, setEmail] = useState("");
   const [emailCode, setEmailCode] = useState("");
   const [otpSent, setOtpSent] = useState(false);
@@ -2961,24 +3325,24 @@ function AuthGate({
     <View style={styles.gateScreen}>
       <View style={styles.gateBrand}>
         <Text style={styles.gateLogo}>Arc</Text>
-        <Text style={styles.gateSlogan}>今日を静かに、人生に残す。</Text>
+        <Text style={styles.gateSlogan}>{t("gate.slogan")}</Text>
       </View>
       <View style={styles.gateCard}>
-        <Text style={styles.gateEyebrow}>Sign in</Text>
-        <Text style={styles.gateTitle}>{loading ? "準備しています" : "Arcへようこそ"}</Text>
+        <Text style={styles.gateEyebrow}>{t("gate.signIn")}</Text>
+        <Text style={styles.gateTitle}>{loading ? t("gate.preparing") : t("gate.welcome")}</Text>
         <Text style={styles.gateBody}>
-          {loading ? "あなたの日々の入口を確認しています。" : "はじめる前に、あなたを確かめさせてください。"}
+          {loading ? t("gate.loadingBody") : t("gate.readyBody")}
         </Text>
         {!loading && (
           <>
             {!otpSent && (
               <>
-                <Pressable disabled={authBusy} onPress={onGoogleSignIn} style={[styles.gateButton, authBusy && styles.disabledButton]}>
-                  <Text style={styles.gateButtonText}>{authBusy ? "接続中..." : "Googleでログイン"}</Text>
+                <Pressable disabled={authBusy} onPress={onGoogleSignIn} accessibilityRole="button" style={[styles.gateButton, authBusy && styles.disabledButton]}>
+                  <Text style={styles.gateButtonText}>{authBusy ? t("gate.connecting") : t("gate.googleLogin")}</Text>
                 </Pressable>
                 <View style={styles.gateDivider}>
                   <View style={styles.gateDividerLine} />
-                  <Text style={styles.gateDividerText}>または</Text>
+                  <Text style={styles.gateDividerText}>{t("gate.or")}</Text>
                   <View style={styles.gateDividerLine} />
                 </View>
               </>
@@ -2986,7 +3350,8 @@ function AuthGate({
             <TextInput
               value={email}
               onChangeText={setEmail}
-              placeholder="メールアドレス"
+              accessibilityLabel={t("gate.emailPlaceholder")}
+              placeholder={t("gate.emailPlaceholder")}
               placeholderTextColor="rgba(246,239,228,0.42)"
               keyboardType="email-address"
               autoCapitalize="none"
@@ -2995,16 +3360,17 @@ function AuthGate({
               style={styles.gateInput}
             />
             {!otpSent ? (
-              <Pressable disabled={authBusy || !email.trim()} onPress={handleSendEmail} style={[styles.gateGhostButton, (authBusy || !email.trim()) && styles.disabledButton]}>
-                <Text style={styles.gateGhostText}>{authBusy ? "送信中..." : "メールでコードを受け取る"}</Text>
+              <Pressable disabled={authBusy || !email.trim()} onPress={handleSendEmail} accessibilityRole="button" accessibilityState={{ disabled: authBusy || !email.trim() }} style={[styles.gateGhostButton, (authBusy || !email.trim()) && styles.disabledButton]}>
+                <Text style={styles.gateGhostText}>{authBusy ? t("gate.sendingCode") : t("gate.receiveCodeByEmail")}</Text>
               </Pressable>
             ) : (
               <>
-                <Text style={styles.gateOtpLead}>メールに届いた6桁コードを入力してください。</Text>
+                <Text style={styles.gateOtpLead}>{t("gate.otpLead")}</Text>
                 <TextInput
                   value={emailCode}
                   onChangeText={(value) => setEmailCode(value.replace(/\D/g, "").slice(0, 6))}
-                  placeholder="6桁コード"
+                  accessibilityLabel={t("gate.codePlaceholder")}
+                  placeholder={t("gate.codePlaceholder")}
                   placeholderTextColor="rgba(246,239,228,0.42)"
                   keyboardType="number-pad"
                   textContentType="oneTimeCode"
@@ -3015,14 +3381,14 @@ function AuthGate({
                   }}
                   style={styles.gateInput}
                 />
-                <Pressable disabled={authBusy || !email.trim() || emailCode.length < 6} onPress={() => onVerifyEmailLogin(email, emailCode)} style={[styles.gateButton, (authBusy || !email.trim() || emailCode.length < 6) && styles.disabledButton]}>
-                  <Text style={styles.gateButtonText}>{authBusy ? "確認中..." : "コードでログイン"}</Text>
+                <Pressable disabled={authBusy || !email.trim() || emailCode.length < 6} onPress={() => onVerifyEmailLogin(email, emailCode)} accessibilityRole="button" style={[styles.gateButton, (authBusy || !email.trim() || emailCode.length < 6) && styles.disabledButton]}>
+                  <Text style={styles.gateButtonText}>{authBusy ? t("gate.verifying") : t("gate.loginWithCode")}</Text>
                 </Pressable>
-                <Pressable disabled={authBusy} onPress={handleSendEmail} style={styles.gateGhostButton}>
-                  <Text style={styles.gateGhostText}>{authBusy ? "再送信中..." : "コードを再送する"}</Text>
+                <Pressable disabled={authBusy} onPress={handleSendEmail} accessibilityRole="button" style={styles.gateGhostButton}>
+                  <Text style={styles.gateGhostText}>{authBusy ? t("gate.resending") : t("gate.resendCode")}</Text>
                 </Pressable>
-                <Pressable disabled={authBusy} onPress={() => { setOtpSent(false); setEmailCode(""); }} style={styles.gateTextButton}>
-                  <Text style={styles.gateTextButtonText}>メールアドレスを変更する</Text>
+                <Pressable disabled={authBusy} onPress={() => { setOtpSent(false); setEmailCode(""); }} accessibilityRole="button" style={styles.gateTextButton}>
+                  <Text style={styles.gateTextButtonText}>{t("gate.changeEmail")}</Text>
                 </Pressable>
               </>
             )}
@@ -3036,6 +3402,7 @@ function AuthGate({
 }
 
 function ProfileGate({ profile, setProfile, authBusy, authError, onSignOut }) {
+  const t = useT();
   const [name, setName] = useState(profile.name);
   const [birthdate, setBirthdate] = useState(profile.birthdate);
   const canSubmit = name.trim() && birthdate.trim() && daysSince(birthdate) !== null;
@@ -3044,38 +3411,42 @@ function ProfileGate({ profile, setProfile, authBusy, authError, onSignOut }) {
     <ScrollView contentContainerStyle={styles.gateScroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       <View style={styles.gateBrand}>
         <Text style={styles.gateLogo}>Arc</Text>
-        <Text style={styles.gateSlogan}>あなたの日々を始める準備。</Text>
+        <Text style={styles.gateSlogan}>{t("gate.profileSlogan")}</Text>
       </View>
       <View style={styles.gateCard}>
         <Text style={styles.gateEyebrow}>Profile</Text>
-        <Text style={styles.gateTitle}>プロフィールを送信してください</Text>
+        <Text style={styles.gateTitle}>{t("gate.profileTitle")}</Text>
         <Text style={styles.gateBody}>
-          名前と生年月日がない場合、Arcは日数や記録をあなたに合わせて表示できません。
+          {t("gate.profileBody")}
         </Text>
         <TextInput
           value={name}
           onChangeText={setName}
-          placeholder="名前"
+          accessibilityLabel={t("gate.namePlaceholder")}
+          placeholder={t("gate.namePlaceholder")}
           placeholderTextColor="rgba(246,239,228,0.42)"
           style={styles.gateInput}
         />
         <TextInput
           value={birthdate}
           onChangeText={setBirthdate}
+          accessibilityLabel="YYYY-MM-DD"
           placeholder="YYYY-MM-DD"
           placeholderTextColor="rgba(246,239,228,0.42)"
           style={styles.gateInput}
         />
-        {!!daysSince(birthdate) && <Text style={styles.gateHint}>{daysSince(birthdate)}日目</Text>}
+        {!!daysSince(birthdate) && <Text style={styles.gateHint}>{daysSince(birthdate)}{t("gate.dayCountSuffix")}</Text>}
         <Pressable
           disabled={!canSubmit}
           onPress={() => setProfile((current) => ({ ...current, name: name.trim(), birthdate: birthdate.trim() }))}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !canSubmit }}
           style={[styles.gateButton, !canSubmit && styles.disabledButton]}
         >
-          <Text style={styles.gateButtonText}>Arcを始める</Text>
+          <Text style={styles.gateButtonText}>{t("gate.startArc")}</Text>
         </Pressable>
         <Pressable disabled={authBusy} onPress={onSignOut} style={styles.gateGhostButton}>
-          <Text style={styles.gateGhostText}>{authBusy ? "処理中..." : "別のアカウントでログイン"}</Text>
+          <Text style={styles.gateGhostText}>{authBusy ? t("gate.processing") : t("gate.loginOtherAccount")}</Text>
         </Pressable>
         {!!authError && <Text style={styles.errorText}>{authError}</Text>}
       </View>
@@ -3219,6 +3590,7 @@ function OnboardDialogueLine({ text, role, isLatest }) {
 // 02｜ニロとの対話。名前と生年月日を、フォームではなく会話として受け取る
 // 唯一の例外的ステップ。年齢は生年月日から自動算出し、別途は尋ねない。
 function OnboardNiloIntroStep({ onDone }) {
+  const t = useT();
   const [lines, setLines] = useState([]);
   const [phase, setPhase] = useState("opening"); // opening → name → between → birth → closing
   const [name, setName] = useState("");
@@ -3246,7 +3618,7 @@ function OnboardNiloIntroStep({ onDone }) {
 
   useEffect(() => {
     speak(
-      ["はじめまして。まだ、あなたのことを何も知りません。", "お名前を、教えてもらえますか？"],
+      t("onboarding.greetingLines"),
       () => setPhase("name")
     );
     return () => {
@@ -3262,12 +3634,7 @@ function OnboardNiloIntroStep({ onDone }) {
     setName(trimmed);
     setPhase("between");
     speak(
-      [
-        `${trimmed}さん、これからよろしくお願いします。`,
-        "もう一つだけ。",
-        "いつか、あなたの時間の節目に、この記録を静かに差し出したいと思っています。",
-        "生年月日を、教えてもらえますか？"
-      ],
+      t("onboarding.nameAcceptedLines", trimmed),
       () => setPhase("birth")
     );
   }
@@ -3276,14 +3643,14 @@ function OnboardNiloIntroStep({ onDone }) {
     const trimmed = birthdate.trim();
     // daysSince は 0 で下限クランプされるため、未来日は自前で弾く。
     if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed) || daysSince(trimmed) === null || new Date(`${trimmed}T00:00:00`) > new Date()) {
-      setBirthError("YYYY-MM-DD の形で、過去の日付を入れてください。");
+      setBirthError(t("onboarding.birthError"));
       return;
     }
     setBirthError("");
     setLines((current) => [...current, { id: `user-birth-${Date.now()}`, role: "user", text: trimmed }]);
     setPhase("closing");
     speak(
-      [`わかりました。${name.trim()}さんの人生を、ここから一緒に見ていきます。`],
+      [t("onboarding.birthAcceptedLine", name.trim())],
       () => schedule(() => onDone({ name: name.trim(), birthdate: trimmed }), 1800)
     );
   }
@@ -3307,7 +3674,7 @@ function OnboardNiloIntroStep({ onDone }) {
             <TextInput
               value={name}
               onChangeText={setName}
-              placeholder="名前"
+              placeholder={t("onboarding.namePlaceholder")}
               placeholderTextColor="rgba(246,239,228,0.36)"
               autoFocus
               returnKeyType="done"
@@ -3321,7 +3688,7 @@ function OnboardNiloIntroStep({ onDone }) {
                 setBirthdate(value);
                 if (birthError) setBirthError("");
               }}
-              placeholder="1990-01-23"
+              placeholder={t("onboarding.birthPlaceholder")}
               placeholderTextColor="rgba(246,239,228,0.36)"
               autoFocus
               keyboardType={Platform.OS === "web" ? undefined : "numbers-and-punctuation"}
@@ -3335,7 +3702,7 @@ function OnboardNiloIntroStep({ onDone }) {
             onPress={phase === "name" ? submitName : submitBirthdate}
             style={styles.onboardDialogueSend}
           >
-            <Text style={styles.onboardDialogueSendText}>伝える</Text>
+            <Text style={styles.onboardDialogueSendText}>{t("onboarding.dialogueSend")}</Text>
           </Pressable>
         </View>
       )}
@@ -3401,8 +3768,9 @@ function OnboardOpeningWordsStep({ onBegin }) {
 }
 
 // 04の暗号化可視化（最小版）: はじめての記録が封じられる間だけ、鍵の点と
-// 「あなた以外には読めない構造になっています」の一文を灯す。
+// 「暗号化して、たいせつに保存しています」の一文を灯す。
 function EncryptionSealNotice({ visible }) {
+  const t = useT();
   const opacity = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(opacity, {
@@ -3428,7 +3796,7 @@ function EncryptionSealNotice({ visible }) {
           fill="rgba(217,168,108,0.16)"
         />
       </Svg>
-      <Text style={styles.encryptionNoticeText}>あなた以外には読めない構造になっています</Text>
+      <Text style={styles.encryptionNoticeText}>{t("encryption.notice")}</Text>
     </Animated.View>
   );
 }
@@ -3450,6 +3818,8 @@ function HomeScreen({
   screenHeight,
   onBeginInput
 }) {
+  const t = useT();
+  const lang = useLang();
   const questionLift = useRef(new Animated.Value(0)).current;
   const idleFloat = useRef(new Animated.Value(0)).current;
   const [moteToken, setMoteToken] = useState(0);
@@ -3458,8 +3828,8 @@ function HomeScreen({
   const showFirstRun = !authLoading && (!session || needsProfile);
   const compact = keyboardVisible;
   const liftedY = inputLocked ? 0 : screenHeight < 720 ? -118 : screenHeight < 820 ? -140 : -164;
-  const displayQuestion = reflectionQuestion === reflectionQuestions[0]
-    ? "今日はどんな日\nだった？"
+  const displayQuestion = reflectionQuestion === getFirstRecordQuestion(lang)
+    ? t("home.defaultQuestion")
     : reflectionQuestion;
 
   useEffect(() => {
@@ -3521,7 +3891,7 @@ function HomeScreen({
       >
         {!answerPreview && (
           <Animated.Text style={[styles.homeLeadText, questionTransitioning && styles.homeLeadTextDimmed]}>
-            今日もおつかれさま。
+            {t("home.leadText")}
           </Animated.Text>
         )}
         <View pointerEvents="none" style={[styles.homeQuestionFrame, compact && styles.homeQuestionFrameCompact]}>
@@ -3687,6 +4057,7 @@ function RitualComposer({
 }
 
 function NightRitualButton({ enabled, visible, streakDays, onPress, animatedStyle }) {
+  const t = useT();
   const fade = useRef(new Animated.Value(visible ? 1 : 0)).current;
   const breath = useRef(new Animated.Value(0)).current;
 
@@ -3732,7 +4103,7 @@ function NightRitualButton({ enabled, visible, streakDays, onPress, animatedStyl
       >
         <Animated.Text style={[styles.ritualStartIcon, !enabled && styles.ritualStartTextDisabled, enabled && { opacity: markOpacity, transform: [{ scale: markScale }] }]}>·</Animated.Text>
         <Text style={[styles.ritualStartText, !enabled && styles.ritualStartTextDisabled]}>
-          {enabled ? "ふれて、今日を書く" : "今夜は記録済み"}
+          {enabled ? t("ritual.startEnabled") : t("ritual.startDisabled")}
         </Text>
       </Pressable>
     </Animated.View>
@@ -3826,7 +4197,8 @@ function NiloDialogQuestion({ question, dimmed, closing }) {
 // reference layout, but the answer is captured with the OS keyboard rather than
 // the prototype's mock 五十音 grid. The save / question-advance / seal logic is
 // the existing night-ritual flow, unchanged.
-function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLabel, inputRef, input, setInput, enabled, support, onSubmit, onExit, exitConfirmOpen, onConfirmExit, onCancelExit, onBlur }) {
+function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLabel, inputRef, input, setInput, enabled, support, answerLimit, onSubmit, onExit, exitConfirmOpen, onConfirmExit, onCancelExit, onBlur }) {
+  const t = useT();
   const fade = useRef(new Animated.Value(0)).current;
   const [moteToken, setMoteToken] = useState(0);
   const wasThinking = useRef(false);
@@ -3855,7 +4227,7 @@ function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLa
         <View style={styles.niloTopTier}>
           <NiloMark thinking={thinking} />
           <Text style={styles.niloMarkLabel}>NILO</Text>
-          <Text style={styles.niloDateLabel}>{dateLabel} · 今夜</Text>
+          <Text style={styles.niloDateLabel}>{dateLabel} · {t("ritual.tonightSuffix")}</Text>
           <View style={styles.niloQuestionArea}>
             {thinking ? (
               <NiloThinkingIndicator />
@@ -3874,7 +4246,7 @@ function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLa
 
         {closing ? (
           <View style={styles.niloClosing}>
-            <Text style={styles.niloClosingText}>今夜の言葉は、そのまま{"\n"}日記に綴られます。</Text>
+            <Text style={styles.niloClosingText}>{t("ritual.closingText")}</Text>
           </View>
         ) : (
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.niloBottomTier}>
@@ -3887,15 +4259,16 @@ function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLa
             <TextInput
               ref={inputRef}
               value={input}
-              onChangeText={(value) => setInput(value.replace(/\n/g, "").slice(0, 120))}
+              onChangeText={(value) => setInput(value.replace(/\n/g, "").slice(0, answerLimit))}
               onKeyPress={(event) => {
                 if (event.nativeEvent.key === "Enter") {
                   event.preventDefault?.();
                   onSubmit();
                 }
               }}
-              placeholder="ここに、こたえを書く"
-              placeholderTextColor="rgba(190,180,162,0.32)"
+              placeholder={t("ritual.placeholder")}
+              placeholderTextColor="rgba(190,180,162,0.55)"
+              accessibilityLabel={t("ritual.placeholder")}
               style={styles.niloDraftInput}
               multiline
               autoFocus
@@ -3908,25 +4281,25 @@ function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLa
               onBlur={onBlur}
             />
             {input.trim().length > 0 && (
-              <Pressable onPress={onSubmit} style={({ pressed }) => [styles.niloSendButton, pressed && styles.touchPressedTight]}>
-                <Text style={styles.niloSendText}>送信</Text>
+              <Pressable onPress={onSubmit} accessibilityRole="button" accessibilityLabel={t("ritual.send")} style={({ pressed }) => [styles.niloSendButton, pressed && styles.touchPressedTight]}>
+                <Text style={styles.niloSendText}>{t("ritual.send")}</Text>
               </Pressable>
             )}
             {exitConfirmOpen ? (
               <View style={styles.niloExitConfirmRow}>
-                <Text style={styles.niloExitConfirmText}>本当に終了しますか？</Text>
+                <Text style={styles.niloExitConfirmText}>{t("ritual.exitConfirmQuestion")}</Text>
                 <View style={styles.niloExitConfirmActions}>
-                  <Pressable onPress={onCancelExit} style={({ pressed }) => [styles.niloExitConfirmGhost, pressed && styles.touchPressedTight]}>
-                    <Text style={styles.niloExitConfirmGhostText}>いいえ</Text>
+                  <Pressable onPress={onCancelExit} accessibilityRole="button" style={({ pressed }) => [styles.niloExitConfirmGhost, pressed && styles.touchPressedTight]}>
+                    <Text style={styles.niloExitConfirmGhostText}>{t("ritual.exitConfirmNo")}</Text>
                   </Pressable>
-                  <Pressable onPress={onConfirmExit} style={({ pressed }) => [styles.niloExitConfirmPrimary, pressed && styles.touchPressedTight]}>
-                    <Text style={styles.niloExitConfirmPrimaryText}>はい</Text>
+                  <Pressable onPress={onConfirmExit} accessibilityRole="button" style={({ pressed }) => [styles.niloExitConfirmPrimary, pressed && styles.touchPressedTight]}>
+                    <Text style={styles.niloExitConfirmPrimaryText}>{t("ritual.exitConfirmYes")}</Text>
                   </Pressable>
                 </View>
               </View>
             ) : (
-              <Pressable onPress={onExit} style={styles.niloExitLink}>
-                <Text style={styles.niloExitText}>今夜はここまでにする</Text>
+              <Pressable onPress={onExit} accessibilityRole="button" style={styles.niloExitLink}>
+                <Text style={styles.niloExitText}>{t("ritual.exitLink")}</Text>
               </Pressable>
             )}
           </KeyboardAvoidingView>
@@ -3965,11 +4338,12 @@ function SupportResourceCard() {
 }
 
 function FirstRunCard({ session, needsProfile, authBusy, onGoogleSignIn, onOpenProfile }) {
+  const t = useT();
   const signedIn = Boolean(session);
-  const title = signedIn ? "プロフィールを完成させましょう" : "Arcを始める準備";
+  const title = signedIn ? t("home.firstRunProfileTitle") : t("home.firstRunStartTitle");
   const body = signedIn && needsProfile
-    ? "名前と生年月日を登録すると、日数や記録があなたの情報に沿って表示されます。"
-    : "Googleでログインすると、記録をあなたのアカウントに結びつけられます。service_role keyは使いません。";
+    ? t("home.firstRunProfileBody")
+    : t("home.firstRunLoginBody");
 
   return (
     <View style={styles.firstRunCard}>
@@ -3980,7 +4354,7 @@ function FirstRunCard({ session, needsProfile, authBusy, onGoogleSignIn, onOpenP
         <Text style={styles.firstRunTitle}>{title}</Text>
         <Text style={styles.firstRunBody}>{body}</Text>
         <Text style={styles.firstRunHint}>
-          {signedIn ? "プロフィールから名前と生年月日を送ってください。" : "ログイン後、プロフィールで名前と生年月日を送ってください。"}
+          {signedIn ? t("home.firstRunProfileHint") : t("home.firstRunLoginHint")}
         </Text>
       </View>
       <Pressable
@@ -3988,7 +4362,7 @@ function FirstRunCard({ session, needsProfile, authBusy, onGoogleSignIn, onOpenP
         onPress={signedIn ? onOpenProfile : onGoogleSignIn}
         style={[styles.firstRunButton, authBusy && styles.disabledButton]}
       >
-        <Text style={styles.firstRunButtonText}>{authBusy ? "接続中..." : signedIn ? "入力する" : "Googleでログイン"}</Text>
+        <Text style={styles.firstRunButtonText}>{authBusy ? t("gate.connecting") : signedIn ? t("home.firstRunEnterButton") : t("gate.googleLogin")}</Text>
       </Pressable>
     </View>
   );
@@ -4076,6 +4450,8 @@ function QuestRowNode({ muted = false }) {
 
 function QuestScreen({ onUiSound, active, proposals, explorations, onAccept, onDecline, onCloseExploration }) {
   const token = useEntrancePlay(active);
+  const t = useT();
+  const lang = useLang();
   const [futureQuestOpen, setFutureQuestOpen] = useState(false);
   const [openExploration, setOpenExploration] = useState(null);
 
@@ -4085,13 +4461,13 @@ function QuestScreen({ onUiSound, active, proposals, explorations, onAccept, onD
   const real = explorations || [];
   const ongoing = real.filter((item) => item.status !== "closed").map((item) => ({
     ...item,
-    since: formatQuestSince(item.sinceDateKey),
-    duration: formatQuestDuration(item.sinceDateKey)
+    since: formatLocalizedQuestSince(item.sinceDateKey, lang),
+    duration: formatLocalizedQuestDuration(item.sinceDateKey, lang)
   }));
   const closed = real.filter((item) => item.status === "closed").map((item) => ({
     ...item,
-    since: formatQuestSince(item.sinceDateKey),
-    duration: formatQuestDuration(item.sinceDateKey, new Date(`${item.closedDateKey}T00:00:00`))
+    since: formatLocalizedQuestSince(item.sinceDateKey, lang),
+    duration: formatLocalizedQuestDuration(item.sinceDateKey, lang, new Date(`${item.closedDateKey}T00:00:00`))
   }));
   const displayProposals = (proposals && proposals.length) ? proposals : (real.length ? [] : demoQuestProposals);
   const displayOngoing = real.length ? ongoing : demoOngoingQuests;
@@ -4115,19 +4491,19 @@ function QuestScreen({ onUiSound, active, proposals, explorations, onAccept, onD
         <QuestHeaderShimmer />
         <View style={styles.questHeaderTop}>
           <View style={styles.questTitleBlock}>
-            <Text style={styles.questScreenTitle}>クエスト</Text>
-            <Text style={styles.questEyebrow}>QUEST ・ 時間をかけて掘り下げる探求</Text>
+            <Text style={styles.questScreenTitle}>{t("quest.screenTitle")}</Text>
+            <Text style={styles.questEyebrow}>{t("quest.eyebrow")}</Text>
           </View>
           <View style={styles.questFieldPill}>
             <Text style={styles.questFieldPillText}>NILO FIELD</Text>
           </View>
         </View>
         <Text style={styles.questWatermark}>QUEST</Text>
-        <Text style={styles.questPhilosophy}>日記が点だとすれば、クエストは、{"\n"}その点が集まってできる、一本の線。</Text>
+        <Text style={styles.questPhilosophy}>{t("quest.philosophy")}</Text>
       </RiseIn>
 
       <RiseIn index={1} playToken={token} style={styles.questGroupHeader}>
-        <Text style={styles.questGroupTitle}>Niloからの提案</Text>
+        <Text style={styles.questGroupTitle}>{t("quest.proposalsGroup")}</Text>
         <View style={styles.questGroupRule} />
       </RiseIn>
       {displayProposals.length ? (
@@ -4145,16 +4521,16 @@ function QuestScreen({ onUiSound, active, proposals, explorations, onAccept, onD
               <QuestCardSheen />
               <View style={styles.mobileQuestTopRow}>
                 <Text style={styles.mobileQuestNilo}>NILO</Text>
-                <Text style={styles.mobileQuestSignal}>提案</Text>
+                <Text style={styles.mobileQuestSignal}>{t("quest.proposalSignal")}</Text>
               </View>
               <Text style={styles.questProposalObservation}>{proposal.observation}</Text>
               <Text style={styles.questProposalInvitation}>{proposal.invitation}</Text>
               <View style={styles.mobileQuestActions}>
                 <Pressable onPress={() => acceptProposal(proposal)} style={({ pressed }) => [styles.mobileQuestAction, styles.mobileQuestActionPrimary, pressed && styles.touchPressedTight]}>
-                  <Text style={styles.mobileQuestActionPrimaryText}>一緒に見てみる</Text>
+                  <Text style={styles.mobileQuestActionPrimaryText}>{t("quest.acceptProposal")}</Text>
                 </Pressable>
                 <Pressable onPress={() => declineProposal(proposal)} style={({ pressed }) => [styles.mobileQuestAction, styles.mobileQuestActionSecondary, pressed && styles.touchPressedTight]}>
-                  <Text style={styles.mobileQuestActionSecondaryText}>今は、そのままに</Text>
+                  <Text style={styles.mobileQuestActionSecondaryText}>{t("quest.declineProposal")}</Text>
                 </Pressable>
               </View>
             </View>
@@ -4162,12 +4538,12 @@ function QuestScreen({ onUiSound, active, proposals, explorations, onAccept, onD
         ))
       ) : (
         <RiseIn index={2} playToken={token}>
-          <Text style={styles.questQuietNote}>いまは、静かなときです。{"\n"}日々の記録の中に繰り返し現れるものを見つけたら、{"\n"}Niloがここにそっと差し出します。</Text>
+          <Text style={styles.questQuietNote}>{t("quest.noProposalsNote")}</Text>
         </RiseIn>
       )}
 
       <RiseIn index={displayProposals.length + 2} playToken={token} style={[styles.questGroupHeader, styles.questGroupHeaderSpaced]}>
-        <Text style={styles.questGroupTitle}>過去を辿る探求</Text>
+        <Text style={styles.questGroupTitle}>{t("quest.ongoingGroup")}</Text>
         <View style={styles.questGroupRule} />
       </RiseIn>
       {displayOngoing.length ? (
@@ -4193,9 +4569,9 @@ function QuestScreen({ onUiSound, active, proposals, explorations, onAccept, onD
               <View style={styles.questOngoingCopy}>
                 <Text style={styles.questOngoingTheme}>{quest.theme}</Text>
                 <Text style={styles.questOngoingMeta}>
-                  {quest.since}　・　{quest.duration}{quest.sessions ? `　・　重ねた問い ${quest.sessions}回` : ""}
+                  {quest.since}　・　{quest.duration}{quest.sessions ? t("quest.repeatedQuestionsSuffix", quest.sessions) : ""}
                 </Text>
-                {quest.clearable && <Text style={styles.questClearableMeta}>Niloが一区切りを認めました</Text>}
+                {quest.clearable && <Text style={styles.questClearableMeta}>{t("quest.clearableMeta")}</Text>}
               </View>
               <Text style={styles.questOngoingArrow}>→</Text>
             </Pressable>
@@ -4203,12 +4579,12 @@ function QuestScreen({ onUiSound, active, proposals, explorations, onAccept, onD
         ))
       ) : (
         <RiseIn index={displayProposals.length + 3} playToken={token}>
-          <Text style={styles.questQuietNote}>いま、続いている探求はありません。</Text>
+          <Text style={styles.questQuietNote}>{t("quest.noOngoingNote")}</Text>
         </RiseIn>
       )}
 
       <RiseIn index={displayProposals.length + displayOngoing.length + 3} playToken={token} style={[styles.questGroupHeader, styles.questGroupHeaderSpaced]}>
-        <Text style={styles.questGroupTitle}>未来に向かう探求</Text>
+        <Text style={styles.questGroupTitle}>{t("quest.futureGroup")}</Text>
         <View style={styles.questGroupRule} />
       </RiseIn>
       <RiseIn index={displayProposals.length + displayOngoing.length + 4} playToken={token} duration={500}>
@@ -4240,7 +4616,7 @@ function QuestScreen({ onUiSound, active, proposals, explorations, onAccept, onD
       {closed.length > 0 && (
         <>
           <RiseIn index={displayProposals.length + displayOngoing.length + 5} playToken={token} style={[styles.questGroupHeader, styles.questGroupHeaderSpaced]}>
-            <Text style={styles.questGroupTitle}>一区切りついた探求</Text>
+            <Text style={styles.questGroupTitle}>{t("quest.closedGroup")}</Text>
             <View style={styles.questGroupRule} />
           </RiseIn>
           {closed.map((quest, index) => (
@@ -4264,7 +4640,7 @@ function QuestScreen({ onUiSound, active, proposals, explorations, onAccept, onD
                 <QuestRowNode muted />
                 <View style={styles.questOngoingCopy}>
                   <Text style={[styles.questOngoingTheme, styles.questClosedTheme]}>{quest.theme}</Text>
-                  <Text style={styles.questOngoingMeta}>{quest.since}　・　{quest.duration}をともに</Text>
+                  <Text style={styles.questOngoingMeta}>{quest.since}　・　{quest.duration}{t("quest.closedDurationSuffix")}</Text>
                 </View>
                 <Text style={[styles.questOngoingArrow, styles.questOngoingArrowMuted]}>→</Text>
               </Pressable>
@@ -4296,25 +4672,39 @@ function QuestScreen({ onUiSound, active, proposals, explorations, onAccept, onD
 // 日記タブ (per the Diary spec): 意味を主役にした二層のタイムライン。直近の
 // 窓だけを詳細に見せ、それ以前は月の帯に畳み、さらに古い日々は章へ委ねる。
 // 糸は「今」に最も近い一点だけが淡く光る。
-function JournalScreen({ journal, active }) {
+function JournalScreen({ journal, active, onOpenDetail, onGoToStory, compareLastYear }) {
   const token = useEntrancePlay(active);
-  const { cumulativeEntries } = getDiaryModel(journal);
+  const t = useT();
+  const lang = useLang();
+  const { recentEntries, monthlyBands, hasOlder } = getDiaryModel(journal, { lang });
+  const [expandedBands, setExpandedBands] = useState([]);
+  // 一年前のこの頃（初年は「◯週間前の今夜」）。設定でOFFにできる。
+  const echoEntry = compareLastYear ? findLastYearEcho(journal, { lang }) : null;
   const now = new Date(`${getJournalDateKey()}T00:00:00`);
+
+  function toggleBand(monthKey) {
+    setExpandedBands((keys) =>
+      keys.includes(monthKey) ? keys.filter((key) => key !== monthKey) : [...keys, monthKey]);
+  }
 
   return (
     <ScrollView contentContainerStyle={styles.journalScrollContent} showsVerticalScrollIndicator={false}>
       <RiseIn index={0} playToken={token} style={styles.journalHeader}>
-        <DiaryHeaderShimmer />
         <View style={styles.journalHeaderTop}>
           <View style={styles.journalTitleBlock}>
-            <Text style={styles.mobileScreenTitle}>日記</Text>
-            <Text style={styles.mobileGoldLabel}>これまでの日々</Text>
+            <Text style={styles.mobileScreenTitle}>{t("journal.title")}</Text>
+            <Text style={styles.mobileGoldLabel}>{t("journal.goldLabel")}</Text>
           </View>
           <View style={styles.journalMonthPill}>
             <Text style={styles.journalMonth}>{`${englishMonthNames[now.getMonth()]} ${now.getFullYear()}`}</Text>
           </View>
         </View>
       </RiseIn>
+      {!!echoEntry && (
+        <RiseIn index={1} playToken={token}>
+          <DiaryLastYearEcho entry={echoEntry} onOpenDetail={onOpenDetail} />
+        </RiseIn>
+      )}
       <View style={styles.timeline}>
         <LinearGradient
           pointerEvents="none"
@@ -4322,18 +4712,31 @@ function JournalScreen({ journal, active }) {
           locations={[0, 0.1, 0.82, 1]}
           style={styles.timelineLine}
         />
-        <DiaryTimelineSweep />
-        {cumulativeEntries.length === 0 && (
+        {recentEntries.length === 0 && (
           <RiseIn index={1} playToken={token}>
-            <Text style={styles.diaryEmptyRecent}>まだ日記はありません。</Text>
+            <Text style={styles.diaryEmptyRecent}>{t("journal.emptyRecent")}</Text>
           </RiseIn>
         )}
-        {cumulativeEntries.map((entry, index) => (
-          <RiseIn key={entry.id} index={index + 1} playToken={token} duration={550}>
+        {recentEntries.map((entry, index) => (
+          <RiseIn key={entry.id} index={index + 2} playToken={token} duration={550}>
             <DiaryEntryRow entry={entry} isCurrent={index === 0} />
           </RiseIn>
         ))}
       </View>
+      {monthlyBands.length > 0 && (
+        <FirstBandReveal firstEver={monthlyBands.length === 1}>
+          {monthlyBands.map((band) => (
+            <DiaryMonthBand
+              key={band.monthKey}
+              band={band}
+              expanded={expandedBands.includes(band.monthKey)}
+              onToggle={() => toggleBand(band.monthKey)}
+              onOpenDetail={onOpenDetail}
+            />
+          ))}
+        </FirstBandReveal>
+      )}
+      {hasOlder && <DiaryStoryGuide onGoToStory={onGoToStory} />}
     </ScrollView>
   );
 }
@@ -4342,89 +4745,9 @@ function JournalScreen({ journal, active }) {
 // 大きくなるが、その強弱は組版だけで語り、数値やバッジは出さない。
 // 対話ログがある日は意味の末尾に沈黙記号「···」を淡く添え、タップでその場に
 // 静かに展開する(離脱防止方針書 §05。モーダルへは遷移しない)。
-function DiaryHeaderShimmer() {
-  const sweep = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(sweep, { toValue: 1, duration: 8200, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
-        Animated.delay(1800)
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [sweep]);
-  const opacity = sweep.interpolate({ inputRange: [0, 0.18, 0.54, 1], outputRange: [0, 0.18, 0.11, 0] });
-  const translateX = sweep.interpolate({ inputRange: [0, 1], outputRange: [-86, 300] });
-  return (
-    <Animated.View pointerEvents="none" style={[styles.diaryHeaderShimmer, { opacity, transform: [{ translateX }, { rotate: "-12deg" }] }]}>
-      <LinearGradient
-        colors={["rgba(246,239,228,0)", "rgba(246,239,228,0.34)", "rgba(217,168,108,0.08)", "rgba(246,239,228,0)"]}
-        locations={[0, 0.44, 0.58, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.diaryHeaderShimmerFill}
-      />
-    </Animated.View>
-  );
-}
-
-function DiaryTimelineSweep() {
-  const sweep = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.delay(850),
-        Animated.timing(sweep, { toValue: 1, duration: 6200, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
-        Animated.delay(1300)
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [sweep]);
-  const opacity = sweep.interpolate({ inputRange: [0, 0.14, 0.78, 1], outputRange: [0, 0.58, 0.24, 0] });
-  const translateY = sweep.interpolate({ inputRange: [0, 1], outputRange: [0, 560] });
-  return (
-    <Animated.View pointerEvents="none" style={[styles.diaryTimelineSweep, { opacity, transform: [{ translateY }] }]}>
-      <LinearGradient
-        colors={["rgba(217,168,108,0)", "rgba(246,239,228,0.72)", "rgba(119,149,143,0.18)", "rgba(217,168,108,0)"]}
-        locations={[0, 0.42, 0.68, 1]}
-        style={styles.diaryTimelineSweepFill}
-      />
-    </Animated.View>
-  );
-}
-
-function DiaryCardSheen() {
-  const sweep = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.delay(1500),
-        Animated.timing(sweep, { toValue: 1, duration: 5600, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
-        Animated.delay(2200)
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [sweep]);
-  const opacity = sweep.interpolate({ inputRange: [0, 0.2, 0.46, 1], outputRange: [0, 0.2, 0.08, 0] });
-  const translateX = sweep.interpolate({ inputRange: [0, 1], outputRange: [-96, 260] });
-  return (
-    <Animated.View pointerEvents="none" style={[styles.diaryCardSheen, { opacity, transform: [{ translateX }, { rotate: "-14deg" }] }]}>
-      <LinearGradient
-        colors={["rgba(246,239,228,0)", "rgba(246,239,228,0.32)", "rgba(217,168,108,0.08)", "rgba(246,239,228,0)"]}
-        locations={[0, 0.45, 0.56, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.diaryCardSheenFill}
-      />
-    </Animated.View>
-  );
-}
-
 function DiaryEntryRow({ entry, isCurrent }) {
   const [expanded, setExpanded] = useState(false);
+  const t = useT();
   const currentFloat = useRef(new Animated.Value(0)).current;
   const tierItem =
     entry.tier === "strong" ? styles.diaryItemStrong : entry.tier === "quiet" ? styles.diaryItemQuiet : styles.diaryItemNormal;
@@ -4474,12 +4797,11 @@ function DiaryEntryRow({ entry, isCurrent }) {
             style={styles.diaryCurrentWash}
           />
         )}
-        {isCurrent && <DiaryCardSheen />}
         <View style={[styles.timelineMetaRow, isCurrent && styles.timelineMetaRowCurrent]}>
           <Text style={[styles.timelineDate, isCurrent && styles.timelineDateActive]}>{entry.dateLabel}</Text>
           {!!entry.weekday && <Text style={styles.diaryWeekday}>{entry.weekday}</Text>}
-          {isCurrent && <Text style={styles.diaryNowLabel}>いま</Text>}
-          {entry.isQuest && <Text style={styles.diaryQuestLabel}>クエスト</Text>}
+          {isCurrent && <Text style={styles.diaryNowLabel}>{t("journal.nowLabel")}</Text>}
+          {entry.isQuest && <Text style={styles.diaryQuestLabel}>{t("journal.questLabel")}</Text>}
         </View>
         {!!entry.event && <Text style={styles.diaryEventText}>{entry.event}</Text>}
         <Text style={tierMeaning}>
@@ -4573,9 +4895,11 @@ function DiaryEchoMark() {
 
 // 一年前の同じ季節の一日。比較や評価はせず、その日の意味を一言だけ差し出す。
 function DiaryLastYearEcho({ entry, onOpenDetail }) {
+  const t = useT();
   return (
     <Pressable
       onPress={() => onOpenDetail?.(entry)}
+      accessibilityRole="button"
       style={({ pressed }) => [styles.diaryEchoCard, pressed && styles.touchPressedSubtle]}
       accessibilityRole="button"
     >
@@ -4588,7 +4912,11 @@ function DiaryLastYearEcho({ entry, onOpenDetail }) {
         style={styles.diaryEchoWash}
       />
       <View style={styles.diaryEchoTopRow}>
-        <Text style={styles.diaryEchoLabel}>一年前のこの頃</Text>
+        <Text style={styles.diaryEchoLabel}>
+          {entry.echoMode === "weeksAgo"
+            ? t("journal.weeksAgoEchoLabel", entry.weeksAgo)
+            : t("journal.lastYearEchoLabel")}
+        </Text>
         <DiaryEchoMark />
       </View>
       <Text style={styles.diaryEchoMeaning}>{entry.meaning}</Text>
@@ -4613,7 +4941,37 @@ function DiaryBandToggleIcon({ expanded }) {
   return <Animated.Text style={[styles.diaryBandToggle, { transform: [{ rotate }, { scale }] }]}>{expanded ? "−" : "+"}</Animated.Text>;
 }
 
+// 30日目の返礼（90日設計）: 最初の月の帯が現れた一度だけ、金色がひと呼吸ぶん
+// 灯って消える。蓄積が初めて「構造」に見えた瞬間の小さな演出。通知はしない。
+function FirstBandReveal({ firstEver, children }) {
+  const glow = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!firstEver) return undefined;
+    let cancelled = false;
+    AsyncStorage.getItem(FIRST_BAND_SEEN_KEY)
+      .then((seen) => {
+        if (cancelled || seen) return;
+        AsyncStorage.setItem(FIRST_BAND_SEEN_KEY, "1").catch(() => undefined);
+        Animated.sequence([
+          Animated.timing(glow, { toValue: 1, duration: 1600, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(glow, { toValue: 0, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true })
+        ]).start();
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [firstEver, glow]);
+  return (
+    <View>
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, styles.diaryBandFirstGlow, { opacity: glow }]} />
+      {children}
+    </View>
+  );
+}
+
 function DiaryMonthBand({ band, expanded, onToggle, onOpenDetail }) {
+  const t = useT();
   const barHeight = 10 + Math.min(36, band.entries.length * 3);
   return (
     <View>
@@ -4626,7 +4984,7 @@ function DiaryMonthBand({ band, expanded, onToggle, onOpenDetail }) {
         <View style={[styles.diaryBandBar, { height: barHeight }, expanded && styles.diaryBandBarOpen]} />
         <View style={styles.diaryBandCopy}>
           <Text style={[styles.diaryBandLabel, expanded && styles.diaryBandLabelOpen]}>{band.label}</Text>
-          <Text style={styles.diaryBandCount}>{band.entries.length}篇</Text>
+          <Text style={styles.diaryBandCount}>{band.entries.length}{t("journal.entriesUnitSuffix")}</Text>
         </View>
         <DiaryBandToggleIcon expanded={expanded} />
       </Pressable>
@@ -4649,6 +5007,7 @@ function DiaryMonthBand({ band, expanded, onToggle, onOpenDetail }) {
 
 // 一定より古い日々は日記では見せない。章への静かな導線だけを置く。
 function DiaryStoryGuide({ onGoToStory }) {
+  const t = useT();
   return (
     <Pressable
       onPress={() => onGoToStory?.()}
@@ -4663,8 +5022,8 @@ function DiaryStoryGuide({ onGoToStory }) {
         end={{ x: 1, y: 1 }}
         style={styles.diaryStoryGuideWash}
       />
-      <Text style={styles.diaryStoryGuideText}>それより前の日々は、章のなかで眠っています。</Text>
-      <Text style={styles.diaryStoryGuideLink}>章を読む →</Text>
+      <Text style={styles.diaryStoryGuideText}>{t("journal.storyGuideText")}</Text>
+      <Text style={styles.diaryStoryGuideLink}>{t("journal.storyGuideLink")}</Text>
     </Pressable>
   );
 }
@@ -4677,7 +5036,9 @@ function DiaryStoryGuide({ onGoToStory }) {
 // chapter's record weight, and the current one glows gold.
 function StoryScreen({ chapters, proposals, eligibleCount, busy, onPropose, onConfirm, onDefer, onSplit, chapterNotes, onChangeNote, active }) {
   const token = useEntrancePlay(active);
-  const pages = getChapterPages(chapters);
+  const t = useT();
+  const lang = useLang();
+  const pages = getChapterPages(chapters, lang);
   const [pageH, setPageH] = useState(0);
   const [pageIndex, setPageIndex] = useState(0);
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -4747,15 +5108,20 @@ function StoryScreen({ chapters, proposals, eligibleCount, busy, onPropose, onCo
           <View style={{ height: pageH }}>
             <View style={styles.chpPage}>
               <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={styles.chpPageScroll}>
-                <Text style={styles.chpEndLabel}>この先の章</Text>
-                <Text style={styles.chpEndNote}>日々の記録の中に意味の変化が見えたら、{"\n"}Niloが次の章の区切りを、そっと差し出します。</Text>
+                <Text style={styles.chpEndLabel}>{t("chapter.endLabel")}</Text>
+                <Text style={styles.chpEndNote}>{t("chapter.endNote")}</Text>
+                {/* 章の予感（90日設計）: 60日を越えて材料が満ちてきたら、命名も
+                    確定も急かさず「流れがある」ことだけを匂わせる。 */}
+                {eligibleCount > 0 && !(proposals || []).length && !busy && (
+                  <Text style={styles.chpForeshadow}>{t("chapter.foreshadow")}</Text>
+                )}
                 {eligibleCount > 0 && (
                   <Pressable
                     disabled={busy}
                     onPress={() => onPropose()}
                     style={({ pressed }) => [styles.chapterFindButton, pressed && !busy && styles.touchPressedTight, busy && styles.disabledButton]}
                   >
-                    <Text style={styles.chapterFindButtonText}>{busy ? "見つめています…" : proposals?.length ? "もう一度、章を探す" : "章を探す"}</Text>
+                    <Text style={styles.chapterFindButtonText}>{busy ? t("chapter.findBusy") : proposals?.length ? t("chapter.findAgain") : t("chapter.findFirst")}</Text>
                   </Pressable>
                 )}
                 {(proposals || []).map((proposal) => (
@@ -4797,6 +5163,7 @@ function StoryScreen({ chapters, proposals, eligibleCount, busy, onPropose, onCo
 // weight alone, recurring people and places, Nilo's letter, the single
 // writing field, and stats offered as thickness rather than achievement.
 function ChapterPageBody({ chapter, playToken, savedNote, onCommitNote }) {
+  const t = useT();
   // Drafted locally per keystroke; committed to persisted state on blur so
   // AsyncStorage isn't rewritten for every character.
   const [selfNote, setSelfNote] = useState(savedNote || "");
@@ -4816,12 +5183,12 @@ function ChapterPageBody({ chapter, playToken, savedNote, onCommitNote }) {
         </View>
         <Text style={styles.chpTitle}>{chapter.title}</Text>
         <Text style={styles.chpSummary}>{chapter.summary}</Text>
-        {chapter.current && <Text style={styles.chpNowNote}>—— いま、この章の中に</Text>}
+        {chapter.current && <Text style={styles.chpNowNote}>{t("chapter.nowInChapter")}</Text>}
       </RiseIn>
 
       {excerpts.length > 0 && (
         <RiseIn index={1} playToken={playToken}>
-          <ChpSectionHeader label="この章の記録" note={chapter.recordCount > excerpts.length ? `${chapter.recordCount}の記録から` : ""} />
+          <ChpSectionHeader label={t("chapter.sectionRecords")} note={chapter.recordCount > excerpts.length ? t("chapter.sectionRecordsNote", chapter.recordCount) : ""} />
           {excerpts.map((excerpt, index) => (
             <View key={`${excerpt.date}-${index}`} style={styles.chpExcerpt}>
               <Text style={styles.chpExcerptDate}>{excerpt.date}</Text>
@@ -4833,14 +5200,14 @@ function ChapterPageBody({ chapter, playToken, savedNote, onCommitNote }) {
 
       {!!chapter.reunion && (
         <RiseIn index={2} playToken={playToken}>
-          <ChpSectionHeader label="過去との再会" note={chapter.reunion.fromLabel} />
+          <ChpSectionHeader label={t("chapter.sectionReunion")} note={chapter.reunion.fromLabel} />
           <Text style={styles.chpReunionQuote}>「{chapter.reunion.quote}」</Text>
         </RiseIn>
       )}
 
       {!!chapter.wish && (
         <RiseIn index={3} playToken={playToken}>
-          <ChpSectionHeader label="この章の願い" />
+          <ChpSectionHeader label={t("chapter.sectionWish")} />
           <Text style={styles.chpWishTheme}>{chapter.wish.theme}</Text>
           <Text style={styles.chpWishLine}>{chapter.wish.line}</Text>
         </RiseIn>
@@ -4848,7 +5215,7 @@ function ChapterPageBody({ chapter, playToken, savedNote, onCommitNote }) {
 
       {words.length > 0 && (
         <RiseIn index={4} playToken={playToken}>
-          <ChpSectionHeader label="よく現れた言葉" />
+          <ChpSectionHeader label={t("chapter.sectionWords")} />
           <View style={styles.chpWordsWrap}>
             {words.map((word) => (
               <Text
@@ -4864,26 +5231,26 @@ function ChapterPageBody({ chapter, playToken, savedNote, onCommitNote }) {
 
       {figures.length > 0 && (
         <RiseIn index={5} playToken={playToken}>
-          <ChpSectionHeader label="この章の登場" />
+          <ChpSectionHeader label={t("chapter.sectionFigures")} />
           <Text style={styles.chpFigures}>{figures.join("　・　")}</Text>
         </RiseIn>
       )}
 
       {!!chapter.niloLetter && (
         <RiseIn index={6} playToken={playToken}>
-          <ChpSectionHeader label="NILOより" />
+          <ChpSectionHeader label={t("chapter.sectionNiloLetter")} />
           <Text style={styles.chpNiloLetter}>{chapter.niloLetter}</Text>
         </RiseIn>
       )}
 
       <RiseIn index={7} playToken={playToken}>
-        <ChpSectionHeader label="あの日の自分へ" />
+        <ChpSectionHeader label={t("chapter.sectionSelfNote")} />
         <TextInput
           value={selfNote}
           onChangeText={setSelfNote}
           onBlur={() => onCommitNote?.(selfNote)}
           multiline
-          placeholder="いまのあなたから、この頃の自分へ"
+          placeholder={t("chapter.selfNotePlaceholder")}
           placeholderTextColor="rgba(196,176,148,0.4)"
           style={styles.chpSelfNoteInput}
         />
@@ -4915,6 +5282,7 @@ function ChpSectionHeader({ label, note }) {
 // reflecting that back in words — never in numbers.
 function FutureQuestDetailModal({ visible, onClose, quest }) {
   const token = useEntrancePlay(visible);
+  const t = useT();
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <View style={styles.background}>
@@ -4929,19 +5297,19 @@ function FutureQuestDetailModal({ visible, onClose, quest }) {
           </Pressable>
           <ScrollView contentContainerStyle={styles.lifeQuestDetailScroll} showsVerticalScrollIndicator={false}>
             <RiseIn index={0} playToken={token}>
-              <Text style={styles.lifeQuestDetailLabel}>未来に向かう探求</Text>
+              <Text style={styles.lifeQuestDetailLabel}>{t("lifeQuest.futureLabel")}</Text>
               <Text style={styles.lifeQuestDetailTitle}>{quest.theme}</Text>
               <Text style={styles.lifeQuestDetailMeta}>{quest.since}　・　{quest.duration}</Text>
               {!!quest.niloLine && <Text style={styles.futureQuestNiloLine}>{quest.niloLine}</Text>}
             </RiseIn>
 
             <RiseIn index={1} playToken={token} style={styles.latestWordCard}>
-              <Text style={styles.latestWordLabel}>最新の言葉</Text>
+              <Text style={styles.latestWordLabel}>{t("lifeQuest.latestWordLabel")}</Text>
               <Text style={styles.latestWordText}>「{quest.latestLine}」</Text>
             </RiseIn>
 
             <RiseIn index={2} playToken={token} style={styles.recordTrailHeader}>
-              <Text style={styles.recordTrailLabel}>言葉の軌跡</Text>
+              <Text style={styles.recordTrailLabel}>{t("lifeQuest.recordTrailLabel")}</Text>
               <View style={styles.recordTrailRule} />
             </RiseIn>
             <View style={styles.lifeQuestRecordTimeline}>
@@ -4959,9 +5327,9 @@ function FutureQuestDetailModal({ visible, onClose, quest }) {
 
             <View style={styles.lifeQuestActions}>
               <Pressable onPress={onClose} style={({ pressed }) => [styles.lifeQuestTalkButton, pressed && styles.touchPressedTight]}>
-                <Text style={styles.lifeQuestTalkText}>Niloとこの願いを話す</Text>
+                <Text style={styles.lifeQuestTalkText}>{t("lifeQuest.talkButton")}</Text>
               </Pressable>
-              <Text style={styles.lifeQuestPhilosophy}>達成より、道のりを残す。{"\n"}願いが叶っても、かたちを変えても、{"\n"}この時間は消えない。</Text>
+              <Text style={styles.lifeQuestPhilosophy}>{t("lifeQuest.philosophyFuture")}</Text>
             </View>
           </ScrollView>
           <StatusBar barStyle="light-content" />
@@ -4977,6 +5345,7 @@ function FutureQuestDetailModal({ visible, onClose, quest }) {
 // exploration gathered stays.
 function ExplorationDetailModal({ visible, quest, onClose, onCloseExploration, canCloseExploration }) {
   const token = useEntrancePlay(visible);
+  const t = useT();
   const records = quest.records || [];
   const isClosed = quest.status === "closed";
   const canClose = Boolean(canCloseExploration);
@@ -4994,15 +5363,15 @@ function ExplorationDetailModal({ visible, quest, onClose, onCloseExploration, c
           </Pressable>
           <ScrollView contentContainerStyle={styles.lifeQuestDetailScroll} showsVerticalScrollIndicator={false}>
             <RiseIn index={0} playToken={token}>
-              <Text style={styles.lifeQuestDetailLabel}>{isClosed ? "一区切りついた探求" : "過去を辿る探求"}</Text>
+              <Text style={styles.lifeQuestDetailLabel}>{isClosed ? t("lifeQuest.closedLabel") : t("lifeQuest.pastLabel")}</Text>
               <Text style={styles.lifeQuestDetailTitle}>{quest.theme}</Text>
               <Text style={styles.lifeQuestDetailMeta}>
-                {quest.since}　・　{quest.duration}{quest.sessions ? `　・　重ねた問い ${quest.sessions}回` : ""}
+                {quest.since}　・　{quest.duration}{quest.sessions ? t("quest.repeatedQuestionsSuffix", quest.sessions) : ""}
               </Text>
             </RiseIn>
 
             <RiseIn index={1} playToken={token} style={styles.recordTrailHeader}>
-              <Text style={styles.recordTrailLabel}>言葉の軌跡</Text>
+              <Text style={styles.recordTrailLabel}>{t("lifeQuest.recordTrailLabel")}</Text>
               <View style={styles.recordTrailRule} />
             </RiseIn>
             {records.length ? (
@@ -5020,7 +5389,7 @@ function ExplorationDetailModal({ visible, quest, onClose, onCloseExploration, c
               </View>
             ) : (
               <RiseIn index={2} playToken={token}>
-                <Text style={styles.questQuietNote}>まだ言葉は残っていません。{"\n"}夜の対話でこのテーマにふれると、ここに積もっていきます。</Text>
+                <Text style={styles.questQuietNote}>{t("lifeQuest.noWordsYet")}</Text>
               </RiseIn>
             )}
 
@@ -5031,16 +5400,16 @@ function ExplorationDetailModal({ visible, quest, onClose, onCloseExploration, c
                   onPress={onCloseExploration}
                   style={({ pressed }) => [styles.lifeQuestTalkButton, !canClose && styles.questCloseLocked, pressed && canClose && styles.touchPressedTight]}
                 >
-                  <Text style={styles.lifeQuestTalkText}>{canClose ? "そっと、一区切りにする" : "Niloのクリア判定を待つ"}</Text>
+                  <Text style={styles.lifeQuestTalkText}>{canClose ? t("lifeQuest.closeGently") : t("lifeQuest.waitForNilo")}</Text>
                 </Pressable>
               )}
               {!isClosed && !!quest.clearNote && <Text style={styles.questClearNote}>{quest.clearNote}</Text>}
               <Text style={styles.lifeQuestPhilosophy}>
                 {isClosed
-                  ? "この探求は一区切りしました。\nここで重ねた問いと言葉は、消えません。"
+                  ? t("lifeQuest.philosophyClosed")
                   : canClose
-                    ? "Niloが、ここまでの言葉に一区切りを見つけました。\n閉じても、重ねた時間は残ります。"
-                    : "急がなくていい。\nクリアは自己申告ではなく、夜の対話からNiloが見つけます。"}
+                    ? t("lifeQuest.philosophyClearable")
+                    : t("lifeQuest.philosophyWaiting")}
               </Text>
             </View>
           </ScrollView>
@@ -5068,7 +5437,7 @@ function NotificationsModal({ visible, notifications, onClose, onMarkRead, onNav
         <NightGrain />
         <FloatingOrbs />
         <View style={styles.modalHeader}>
-          <Pressable focusable={false} onPress={onClose} style={({ pressed }) => [styles.modalBackButton, pressed && styles.touchPressedTight]}>
+          <Pressable focusable={false} onPress={onClose} accessibilityRole="button" accessibilityLabel={t("common.back")} style={({ pressed }) => [styles.modalBackButton, pressed && styles.touchPressedTight]}>
             <Text style={styles.modalBackText}>‹</Text>
           </Pressable>
           <View style={styles.modalTitleWrap}>
@@ -5087,6 +5456,8 @@ function NotificationsModal({ visible, notifications, onClose, onMarkRead, onNav
                       onMarkRead(item.id);
                       if (item.tab) onNavigate(item.tab);
                     }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${item.title}${item.body ? ` — ${item.body}` : ""}`}
                     style={({ pressed }) => [
                       styles.notificationRow,
                       !item.read && styles.notificationRowUnread,
@@ -5125,6 +5496,7 @@ function NotificationsModal({ visible, notifications, onClose, onMarkRead, onNav
 // that the record cannot be erased. Opened as a full-screen modal, like the
 // life-quest detail.
 function EntryDetailModal({ entry, onClose }) {
+  const t = useT();
   const visible = !!entry;
   const token = useEntrancePlay(visible);
   const e = entry || {};
@@ -5148,7 +5520,7 @@ function EntryDetailModal({ entry, onClose }) {
           <ScrollView contentContainerStyle={styles.entryDetailScroll} showsVerticalScrollIndicator={false}>
             <RiseIn index={0} playToken={token}>
               <View style={styles.entryDetailHeadRow}>
-                <Text style={styles.entryDetailDate}>{e.dateLabel || "今夜"}</Text>
+                <Text style={styles.entryDetailDate}>{e.dateLabel || t("entryDetail.tonightFallback")}</Text>
                 {isTonight && <Text style={styles.entryDetailTonight}>TONIGHT</Text>}
                 {isQuest && <Text style={styles.entryDetailQuestTag}>QUEST</Text>}
               </View>
@@ -5158,7 +5530,7 @@ function EntryDetailModal({ entry, onClose }) {
             <View style={styles.entryDetailDialogue}>
               {dialogue.map((message, index) => (
                 <RiseIn key={index} index={index + 1} playToken={token} duration={550} style={styles.entryDetailMsg}>
-                  {message.role === "nilo" && <Text style={styles.entryDetailNiloLabel}>NILO ねむる</Text>}
+                  {message.role === "nilo" && <Text style={styles.entryDetailNiloLabel}>{t("entryDetail.niloAsleepLabel")}</Text>}
                   <Text style={message.role === "nilo" ? styles.entryDetailNiloText : styles.entryDetailUserText}>{message.text}</Text>
                 </RiseIn>
               ))}
@@ -5174,7 +5546,7 @@ function EntryDetailModal({ entry, onClose }) {
 
             {related.length > 0 && (
               <View style={styles.entryDetailRelated}>
-                <Text style={styles.entryDetailRelatedLabel}>Niloがそっと差し出す、似た夜</Text>
+                <Text style={styles.entryDetailRelatedLabel}>{t("entryDetail.similarNightsLabel")}</Text>
                 {related.map((item, index) => (
                   <View key={index} style={styles.entryDetailRelatedItem}>
                     <Text style={styles.entryDetailRelatedDate}>{item.date}</Text>
@@ -5184,7 +5556,7 @@ function EntryDetailModal({ entry, onClose }) {
               </View>
             )}
 
-            <Text style={styles.entryDetailFooter}>この記録は、消すことができません。</Text>
+            <Text style={styles.entryDetailFooter}>{t("entryDetail.footer")}</Text>
           </ScrollView>
           <View pointerEvents="none" style={styles.entryDetailTopFade}>
             <LinearGradient colors={["rgba(16,12,9,0.92)", "rgba(16,12,9,0)"]} style={StyleSheet.absoluteFill} />
@@ -5210,6 +5582,7 @@ function ThroughlineRow({ label, items }) {
 
 // The throughline of a period — not a summary, but what ran through it.
 function ThroughlineBlock({ data }) {
+  const t = useT();
   const emotions = data.emotions || [];
   const people = data.people || [];
   const questions = data.questions || [];
@@ -5218,9 +5591,9 @@ function ThroughlineBlock({ data }) {
   return (
     <View style={styles.throughline}>
       <View style={styles.ruleGold} />
-      {emotions.length > 0 && <ThroughlineRow label="感情" items={emotions} />}
-      {people.length > 0 && <ThroughlineRow label="人" items={people} />}
-      {questions.length > 0 && <ThroughlineRow label="問い" items={questions} />}
+      {emotions.length > 0 && <ThroughlineRow label={t("chapter.throughlineEmotions")} items={emotions} />}
+      {people.length > 0 && <ThroughlineRow label={t("chapter.throughlinePeople")} items={people} />}
+      {questions.length > 0 && <ThroughlineRow label={t("chapter.throughlineQuestions")} items={questions} />}
       {hasShift && (
         <View style={styles.meaningShift}>
           {!!data.meaningFrom && <Text style={styles.meaningText}>{data.meaningFrom}</Text>}
@@ -5243,11 +5616,12 @@ function episodeShortPeriod(period) {
 // inside. Episodes are Nilo's, surfaced — never named or approved on their own.
 function EpisodeList({ episodes }) {
   const [open, setOpen] = useState(false);
+  const t = useT();
   if (!episodes || episodes.length === 0) return null;
   return (
     <View style={styles.episodeBlock}>
       <Pressable onPress={() => setOpen((value) => !value)} style={styles.episodeToggle}>
-        <Text style={styles.episodeToggleText}>{`${episodes.length}つの場面　${open ? "▾" : "▸"}`}</Text>
+        <Text style={styles.episodeToggleText}>{`${t("chapter.episodesLabel", episodes.length)}　${open ? "▾" : "▸"}`}</Text>
       </Pressable>
       {open && (
         <View style={styles.episodeList}>
@@ -5264,12 +5638,13 @@ function EpisodeList({ episodes }) {
 }
 
 function ProposalCard({ proposal, busy, onConfirm, onDefer, onSplit }) {
+  const t = useT();
   const [naming, setNaming] = useState(false);
   const [title, setTitle] = useState("");
 
   return (
     <View style={styles.proposalCard}>
-      <Text style={styles.proposalEyebrow}>NILO が感じた変化点</Text>
+      <Text style={styles.proposalEyebrow}>{t("chapter.proposalEyebrow")}</Text>
       {!!proposal.period && <Text style={styles.proposalPeriod}>{proposal.period}</Text>}
       {!!proposal.observation && <Text style={styles.proposalObservation}>{proposal.observation}</Text>}
       <ThroughlineBlock data={proposal} />
@@ -5279,27 +5654,27 @@ function ProposalCard({ proposal, busy, onConfirm, onDefer, onSplit }) {
           <TextInput
             value={title}
             onChangeText={setTitle}
-            placeholder="この章に名前をつける（後で変えられます）"
+            placeholder={t("chapter.proposalNamePlaceholder")}
             placeholderTextColor="#777"
             style={styles.settingInput}
           />
           <Pressable onPress={() => onConfirm(proposal.id, title)} style={styles.primaryButton}>
-            <Text style={styles.primaryButtonText}>この章を残す</Text>
+            <Text style={styles.primaryButtonText}>{t("chapter.proposalSaveButton")}</Text>
           </Pressable>
           <Pressable onPress={() => onConfirm(proposal.id, "")}>
-            <Text style={styles.proposalSkipName}>名前は後で</Text>
+            <Text style={styles.proposalSkipName}>{t("chapter.proposalSkipName")}</Text>
           </Pressable>
         </View>
       ) : (
         <View style={styles.proposalActions}>
           <Pressable disabled={busy} onPress={() => setNaming(true)} style={styles.proposalAccept}>
-            <Text style={styles.proposalAcceptText}>認める</Text>
+            <Text style={styles.proposalAcceptText}>{t("chapter.proposalAccept")}</Text>
           </Pressable>
           <Pressable disabled={busy} onPress={() => onDefer(proposal.id)} style={styles.proposalGhost}>
-            <Text style={styles.proposalGhostText}>まだ進行中</Text>
+            <Text style={styles.proposalGhostText}>{t("chapter.proposalDefer")}</Text>
           </Pressable>
           <Pressable disabled={busy} onPress={() => onSplit(proposal.id)} style={styles.proposalGhost}>
-            <Text style={styles.proposalGhostText}>分ける</Text>
+            <Text style={styles.proposalGhostText}>{t("chapter.proposalSplit")}</Text>
           </Pressable>
         </View>
       )}
@@ -5308,6 +5683,7 @@ function ProposalCard({ proposal, busy, onConfirm, onDefer, onSplit }) {
 }
 
 function ChapterCard({ chapter, index, total, onRename }) {
+  const t = useT();
   // Chapters render newest-first, but the story reads oldest-first — so the
   // earliest memory becomes Chapter I.
   const chapterNo = total - index;
@@ -5331,21 +5707,21 @@ function ChapterCard({ chapter, index, total, onRename }) {
           <TextInput
             value={title}
             onChangeText={setTitle}
-            placeholder="章に名前をつける"
+            placeholder={t("chapter.namePlaceholder")}
             placeholderTextColor="#777"
             style={styles.settingInput}
           />
           <Pressable onPress={() => { onRename(chapter.id, title); setEditing(false); }} style={styles.primaryButton}>
-            <Text style={styles.primaryButtonText}>名前を残す</Text>
+            <Text style={styles.primaryButtonText}>{t("chapter.saveNameButton")}</Text>
           </Pressable>
           <Pressable onPress={() => setEditing(false)}>
-            <Text style={styles.proposalSkipName}>やめる</Text>
+            <Text style={styles.proposalSkipName}>{t("chapter.cancelNaming")}</Text>
           </Pressable>
         </View>
       ) : (
         <Pressable onPress={() => { setTitle(chapter.title || ""); setEditing(true); }}>
           <Text style={chapter.title ? styles.chapterCardTitle : styles.chapterCardTitleEmpty}>
-            {chapter.title || "名前のない章 — 触れて名づける"}
+            {chapter.title || t("chapter.namelessChapterTouch")}
           </Text>
         </Pressable>
       )}
@@ -5353,7 +5729,7 @@ function ChapterCard({ chapter, index, total, onRename }) {
       <ThroughlineBlock data={chapter} />
       <EpisodeList episodes={chapter.episodes} />
       {past.length > 0 && (
-        <Text style={styles.renameTrail}>かつて — {past.join(" → ")}</Text>
+        <Text style={styles.renameTrail}>{t("chapter.renameTrailPrefix")}{past.join(" → ")}</Text>
       )}
     </View>
   );
@@ -5375,11 +5751,12 @@ function toRoman(n) {
 }
 
 function MemoryScreen({ memories }) {
+  const t = useT();
   return (
     <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-      <PageTitle eyebrow="Nilo remembers" title="Niloの記憶" subtitle="日記とは別に、大事な場面だけを残します。" />
+      <PageTitle eyebrow={t("memory.eyebrow")} title={t("memory.title")} subtitle={t("memory.subtitle")} />
       {memories.length === 0 ? (
-        <EmptyState title="まだ大事な場面はありません" body="夜の振り返りを終えると、その日の意味がここに灯ります。" />
+        <EmptyState title={t("memory.emptyTitle")} body={t("memory.emptyBody")} />
       ) : memories.map((memory) => <MemoryCard key={memory.id} memory={memory} />)}
     </ScrollView>
   );
@@ -5476,6 +5853,9 @@ function TabBar({ activeTab, setActiveTab, hidden, opacity, unlocks }) {
             key={tab.id}
             onPress={() => setActiveTab(tab.id)}
             focusable={false}
+            accessibilityRole="tab"
+            accessibilityLabel={tab.label}
+            accessibilityState={{ selected: isActive, disabled: !isUnlocked }}
             style={({ pressed }) => [
               styles.tabItem,
               tab.id === "home" && styles.tabItemHome,
@@ -5590,6 +5970,7 @@ function SettingsModal({
   setMemories,
   chapters,
   setChapters,
+  exportState,
   session,
   authLoading,
   authBusy,
@@ -5612,6 +5993,7 @@ function SettingsModal({
   const [exportFormat, setExportFormat] = useState("json");
   const [exportPassphrase, setExportPassphrase] = useState("");
   const [exportStatus, setExportStatus] = useState("");
+  const [accountDeleteStatus, setAccountDeleteStatus] = useState("");
   const [recoveryKey, setRecoveryKey] = useState("");
   const [recoveryStatus, setRecoveryStatus] = useState("");
   const [emergencyEmail, setEmergencyEmail] = useState("");
@@ -5642,7 +6024,14 @@ function SettingsModal({
 
   function updateSettings(patch) {
     onUiSound?.();
-    setSettings((current) => ({ ...current, ...patch }));
+    setSettings((current) => {
+      const next = { ...current, ...patch };
+      if (Object.prototype.hasOwnProperty.call(patch, "language")) {
+        next.language = normalizeLanguageCode(patch.language);
+        next.languageExplicitlySelected = true;
+      }
+      return next;
+    });
   }
 
   function updateBgmVolume(delta) {
@@ -5737,7 +6126,7 @@ function SettingsModal({
       const isMarkdown = exportFormat === "markdown";
       const content = isMarkdown
         ? buildExportMarkdown({ journal, memories, chapters }, lang)
-        : buildExportJson({ journal, memories, chapters, profile, settings });
+        : buildExportJson(exportState);
       const passphrase = exportPassphrase.trim();
       const dateKey = toDateKey(new Date());
       if (passphrase) {
@@ -5783,6 +6172,44 @@ function SettingsModal({
         }
       ]
     );
+  }
+
+  // GDPR Art.17: アカウントとサーバー上の全データ(user_state行ごと)を完全削除する。
+  // 「アーカイブの削除」(ローカルのみ)とは別物なので、二段階確認も別文言にしている。
+  function confirmDeleteAccount() {
+    onUiSound?.();
+    confirmDialog(
+      t("settings.deletion.accountConfirmTitle"),
+      t("settings.deletion.accountConfirmBody"),
+      [
+        { text: t("settings.deletion.keepBack"), style: "cancel" },
+        {
+          text: t("settings.deletion.deleteAction"),
+          style: "destructive",
+          onPress: () => confirmDialog(t("settings.deletion.accountFinalTitle"), t("settings.deletion.accountFinalBody"), [
+            { text: t("settings.deletion.keepBack"), style: "cancel" },
+            { text: t("settings.deletion.deleteAction"), style: "destructive", onPress: runDeleteAccount }
+          ])
+        }
+      ]
+    );
+  }
+
+  async function runDeleteAccount() {
+    setAccountDeleteStatus(t("settings.deletion.accountDeleting"));
+    try {
+      const { error } = await supabase.functions.invoke("delete-account", { body: { confirm: true } });
+      if (error) throw error;
+      // サーバー側は消えた。ローカルの写しも消してからサインアウトする。
+      setJournal([]);
+      setMemories([]);
+      setChapters([]);
+      setAccountDeleteStatus("");
+      onSignOut?.();
+      onClose?.();
+    } catch {
+      setAccountDeleteStatus(t("settings.deletion.accountFailed"));
+    }
   }
 
   async function issueRecoveryKey() {
@@ -5921,7 +6348,7 @@ function SettingsModal({
         <NightGrain />
         <FloatingOrbs />
         <View style={styles.modalHeader}>
-          <Pressable focusable={false} onPress={onClose} style={({ pressed }) => [styles.modalBackButton, pressed && styles.touchPressedTight]}>
+          <Pressable focusable={false} onPress={onClose} accessibilityRole="button" accessibilityLabel={t("common.back")} style={({ pressed }) => [styles.modalBackButton, pressed && styles.touchPressedTight]}>
             <Text style={styles.modalBackText}>‹</Text>
           </Pressable>
           <View style={styles.modalTitleWrap}>
@@ -5998,7 +6425,7 @@ function SettingsModal({
                     secureTextEntry
                     autoCapitalize="none"
                     placeholder={t("settings.export.passphrasePlaceholder")}
-                    placeholderTextColor="rgba(190,180,162,0.38)"
+                    placeholderTextColor="rgba(190,180,162,0.55)"
                     style={styles.settingInput}
                   />
                   <Pressable onPress={runExport} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
@@ -6032,6 +6459,17 @@ function SettingsModal({
                     <Text style={styles.dangerButtonText}>{t("settings.deletion.deleteArchiveButton")}</Text>
                   </Pressable>
                 </View>
+                {!!session && (
+                  <View style={styles.dangerCard}>
+                    <GlassBackdrop intensity={20} />
+                    <Text style={styles.settingLabel}>{t("settings.deletion.accountLabel")}</Text>
+                    <Text style={styles.mutedText}>{t("settings.deletion.accountNote")}</Text>
+                    <Pressable onPress={confirmDeleteAccount} style={({ pressed }) => [styles.dangerButton, pressed && styles.touchPressedSoft]}>
+                      <Text style={styles.dangerButtonText}>{t("settings.deletion.accountButton")}</Text>
+                    </Pressable>
+                    {!!accountDeleteStatus && <Text style={styles.mutedText}>{accountDeleteStatus}</Text>}
+                  </View>
+                )}
               </View>
             )}
 
@@ -6048,7 +6486,7 @@ function SettingsModal({
                     autoCapitalize="none"
                     keyboardType="email-address"
                     placeholder="example@mail.com"
-                    placeholderTextColor="rgba(190,180,162,0.38)"
+                    placeholderTextColor="rgba(190,180,162,0.55)"
                     style={styles.settingInput}
                   />
                   <Pressable onPress={addHeir} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
@@ -6086,9 +6524,9 @@ function SettingsModal({
                   <GlassBackdrop intensity={24} />
                   <Text style={styles.settingLabel}>{t("settings.inheritance.disclosureLabel")}</Text>
                   <Text style={styles.mutedText}>{t("settings.inheritance.disclosureNote")}</Text>
-                  <TextInput value={disclosureTarget} onChangeText={setDisclosureTarget} placeholder={t("settings.inheritance.disclosureTargetPlaceholder")} placeholderTextColor="rgba(190,180,162,0.38)" style={styles.settingInput} />
-                  <TextInput value={disclosureDate} onChangeText={setDisclosureDate} placeholder={t("settings.inheritance.disclosureDatePlaceholder")} placeholderTextColor="rgba(190,180,162,0.38)" style={styles.settingInput} />
-                  <TextInput value={disclosureRecipient} onChangeText={setDisclosureRecipient} autoCapitalize="none" keyboardType="email-address" placeholder={t("settings.inheritance.disclosureRecipientPlaceholder")} placeholderTextColor="rgba(190,180,162,0.38)" style={styles.settingInput} />
+                  <TextInput value={disclosureTarget} onChangeText={setDisclosureTarget} placeholder={t("settings.inheritance.disclosureTargetPlaceholder")} placeholderTextColor="rgba(190,180,162,0.55)" style={styles.settingInput} />
+                  <TextInput value={disclosureDate} onChangeText={setDisclosureDate} placeholder={t("settings.inheritance.disclosureDatePlaceholder")} placeholderTextColor="rgba(190,180,162,0.55)" style={styles.settingInput} />
+                  <TextInput value={disclosureRecipient} onChangeText={setDisclosureRecipient} autoCapitalize="none" keyboardType="email-address" placeholder={t("settings.inheritance.disclosureRecipientPlaceholder")} placeholderTextColor="rgba(190,180,162,0.55)" style={styles.settingInput} />
                   <Pressable onPress={addDisclosure} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
                     <Text style={styles.secondaryButtonText}>{t("settings.inheritance.disclosureAddButton")}</Text>
                   </Pressable>
@@ -6157,7 +6595,7 @@ function SettingsModal({
                     autoCapitalize="none"
                     keyboardType="email-address"
                     placeholder="trusted@mail.com"
-                    placeholderTextColor="rgba(190,180,162,0.38)"
+                    placeholderTextColor="rgba(190,180,162,0.55)"
                     style={styles.settingInput}
                   />
                   <Pressable onPress={addEmergencyContact} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
@@ -6276,7 +6714,7 @@ function SettingsModal({
                 </View>
                 <View style={styles.settingsCard}>
                   <GlassBackdrop intensity={24} />
-                  <Text style={styles.settingLabel}>サウンドトラック</Text>
+                  <Text style={styles.settingLabel}>{t("settings.app.soundtrackLabel")}</Text>
                   {bgmTracks.map((track) => (
                     <Pressable
                       key={track.id}
@@ -6287,7 +6725,7 @@ function SettingsModal({
                         <Text style={styles.settingValue}>{track.title}</Text>
                         <Text style={styles.mutedText}>{track.subtitle}</Text>
                       </View>
-                      <Text style={styles.soundTrackMark}>{settings.bgmTrackId === track.id ? "ON" : "選択"}</Text>
+                      <Text style={styles.soundTrackMark}>{settings.bgmTrackId === track.id ? t("settings.app.trackOn") : t("settings.app.trackSelect")}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -6323,7 +6761,7 @@ function SettingsModal({
                       setNotificationDraft(null);
                     }}
                     placeholder="22:00"
-                    placeholderTextColor="rgba(190,180,162,0.38)"
+                    placeholderTextColor="rgba(190,180,162,0.55)"
                     style={[styles.settingInput, styles.settingTimeInput]}
                   />
                   <Text style={styles.mutedText}>{t("settings.app.timeSavedNote")}</Text>
@@ -6369,7 +6807,7 @@ function SettingsModal({
                         setWindowStartDraft(null);
                       }}
                       placeholder="20:00"
-                      placeholderTextColor="rgba(190,180,162,0.38)"
+                      placeholderTextColor="rgba(190,180,162,0.55)"
                       style={[styles.settingInput, styles.settingTimeInput]}
                     />
                     <Text style={styles.settingTimeRangeTilde}>〜</Text>
@@ -6381,7 +6819,7 @@ function SettingsModal({
                         setWindowEndDraft(null);
                       }}
                       placeholder="03:00"
-                      placeholderTextColor="rgba(190,180,162,0.38)"
+                      placeholderTextColor="rgba(190,180,162,0.55)"
                       style={[styles.settingInput, styles.settingTimeInput]}
                     />
                   </View>
@@ -6407,7 +6845,7 @@ function SettingsModal({
                   <Text style={styles.settingLabel}>{t("settings.app.languageLabel")}</Text>
                   {renderSegmentedRow(
                     LANGUAGES,
-                    settings.language || "ja",
+                    lang,
                     (value) => updateSettings({ language: value })
                   )}
                   <Text style={styles.mutedText}>{t("settings.app.languageNote")}</Text>
@@ -6477,8 +6915,8 @@ function SettingsModal({
                 <View style={styles.settingsCard}>
                   <GlassBackdrop intensity={24} />
                   <Text style={styles.settingLabel}>{t("settings.account.basicInfoLabel")}</Text>
-                  <TextInput value={name} onChangeText={setName} placeholder={t("settings.account.namePlaceholder")} placeholderTextColor="rgba(190,180,162,0.38)" style={styles.settingInput} />
-                  <TextInput value={birthdate} onChangeText={setBirthdate} placeholder="YYYY-MM-DD" placeholderTextColor="rgba(190,180,162,0.38)" style={styles.settingInput} />
+                  <TextInput value={name} onChangeText={setName} placeholder={t("settings.account.namePlaceholder")} placeholderTextColor="rgba(190,180,162,0.55)" style={styles.settingInput} />
+                  <TextInput value={birthdate} onChangeText={setBirthdate} placeholder="YYYY-MM-DD" placeholderTextColor="rgba(190,180,162,0.55)" style={styles.settingInput} />
                   <Text style={styles.mutedText}>{t("settings.account.journeyDayNote")}</Text>
                   <View style={styles.profileSaveRow}>
                     <Pressable
@@ -6640,137 +7078,142 @@ function SettingsBase({
   updateSettings,
   playToken = 0
 }) {
-  const lang = settings.language || "ja";
+  const lang = normalizeLanguageCode(settings.language);
+  const t = (key, ...args) => translate(lang, key, ...args);
   const currentLanguageLabel = LANGUAGES.find(([value]) => value === lang)?.[1] || lang;
 
   return (
     <View style={styles.simpleSettingsPage}>
-      <ArcSettingGroup label="人生の所有権" index={0} playToken={playToken}>
+      <ArcSettingGroup label={t("settings.groups.ownership")} index={0} playToken={playToken}>
         <ArcSettingRow
-          title="所有権ポリシー"
-          body="このデータは、あなたのものです"
+          title={t("settings.rows.ownershipPolicyTitle")}
+          body={t("settings.rows.ownershipPolicyBody")}
           onPress={() => onSelect("ownershipPolicy")}
         />
         <ArcSettingRow
-          title="データエクスポート"
-          body="JSON / Markdownで書き出す"
+          title={t("settings.rows.dataExportTitle")}
+          body={t("settings.rows.dataExportBody")}
           onPress={() => onSelect("ownershipExport")}
         />
         <ArcSettingRow
-          title="アーカイブの削除"
-          body="端末内の記録を消去する"
+          title={t("settings.rows.archiveDeleteTitle")}
+          body={t("settings.rows.archiveDeleteBody")}
           onPress={() => onSelect("ownershipDelete")}
         />
       </ArcSettingGroup>
 
-      <ArcSettingGroup label="未来への継承" index={1} playToken={playToken}>
+      <ArcSettingGroup label={t("settings.groups.inheritance")} index={1} playToken={playToken}>
         <ArcSettingRow
-          title="継承先の管理"
-          body="信頼できる連絡先を登録する"
+          title={t("settings.rows.inheritanceManageTitle")}
+          body={t("settings.rows.inheritanceManageBody")}
           onPress={() => onSelect("inheritanceContacts")}
         />
         <ArcSettingRow
-          title="未設定時のデフォルト処理"
-          body="完全削除、または継承先へ移管"
+          title={t("settings.rows.inheritanceDefaultTitle")}
+          body={t("settings.rows.inheritanceDefaultBody")}
           onPress={() => onSelect("inheritanceDefault")}
         />
         <ArcSettingRow
-          title="アクセス権の予約公開"
-          body="時間と相手を指定して公開する"
+          title={t("settings.rows.disclosureTitle")}
+          body={t("settings.rows.disclosureBody")}
           onPress={() => onSelect("inheritanceDisclosure")}
         />
       </ArcSettingGroup>
 
-      <ArcSettingGroup label="聖域のセキュリティ" index={2} playToken={playToken}>
+      <ArcSettingGroup label={t("settings.groups.security")} index={2} playToken={playToken}>
         <ArcSettingRow
-          title="暗号化ステータス"
-          body="あなた以外には読めない構造"
+          title={t("settings.rows.encryptionStatusTitle")}
+          body={t("settings.rows.encryptionStatusBody")}
           onPress={() => onSelect("securityEncryption")}
         />
         <ArcSettingRow
-          title="リカバリーキー"
-          body="緊急時の復旧手段"
+          title={t("settings.rows.recoveryKeyTitle")}
+          body={t("settings.rows.recoveryKeyBody")}
           onPress={() => onSelect("securityRecovery")}
         />
         <ArcSettingRow
-          title="緊急連絡先（証人）"
-          body="復旧の際の証人を登録する"
+          title={t("settings.rows.emergencyContactTitle")}
+          body={t("settings.rows.emergencyContactBody")}
           onPress={() => onSelect("securityWitness")}
         />
       </ArcSettingGroup>
 
-      <ArcSettingGroup label="アーカイブの質" index={3} playToken={playToken}>
+      <ArcSettingGroup label={t("settings.groups.archiveQuality")} index={3} playToken={playToken}>
         <ArcSettingRow
-          title="Niloの対話スタイル"
-          body="寄り添い方のトーン"
+          title={t("settings.rows.niloStyleTitle")}
+          body={t("settings.rows.niloStyleBody")}
           onPress={() => onSelect("archiveStyle")}
         />
         <ArcSettingRow
-          title="振り返り頻度"
-          body="毎日から季節ごとまで、あなたのペースで"
+          title={t("settings.rows.reflectionFreqTitle")}
+          body={t("settings.rows.reflectionFreqBody")}
           onPress={() => onSelect("archiveFrequency")}
         />
         <ArcSettingRow
-          title="要約スタイル"
-          body="過去の自分と出会うときの、まとめ方"
+          title={t("settings.rows.summaryStyleTitle")}
+          body={t("settings.rows.summaryStyleBody")}
           onPress={() => onSelect("archiveSummary")}
         />
         <ArcSettingRow
-          title="通知のトーン"
-          body="静かな促しか、積極的なリマインドか"
+          title={t("settings.rows.notificationToneTitle")}
+          body={t("settings.rows.notificationToneBody")}
           onPress={() => onSelect("archiveTone")}
         />
       </ArcSettingGroup>
 
-      <ArcSettingGroup label="アプリ設定" index={4} playToken={playToken}>
+      <ArcSettingGroup label={t("settings.groups.appSettings")} index={4} playToken={playToken}>
         <ArcSettingRow
-          title="夜のささやき"
-          body="そっと問いが灯る時刻"
+          title={t("settings.rows.nightWhisperTitle")}
+          body={t("settings.rows.nightWhisperBody")}
           value={settings.notificationTime || "23:00"}
           onPress={() => onSelect("notifications")}
         />
         <ArcSettingRow
-          title="夜の対話"
-          body="質問の数と、終わり方"
+          title={t("settings.rows.nightDialogueTitle")}
+          body={t("settings.rows.nightDialogueBody")}
           onPress={() => onSelect("ritual")}
         />
         <ArcSettingRow
-          title="サウンド"
-          body="曲の選択と音量"
+          title={t("settings.rows.soundTitle")}
+          body={t("settings.rows.soundBody")}
           onPress={() => onSelect("bgm")}
         />
         <ArcSettingRow
-          title="書体の大きさ"
-          value={{ small: "小", standard: "標準", large: "大" }[settings.fontScale || "standard"]}
+          title={t("settings.rows.fontScaleTitle")}
+          value={{
+            small: t("settings.app.fontScaleSmall"),
+            standard: t("settings.app.fontScaleStandard"),
+            large: t("settings.app.fontScaleLarge")
+          }[settings.fontScale || "standard"]}
           onPress={() => onSelect("language")}
         />
         <ArcSettingRow
-          title={translate(lang, "settings.app.languageLabel")}
-          body={translate(lang, "settings.app.languageNote")}
+          title={t("settings.app.languageLabel")}
+          body={t("settings.app.languageNote")}
           value={currentLanguageLabel}
           onPress={() => onSelect("language")}
         />
         <ArcSettingRow
-          title="ARC について"
+          title={t("settings.rows.aboutArcTitle")}
           onPress={() => onSelect("terms")}
         />
         <ArcSettingRow
-          title="プライバシーポリシー"
+          title={t("settings.rows.privacyPolicyTitle")}
           onPress={() => onSelect("privacyPolicy")}
         />
       </ArcSettingGroup>
 
-      <ArcSettingGroup label="アカウント" index={5} playToken={playToken}>
+      <ArcSettingGroup label={t("settings.groups.account")} index={5} playToken={playToken}>
         <ArcSettingRow
-          title="アカウント"
-          body={authLoading ? "確認中" : session ? `接続済み・${displayName}` : "未接続"}
+          title={t("settings.rows.accountTitle")}
+          body={authLoading ? t("settings.account.checking") : session ? `${t("settings.account.connected")}・${displayName}` : t("settings.account.notConnected")}
           onPress={() => onSelect("account")}
         />
       </ArcSettingGroup>
 
       <View style={styles.settingsWordmark}>
         <Text style={styles.settingsWordmarkText}>A R C</Text>
-        <Text style={styles.settingsVersion}>VERSION 1.0 ・ 過ぎゆく日々に、消えない意味を。</Text>
+        <Text style={styles.settingsVersion}>{t("settings.rows.versionFooter")}</Text>
       </View>
     </View>
   );
@@ -6790,18 +7233,45 @@ function ArcSettingGroup({ label, index = 0, playToken = 0, children }) {
   );
 }
 
+// オン/オフの灯。OFFはニュートラルに沈み、ONは金色に灯る。
+// ノブの滑走と色の移ろいをひと呼吸のアニメーションで繋ぐ。
+function ArcSwitch({ value }) {
+  const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: value ? 1 : 0,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false
+    }).start();
+  }, [value, anim]);
+  const trackColor = anim.interpolate({ inputRange: [0, 1], outputRange: ["rgba(246,239,228,0.07)", "rgba(221,180,111,0.5)"] });
+  const borderColor = anim.interpolate({ inputRange: [0, 1], outputRange: ["rgba(255,254,244,0.16)", "rgba(242,200,142,0.6)"] });
+  const knobColor = anim.interpolate({ inputRange: [0, 1], outputRange: ["rgba(238,224,202,0.45)", "#ffd08a"] });
+  const knobX = anim.interpolate({ inputRange: [0, 1], outputRange: [0, 26] });
+  return (
+    <Animated.View style={[styles.arcSwitch, { backgroundColor: trackColor, borderColor }, value && styles.arcSwitchOn]}>
+      <Animated.View style={[styles.arcSwitchKnob, { backgroundColor: knobColor, transform: [{ translateX: knobX }] }]} />
+    </Animated.View>
+  );
+}
+
 function ArcSettingRow({ title, body, value, toggle, onPress, last = false }) {
   const hasToggle = typeof toggle === "boolean";
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.arcSettingRow, last && styles.arcSettingRowLast, pressed && styles.touchPressedSubtle]}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole={hasToggle ? "switch" : "button"}
+      accessibilityLabel={body ? `${title}. ${body}` : title}
+      accessibilityState={hasToggle ? { checked: toggle } : undefined}
+      style={({ pressed }) => [styles.arcSettingRow, last && styles.arcSettingRowLast, pressed && styles.touchPressedSubtle]}
+    >
       <View style={styles.arcSettingCopy}>
         <Text style={styles.arcSettingTitle}>{title}</Text>
         {!!body && <Text style={styles.arcSettingBody}>{body}</Text>}
       </View>
       {hasToggle ? (
-        <View style={[styles.arcSwitch, toggle && styles.arcSwitchOn]}>
-          <View style={[styles.arcSwitchKnob, toggle && styles.arcSwitchKnobOn]} />
-        </View>
+        <ArcSwitch value={toggle} />
       ) : (
         <View style={styles.arcSettingValueWrap}>
           {!!value && <Text style={styles.arcSettingValue}>{value}</Text>}
@@ -6956,10 +7426,15 @@ function SettingToggleRow({ title, body, value, onPress }) {
           <Text style={styles.settingValue}>{title}</Text>
           <Text style={styles.mutedText}>{body}</Text>
         </View>
-        <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.touchPressedTight]}>
-          <View style={[styles.arcSwitch, value && styles.arcSwitchOn]}>
-            <View style={[styles.arcSwitchKnob, value && styles.arcSwitchKnobOn]} />
-          </View>
+        <Pressable
+          onPress={onPress}
+          hitSlop={10}
+          accessibilityRole="switch"
+          accessibilityLabel={title}
+          accessibilityState={{ checked: !!value }}
+          style={({ pressed }) => [pressed && styles.touchPressedTight]}
+        >
+          <ArcSwitch value={value} />
         </Pressable>
       </View>
     </View>
@@ -6976,7 +7451,7 @@ function getQuestCategory(quest) {
 // 日記は二層で残す: 出来事(小・淡)と、対話の最後に立ち上がった意味(主役)。
 // 旧形式のエントリー(event/meaning/dialogue なし)は保存済みの messages や
 // title から同じ形に読み替えるので、データ移行はしない。
-function normalizeDiaryEntry(entry, index) {
+function normalizeDiaryEntry(entry, index, lang = "ja") {
   const dialogue = entry.dialogue || entry.messages || [];
   const userTexts = dialogue
     .filter((message) => message?.role === "user" && message.text)
@@ -6984,15 +7459,15 @@ function normalizeDiaryEntry(entry, index) {
     .filter(Boolean);
   const lastAnswer = userTexts[userTexts.length - 1] || "";
   const meaning =
-    entry.meaning || lastAnswer || entry.title || entry.summary || (entry.lines || []).join("。") || "静かな記録";
+    entry.meaning || lastAnswer || entry.title || entry.summary || (entry.lines || []).join("。") || translate(lang, "journal.defaultMeaning");
   let event = entry.event || (userTexts.length > 1 ? userTexts[0] : "");
   if (event === meaning) event = "";
   const score = userTexts.length * 2 + Math.min(6, userTexts.join("").length / 40) + (entry.emotions || []).length;
   return {
     id: entry.id || `journal-${index}`,
     dateKey: entry.dateKey || "",
-    dateLabel: toJapaneseMonthDay(entry.dateKey) || entry.dateLabel || "今日",
-    weekday: toJapaneseWeekday(entry.dateKey),
+    dateLabel: formatMonthDay(entry.dateKey, lang) || entry.dateLabel || translate(lang, "journal.defaultDate"),
+    weekday: formatWeekday(entry.dateKey, lang),
     event,
     meaning,
     isQuest: entry.source === "quest",
@@ -7021,11 +7496,26 @@ function assignDiaryTiers(entries) {
   });
 }
 
-function getDiaryModel(journal) {
-  const source = journal?.length ? journal : demoJournalEntries;
+function getJournalDisplayEntries(journal, includeDemo = DEV_MODE) {
+  const source = Array.isArray(journal) ? journal : [];
+  if (!includeDemo) return source;
+
+  const seen = new Set();
+  return [...source, ...demoJournalEntries].filter((entry, index) => {
+    if (!entry) return false;
+    const key = entry.id || `${entry.dateKey || "unknown"}-${entry.meaning || entry.title || index}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getDiaryModel(journal, options = {}) {
+  const source = getJournalDisplayEntries(journal, options.includeDemo ?? DEV_MODE);
+  const lang = normalizeLanguageCode(options.lang);
   const entries = [...source]
     .sort((a, b) => String(b.dateKey || "").localeCompare(String(a.dateKey || "")))
-    .map(normalizeDiaryEntry);
+    .map((entry, index) => normalizeDiaryEntry(entry, index, lang));
 
   const now = new Date(`${getJournalDateKey()}T00:00:00`);
   const recentEdge = new Date(now);
@@ -7068,15 +7558,15 @@ function getDiaryModel(journal) {
 // Chapters become full pages (1章＝1画面). Confirmed chapters from Nilo carry
 // only period/observation/people/emotions — every richer element renders only
 // when its data exists, so a sparse chapter stays quiet instead of empty.
-function getChapterPages(chapters) {
+function getChapterPages(chapters, lang = "ja") {
   if (!chapters?.length) return [...demoChapters].reverse();
   const total = chapters.length;
   return chapters.map((chapter, index) => ({
     id: chapter.id || `chapter-${index}`,
-    title: chapter.title || "名前のない章",
-    ordinal: `第${toJapaneseNumber(total - index)}章`,
-    period: chapter.period || "いま",
-    summary: chapter.observation || chapter.summary || "過ぎた時間の輪郭が、少しずつ見えてくる。",
+    title: chapter.title || translate(lang, "chapter.namelessChapter"),
+    ordinal: `${translate(lang, "chapter.ordinalPrefix")}${lang === "ja" ? toJapaneseNumber(total - index) : total - index}${translate(lang, "chapter.ordinalSuffix")}`,
+    period: chapter.period || translate(lang, "chapter.nowPeriod"),
+    summary: chapter.observation || chapter.summary || translate(lang, "chapter.defaultSummary"),
     current: index === 0,
     tint: chapter.tint || "rgba(214,168,106,0.10)",
     recordCount: chapter.recordCount || chapter.memoryIds?.length || 1,
@@ -7109,9 +7599,11 @@ function toJapaneseWeekday(value) {
 
 // 「1年前の同じ季節と比べる」(Onboarding/Diary仕様の生年月日取得理由に接続)。
 // ちょうど1年前を中心に前後10日の中から、いちばん近い一日を差し出す。
-function findLastYearEcho(journal) {
-  const source = journal?.length ? journal : demoJournalEntries;
-  const target = new Date(`${getJournalDateKey()}T00:00:00`);
+function findLastYearEcho(journal, options = {}) {
+  const source = getJournalDisplayEntries(journal, options.includeDemo ?? DEV_MODE);
+  const lang = normalizeLanguageCode(options.lang);
+  const today = new Date(`${getJournalDateKey()}T00:00:00`);
+  const target = new Date(today);
   target.setFullYear(target.getFullYear() - 1);
   let best = null;
   let bestDistance = Infinity;
@@ -7122,10 +7614,49 @@ function findLastYearEcho(journal) {
     const distance = Math.abs(date - target) / 86400000;
     if (distance <= 10 && distance < bestDistance) {
       bestDistance = distance;
-      best = normalizeDiaryEntry(entry, index);
+      best = normalizeDiaryEntry(entry, index, lang);
     }
   });
-  return best;
+  if (best) return { ...best, echoMode: "lastYear" };
+
+  // 初年フォールバック（90日設計）: 昨年の同じ頃がまだ存在しない最初の年は、
+  // 「◯週間前の今夜」を代わりに差し出す。振り返る距離ができてからにする。
+  const fallbackEdge = new Date(today);
+  fallbackEdge.setDate(fallbackEdge.getDate() - ECHO_FALLBACK_MIN_DAYS);
+  let fallback = null;
+  let fallbackIndex = -1;
+  source.forEach((entry, index) => {
+    if (!entry.dateKey) return;
+    const date = new Date(`${entry.dateKey}T00:00:00`);
+    if (Number.isNaN(date.getTime()) || date > fallbackEdge) return;
+    if (!fallback || entry.dateKey > fallback.dateKey) {
+      fallback = entry;
+      fallbackIndex = index;
+    }
+  });
+  if (!fallback) return null;
+  const weeksAgo = Math.max(1, Math.floor((today - new Date(`${fallback.dateKey}T00:00:00`)) / (7 * 86400000)));
+  return { ...normalizeDiaryEntry(fallback, fallbackIndex, lang), echoMode: "weeksAgo", weeksAgo };
+}
+
+// Niloの最初の手紙（90日設計）が引用する一節。直近7夜のユーザー自身の言葉から、
+// 短すぎず長すぎない一文を選ぶ。生成も要約もしない — 引用するだけ。
+function pickFirstLetterQuote(entries) {
+  const edge = new Date(`${getJournalDateKey()}T00:00:00`);
+  edge.setDate(edge.getDate() - 7);
+  const edgeKey = toDateKey(edge);
+  const texts = [];
+  entries.forEach((entry) => {
+    if (!entry.dateKey || entry.dateKey < edgeKey) return;
+    const dialogue = entry.dialogue || entry.messages || [];
+    dialogue.forEach((message) => {
+      if (message?.role === "user" && message.text) texts.push(String(message.text).trim());
+    });
+    if (entry.meaning) texts.push(String(entry.meaning).trim());
+  });
+  const candidates = texts.filter((text) => text.length >= 4 && text.length <= 60);
+  if (!candidates.length) return "";
+  return candidates.reduce((best, text) => (text.length > best.length ? text : best), candidates[0]);
 }
 
 function toJapaneseNumber(value) {
@@ -7294,20 +7825,25 @@ async function generateRecoveryKey() {
   return Array.from(bytes).map((byte) => RECOVERY_WORDLIST[byte % RECOVERY_WORDLIST.length]).join(" ");
 }
 
-function buildExportJson({ journal, memories, chapters, profile, settings }) {
+// Art. 20 (data portability): the JSON export must cover everything we sync,
+// so it takes the same collectSyncedState() shape rather than hand-picked keys.
+function buildExportJson(state) {
   return JSON.stringify({
     exportedAt: new Date().toISOString(),
     app: "ARC",
-    journal,
-    memories,
-    chapters,
-    profile,
-    settings
+    ...(state || {})
   }, null, 2);
 }
 
-function buildExportMarkdown({ journal, memories, chapters }) {
-  const lines = ["# ARC アーカイブ", "", `書き出し日時: ${new Date().toLocaleString("ja-JP")}`, "", "## 日記", ""];
+function buildExportMarkdown({ journal, memories, chapters }, lang = "ja") {
+  const lines = [
+    translate(lang, "export.title"),
+    "",
+    `${translate(lang, "export.exportedAtLabel")}: ${new Date().toLocaleString(LOCALE_TAGS[lang] || "ja-JP")}`,
+    "",
+    translate(lang, "export.journalHeading"),
+    ""
+  ];
   (journal || []).forEach((entry) => {
     lines.push(`### ${entry.dateLabel || entry.dateKey || ""}${entry.tag ? `  ·  ${entry.tag}` : ""}`);
     const body = entry.text || entry.summary || "";
@@ -7315,15 +7851,15 @@ function buildExportMarkdown({ journal, memories, chapters }) {
     lines.push("");
   });
   if ((memories || []).length) {
-    lines.push("## 記憶", "");
+    lines.push(translate(lang, "export.memoriesHeading"), "");
     memories.forEach((memory) => {
       lines.push(`- ${memory.dateLabel || memory.dateKey || ""}：${memory.essence || memory.keptPhrase || ""}`);
     });
     lines.push("");
   }
   if ((chapters || []).length) {
-    lines.push("## 人生の章", "");
-    chapters.forEach((chapter) => lines.push(`### ${chapter.title || "無題の章"}`, chapter.summary || "", ""));
+    lines.push(translate(lang, "export.chaptersHeading"), "");
+    chapters.forEach((chapter) => lines.push(`### ${chapter.title || translate(lang, "export.untitledChapter")}`, chapter.summary || "", ""));
   }
   return lines.join("\n");
 }
@@ -7492,7 +8028,7 @@ const TOKENS = {
     ink: "#f6efe4",
     inkSoft: "rgba(246,239,228,0.72)",
     muted: "#c2bbb0",
-    faint: "rgba(190,180,162,0.5)",
+    faint: "rgba(190,180,162,0.66)",
     hairline: "rgba(255,254,244,0.18)",
     onGold: "#201a14"
   },
@@ -8217,7 +8753,7 @@ const baseStyleDefs = ({
     width: 1.5
   },
   counter: {
-    color: "rgba(255,254,244,0.46)",
+    color: "rgba(255,254,244,0.58)",
     fontSize: 12,
     marginLeft: 12,
     minWidth: 34,
@@ -8453,7 +8989,7 @@ const baseStyleDefs = ({
     letterSpacing: 0.5
   },
   chapterCardTitleEmpty: {
-    color: "rgba(246,239,228,0.45)",
+    color: "rgba(246,239,228,0.56)",
     fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
     fontSize: 20,
     fontStyle: "italic",
@@ -9264,7 +9800,7 @@ const baseStyleDefs = ({
     letterSpacing: 0.8
   },
   baseStatLabel: {
-    color: "rgba(190,180,162,0.46)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 10,
     letterSpacing: 0.8,
@@ -9852,7 +10388,7 @@ const baseStyleDefs = ({
     lineHeight: 16
   },
   settingLabel: {
-    color: "rgba(217,168,108,0.58)",
+    color: "rgba(217,168,108,0.72)",
     fontFamily: fontSerifJa,
     fontSize: 11,
     letterSpacing: 2.2
@@ -9874,7 +10410,7 @@ const baseStyleDefs = ({
     paddingTop: 10
   },
   soundStatusText: {
-    color: "rgba(190,180,162,0.58)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 12,
     letterSpacing: 0.7
@@ -10067,7 +10603,7 @@ const baseStyleDefs = ({
     shadowRadius: 14
   },
   toggleText: {
-    color: "rgba(190,180,162,0.58)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifEnMedium,
     fontSize: 12,
     letterSpacing: 1.2
@@ -10097,7 +10633,7 @@ const baseStyleDefs = ({
     shadowRadius: 14
   },
   segmentText: {
-    color: "rgba(190,180,162,0.58)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 13,
     letterSpacing: 0.7
@@ -10170,82 +10706,41 @@ const baseStyleDefs = ({
     textAlign: "center",
     top: 20
   },
-  settingsSunButton: {
+  // ヘッダー右上の二つの操作は「夜に浮かぶ小さな光の輪」として揃える。
+  // 円形・同径・同じ淡い縁で、Niloの光やタブの灯りと同じ系統に見せる。
+  headerRoundButton: {
     alignItems: "center",
-    backgroundColor: "rgba(255,254,244,0.06)",
-    borderColor: "rgba(255,254,244,0.14)",
-    borderRadius: 12,
+    backgroundColor: "rgba(255,254,244,0.05)",
+    borderColor: "rgba(232,214,180,0.18)",
+    borderRadius: 999,
     borderWidth: 1,
-    height: 34,
+    height: 38,
     justifyContent: "center",
     outlineStyle: "none",
     position: "absolute",
-    right: 28,
-    top: 52,
-    width: 34
+    top: 48,
+    width: 38
+  },
+  settingsSunButton: {
+    right: 24
   },
   notificationButton: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,254,244,0.06)",
-    borderColor: "rgba(255,254,244,0.14)",
-    borderRadius: 12,
-    borderWidth: 1,
-    height: 34,
-    justifyContent: "center",
-    outlineStyle: "none",
-    position: "absolute",
-    right: 72,
-    top: 52,
-    width: 34
-  },
-  notificationBellGlyph: {
-    height: 19,
-    position: "relative",
-    width: 19
-  },
-  notificationBellBody: {
-    borderBottomLeftRadius: 2,
-    borderBottomRightRadius: 2,
-    borderColor: "rgba(225,205,170,0.5)",
-    borderTopLeftRadius: 7,
-    borderTopRightRadius: 7,
-    borderWidth: 1.3,
-    height: 10,
-    left: 4.5,
-    position: "absolute",
-    top: 3,
-    width: 10
-  },
-  notificationBellBase: {
-    backgroundColor: "rgba(225,205,170,0.5)",
-    borderRadius: 999,
-    height: 1.3,
-    left: 3,
-    position: "absolute",
-    top: 13,
-    width: 13
-  },
-  notificationBellClapper: {
-    backgroundColor: "rgba(225,205,170,0.5)",
-    borderRadius: 999,
-    height: 2.6,
-    left: 8.2,
-    position: "absolute",
-    top: 15,
-    width: 2.6
+    right: 72
   },
   notificationBellDot: {
     backgroundColor: "#E8B25E",
+    borderColor: "rgba(24,20,14,0.9)",
     borderRadius: 999,
-    height: 7,
+    borderWidth: 1.5,
+    height: 9,
     position: "absolute",
-    right: 6,
+    right: 4,
     shadowColor: "#E8B25E",
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.7,
     shadowRadius: 4,
-    top: 6,
-    width: 7
+    top: 4,
+    width: 9
   },
   notificationRow: {
     backgroundColor: "rgba(46,36,26,0.42)",
@@ -10300,83 +10795,13 @@ const baseStyleDefs = ({
     marginTop: 10
   },
   notificationEmptyNote: {
-    color: "rgba(190,180,162,0.5)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 14,
     letterSpacing: 0.3,
     lineHeight: 24,
     marginTop: 8,
     textAlign: "center"
-  },
-  settingsSunGlyph: {
-    height: 19,
-    position: "relative",
-    width: 19
-  },
-  settingsSunCore: {
-    borderColor: "rgba(225,205,170,0.5)",
-    borderRadius: 999,
-    borderWidth: 1.3,
-    height: 7,
-    left: 6,
-    position: "absolute",
-    top: 6,
-    width: 7
-  },
-  settingsSunRay: {
-    backgroundColor: "rgba(225,205,170,0.5)",
-    borderRadius: 999,
-    height: 3.1,
-    position: "absolute",
-    width: 1.3
-  },
-  settingsSunRayTop: {
-    left: 8.85,
-    top: 0
-  },
-  settingsSunRayBottom: {
-    bottom: 0,
-    left: 8.85
-  },
-  settingsSunRayLeft: {
-    height: 1.3,
-    left: 0,
-    top: 8.85,
-    width: 3.1
-  },
-  settingsSunRayRight: {
-    height: 1.3,
-    right: 0,
-    top: 8.85,
-    width: 3.1
-  },
-  settingsSunRaySlashA: {
-    height: 1.3,
-    left: 3,
-    top: 3,
-    transform: [{ rotate: "45deg" }],
-    width: 3.1
-  },
-  settingsSunRaySlashB: {
-    bottom: 3,
-    height: 1.3,
-    right: 3,
-    transform: [{ rotate: "45deg" }],
-    width: 3.1
-  },
-  settingsSunRaySlashC: {
-    height: 1.3,
-    right: 3,
-    top: 3,
-    transform: [{ rotate: "-45deg" }],
-    width: 3.1
-  },
-  settingsSunRaySlashD: {
-    bottom: 3,
-    height: 1.3,
-    left: 3,
-    transform: [{ rotate: "-45deg" }],
-    width: 3.1
   },
   content: {
     flex: 1
@@ -10646,7 +11071,7 @@ const baseStyleDefs = ({
     marginTop: 34
   },
   questGroupTitle: {
-    color: "rgba(190,180,162,0.5)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 11,
     letterSpacing: 3.3
@@ -10675,7 +11100,7 @@ const baseStyleDefs = ({
     marginTop: 10
   },
   questQuietNote: {
-    color: "rgba(190,180,162,0.45)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifJa,
     fontSize: 12,
     letterSpacing: 0.6,
@@ -10906,23 +11331,12 @@ const baseStyleDefs = ({
   journalScrollContent: {
     paddingBottom: 118,
     paddingHorizontal: 30,
-    paddingTop: 54
+    paddingTop: 46
   },
   journalHeader: {
-    marginBottom: 22,
-    minHeight: 136,
+    marginBottom: 18,
+    minHeight: 0,
     position: "relative"
-  },
-  diaryHeaderShimmer: {
-    height: 160,
-    left: -96,
-    position: "absolute",
-    top: -18,
-    width: 82,
-    zIndex: 0
-  },
-  diaryHeaderShimmerFill: {
-    flex: 1
   },
   journalHeaderTop: {
     alignItems: "flex-start",
@@ -11000,7 +11414,7 @@ const baseStyleDefs = ({
     paddingHorizontal: 16
   },
   journalMetaLabel: {
-    color: "rgba(190,180,162,0.42)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifJa,
     fontSize: 10,
     letterSpacing: 1.8,
@@ -11023,7 +11437,7 @@ const baseStyleDefs = ({
     right: -8
   },
   timeline: {
-    marginTop: 2,
+    marginTop: 0,
     paddingLeft: 26,
     position: "relative"
   },
@@ -11033,19 +11447,6 @@ const baseStyleDefs = ({
     position: "absolute",
     top: 4,
     width: 2
-  },
-  diaryTimelineSweep: {
-    borderRadius: 999,
-    height: 58,
-    left: 3,
-    overflow: "hidden",
-    position: "absolute",
-    top: 4,
-    width: 4,
-    zIndex: 1
-  },
-  diaryTimelineSweepFill: {
-    flex: 1
   },
   timelineItem: {
     flexDirection: "row",
@@ -11129,15 +11530,6 @@ const baseStyleDefs = ({
   diaryCurrentWash: {
     ...StyleSheet.absoluteFillObject
   },
-  diaryCardSheen: {
-    bottom: -24,
-    position: "absolute",
-    top: -24,
-    width: 76
-  },
-  diaryCardSheenFill: {
-    flex: 1
-  },
   timelineMetaRow: {
     alignItems: "center",
     flexDirection: "row",
@@ -11166,7 +11558,7 @@ const baseStyleDefs = ({
     borderColor: "rgba(190,180,162,0.22)",
     borderRadius: 18,
     borderWidth: 1,
-    color: "rgba(190,180,162,0.45)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifEn,
     fontSize: 9,
     letterSpacing: 1.8,
@@ -11263,7 +11655,7 @@ const baseStyleDefs = ({
     lineHeight: 35
   },
   chapterPastTitle: {
-    color: "rgba(246,239,228,0.46)"
+    color: "rgba(246,239,228,0.56)"
   },
   chapterTimelineSummary: {
     color: "rgba(222,206,180,0.62)",
@@ -11311,7 +11703,7 @@ const baseStyleDefs = ({
     paddingVertical: 16
   },
   chapterNewText: {
-    color: "rgba(190,180,162,0.55)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 14,
     letterSpacing: 0.8
@@ -11367,7 +11759,7 @@ const baseStyleDefs = ({
     marginTop: 12
   },
   lifeQuestDetailMeta: {
-    color: "rgba(190,180,162,0.55)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 11,
     letterSpacing: 0.7,
@@ -11415,7 +11807,7 @@ const baseStyleDefs = ({
     marginTop: 34
   },
   recordTrailLabel: {
-    color: "rgba(190,180,162,0.5)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 11,
     letterSpacing: 3.1
@@ -11447,7 +11839,7 @@ const baseStyleDefs = ({
     letterSpacing: 0.6
   },
   lifeQuestPhilosophy: {
-    color: "rgba(190,180,162,0.4)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifJa,
     fontSize: 11,
     lineHeight: 19,
@@ -11543,7 +11935,7 @@ const baseStyleDefs = ({
     borderColor: "rgba(190,180,162,0.24)",
     borderRadius: 18,
     borderWidth: 1,
-    color: "rgba(190,180,162,0.5)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifEn,
     fontSize: 9,
     letterSpacing: 1.8,
@@ -11605,7 +11997,7 @@ const baseStyleDefs = ({
     marginTop: 44
   },
   entryDetailRelatedLabel: {
-    color: "rgba(190,180,162,0.5)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 11,
     letterSpacing: 2.42
@@ -11634,7 +12026,7 @@ const baseStyleDefs = ({
     marginTop: 6
   },
   entryDetailFooter: {
-    color: "rgba(190,180,162,0.3)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifJa,
     fontSize: 11,
     fontWeight: "300",
@@ -11686,7 +12078,7 @@ const baseStyleDefs = ({
     marginTop: 13
   },
   niloDateLabel: {
-    color: "rgba(190,180,162,0.4)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifEn,
     fontSize: 10,
     letterSpacing: 2.4,
@@ -11717,7 +12109,7 @@ const baseStyleDefs = ({
     paddingTop: 4
   },
   niloClosingText: {
-    color: "rgba(190,180,162,0.5)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 12,
     letterSpacing: 0.96,
@@ -11809,7 +12201,7 @@ const baseStyleDefs = ({
     paddingVertical: 8
   },
   niloExitText: {
-    color: "rgba(190,180,162,0.4)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifJa,
     fontSize: 12,
     letterSpacing: 1.44
@@ -11909,7 +12301,7 @@ const baseStyleDefs = ({
     position: "relative"
   },
   tabText: {
-    color: "rgba(190,180,162,0.4)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifJa,
     fontSize: 13,
     letterSpacing: 1.04
@@ -11961,7 +12353,7 @@ const baseStyleDefs = ({
     marginTop: 9
   },
   modalSub: {
-    color: "rgba(190,180,162,0.45)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifEnMedium,
     fontSize: 11,
     letterSpacing: 3.7
@@ -12001,7 +12393,7 @@ const baseStyleDefs = ({
     lineHeight: 24
   },
   arcSettingBody: {
-    color: "rgba(190,180,162,0.45)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifJa,
     fontSize: 12,
     fontWeight: "300",
@@ -12025,9 +12417,6 @@ const baseStyleDefs = ({
     marginTop: -2
   },
   arcSwitch: {
-    alignItems: "center",
-    backgroundColor: "rgba(217,168,108,0.28)",
-    borderColor: "rgba(217,168,108,0.26)",
     borderRadius: 999,
     borderWidth: 1,
     height: 30,
@@ -12036,25 +12425,22 @@ const baseStyleDefs = ({
     width: 58
   },
   arcSwitchOn: {
-    backgroundColor: "rgba(221,180,111,0.48)",
     shadowColor: TOKENS.color.goldBright,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.42,
     shadowRadius: 14
   },
   arcSwitchKnob: {
-    alignSelf: "flex-start",
-    backgroundColor: "rgba(238,224,202,0.5)",
     borderRadius: 999,
     height: 22,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
     width: 22
   },
-  arcSwitchKnobOn: {
-    alignSelf: "flex-end",
-    backgroundColor: "#ffd08a"
-  },
   arcGroupLabel: {
-    color: "rgba(217,168,108,0.42)",
+    color: "rgba(217,168,108,0.66)",
     fontFamily: fontSerifJa,
     fontSize: 11,
     letterSpacing: 2.6,
@@ -12065,7 +12451,7 @@ const baseStyleDefs = ({
     marginTop: 44
   },
   arcSectionIndex: {
-    color: "rgba(217,168,108,0.5)",
+    color: "rgba(217,168,108,0.66)",
     fontFamily: fontSerifEnLight,
     fontSize: 15,
     letterSpacing: 1.6,
@@ -12098,7 +12484,7 @@ const baseStyleDefs = ({
     letterSpacing: 11
   },
   settingsVersion: {
-    color: "rgba(190,180,162,0.28)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifEn,
     fontSize: 10,
     letterSpacing: 2.2,
@@ -12120,7 +12506,7 @@ const baseStyleDefs = ({
     paddingHorizontal: 18
   },
   settingTimeCaption: {
-    color: "rgba(190,180,162,0.5)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 12,
     letterSpacing: 0.4,
@@ -12350,6 +12736,15 @@ const baseStyleDefs = ({
     marginTop: 16,
     textAlign: "center"
   },
+  chpForeshadow: {
+    color: "rgba(217,168,108,0.7)",
+    fontFamily: fontSerifJa,
+    fontSize: 12,
+    letterSpacing: 1.1,
+    lineHeight: 22,
+    marginBottom: 18,
+    textAlign: "center"
+  },
   chpThread: {
     alignItems: "flex-end",
     bottom: 0,
@@ -12556,6 +12951,10 @@ const baseStyleDefs = ({
     lineHeight: 24,
     paddingVertical: 18
   },
+  diaryBandFirstGlow: {
+    backgroundColor: "rgba(217,168,108,0.09)",
+    borderRadius: 16
+  },
   diaryBandRow: {
     alignItems: "center",
     borderBottomColor: "rgba(232,226,214,0.055)",
@@ -12704,7 +13103,7 @@ const baseStyleDefs = ({
     fontSize: 14
   },
   onboardConsentRowChevron: {
-    color: "rgba(246,239,228,0.42)",
+    color: "rgba(246,239,228,0.56)",
     fontSize: 18
   },
   onboardSovereignty: {

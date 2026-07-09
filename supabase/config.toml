@@ -5,3 +5,8 @@
 # Gemini or burn API quota on this project, even if someone redeploys with a
 # different `supabase functions deploy` invocation later.
 verify_jwt = true
+
+[functions.delete-account]
+# GDPR Art.17: deletes the caller's auth user (user_state row cascades).
+# Must never be reachable without a valid session JWT.
+verify_jwt = true

@@ -160,6 +160,13 @@ function chapterCutoffKey(days = CHAPTER_DELAY_DAYS) {
   cutoff.setDate(cutoff.getDate() - days);
   return cutoff.toISOString().slice(0, 10);
 }
+// 90日設計（cpo/specs/arc_first_90_days.md）: 返礼のタイミングは設計変数として
+// ここに集め、CSO対話の結果で調整できるようにする。
+const QUEST_FIRST_PROPOSAL_MIN_MEMORIES = 5; // 最初の探求提案（2〜3週目相当）
+const NILO_FIRST_LETTER_MIN_NIGHTS = 3;      // Niloの最初の手紙（3〜7夜目）
+const NILO_FIRST_LETTER_MAX_NIGHTS = 10;     // これを過ぎた既存ユーザーには送らない
+const ECHO_FALLBACK_MIN_DAYS = 21;           // 初年の「◯週間前の今夜」に必要な最小距離
+const FIRST_BAND_SEEN_KEY = "arc.firstMonthBandSeen.v1";
 const DEV_MODE = true;
 // 初回起動フロー（Onboarding Spec v1.0）をDEV_MODEでも通しで確認したいときだけ true。
 const DEV_SHOW_ONBOARDING = false;
@@ -215,6 +222,16 @@ function getReflectionQuestions(lang) {
   return [translate(lang, "ritual.sentinelQuestion")];
 }
 const maxReflectionQuestions = 5;
+
+// 儀式の回答入力上限（創業者決定 2026-07-10）。文字あたりの意味密度が言語で
+// 違うため言語連動: 漢字圏(日中韓)100字 / ラテン文字ほか200字。50字刻みを保つ(§4.6)。
+const RITUAL_ANSWER_LIMIT_CJK = 100;
+const RITUAL_ANSWER_LIMIT_DEFAULT = 200;
+function getRitualAnswerLimit(lang) {
+  return lang === "ja" || lang === "zh" || lang === "ko"
+    ? RITUAL_ANSWER_LIMIT_CJK
+    : RITUAL_ANSWER_LIMIT_DEFAULT;
+}
 
 async function invokeNilo(route, body) {
   const { data, error } = await supabase.functions.invoke("nilo", {
@@ -1278,6 +1295,24 @@ function AppContent() {
   }, [hydrated, activeTab]);
 
   useEffect(() => {
+    // Niloの最初の手紙（90日設計）: 3〜7夜目のあいだに一度だけ届く。
+    // 要約せず評価せず、その週のユーザー自身の言葉をひとつ引用して返すだけ。
+    if (!hydrated) return;
+    const entries = (Array.isArray(journal) ? journal : []).filter((entry) => entry && entry.dateKey);
+    const nights = new Set(entries.map((entry) => entry.dateKey)).size;
+    if (nights < NILO_FIRST_LETTER_MIN_NIGHTS || nights > NILO_FIRST_LETTER_MAX_NIGHTS) return;
+    if (notifications.some((item) => item.refId === "nilo-letter-first")) return;
+    const quote = pickFirstLetterQuote(entries);
+    if (!quote) return;
+    addNotifications([{
+      refId: "nilo-letter-first",
+      tag: "NILO",
+      title: t("notifications.niloFirstLetterTitle"),
+      body: t("notifications.niloFirstLetterBody", quote)
+    }]);
+  }, [hydrated, journal, notifications]);
+
+  useEffect(() => {
     if (!hydrated || !profileComplete || !settings.notificationsEnabled) return undefined;
 
     const checkNightWhisper = () => {
@@ -1746,7 +1781,7 @@ function AppContent() {
   ];
 
   async function submitRitual() {
-    const text = input.trim().slice(0, 50);
+    const text = input.trim().slice(0, getRitualAnswerLimit(lang));
     if (!text || isSending || !reflectionInputEnabled) return;
 
     playUiSound();
@@ -1815,8 +1850,8 @@ function AppContent() {
     Keyboard.dismiss();
     setSealActive(true);
     showReflectionQuestion(closing);
-    // はじめての記録に限り、封の間だけ鍵と「あなた以外には読めない構造に
-    // なっています」を灯す（Onboarding Spec: 暗号化可視化の最小版）。
+    // はじめての記録に限り、封の間だけ鍵と「暗号化して、たいせつに保存して
+    // います」を灯す（Onboarding Spec: 暗号化可視化の最小版）。
     if (firstRecordSealRef.current) {
       firstRecordSealRef.current = false;
       setEncryptionNoticeVisible(true);
@@ -2098,7 +2133,9 @@ function AppContent() {
     }
     const today = getJournalDateKey();
     if (questScanDateKey === today) return;
-    if (memories.length < 5) return;
+    // 初回提案は「アプリが聴いていた」ことの最初の証明（90日設計）。
+    // 早すぎると浅く、遅すぎると死ぬ — 閾値は設計変数で管理する。
+    if (memories.length < QUEST_FIRST_PROPOSAL_MIN_MEMORIES) return;
     questScanRef.current = true;
     try {
       const result = await invokeNilo("quest-proposals", {
@@ -2416,6 +2453,7 @@ function AppContent() {
           setInput={setInput}
           enabled={reflectionInputEnabled}
           support={supportVisible}
+          answerLimit={getRitualAnswerLimit(lang)}
           onSubmit={submitRitual}
           onExit={requestExitNightRitual}
           exitConfirmOpen={exitConfirmOpen}
@@ -2470,6 +2508,11 @@ function AppContent() {
           setMemories={setMemories}
           chapters={chapters}
           setChapters={setChapters}
+          exportState={collectSyncedState({
+            journal, memories, chapters, chapterNotes, profile, settings,
+            questProposals, explorations, declinedQuestThemes, questScanDateKey, notifications,
+            onboardingComplete
+          })}
           session={session}
           authLoading={authLoading}
           authBusy={authBusy}
@@ -2550,16 +2593,19 @@ export default function App() {
 }
 
 function Header({ onAccount, onNotifications, showTitle, showSettings = true, showNotifications = true, unreadNotifications = 0 }) {
+  const t = useT();
   return (
     <View style={styles.header}>
       <View style={styles.headerSide} />
       {showTitle && <Text style={styles.headerTitle}>ARC</Text>}
       {showNotifications && (
         <Pressable
-          accessibilityLabel="通知を開く"
+          accessibilityRole="button"
+          accessibilityLabel={t("header.openNotifications")}
           onPress={onNotifications}
           focusable={false}
-          style={({ pressed }) => [styles.notificationButton, pressed && styles.touchPressedTight]}
+          hitSlop={8}
+          style={({ pressed }) => [styles.headerRoundButton, styles.notificationButton, pressed && styles.touchPressedTight]}
         >
           <NotificationBellGlyph />
           {unreadNotifications > 0 && <View pointerEvents="none" style={styles.notificationBellDot} />}
@@ -2567,10 +2613,12 @@ function Header({ onAccount, onNotifications, showTitle, showSettings = true, sh
       )}
       {showSettings && (
         <Pressable
-          accessibilityLabel="設定を開く"
+          accessibilityRole="button"
+          accessibilityLabel={t("header.openSettings")}
           onPress={onAccount}
           focusable={false}
-          style={({ pressed }) => [styles.settingsSunButton, pressed && styles.touchPressedTight]}
+          hitSlop={8}
+          style={({ pressed }) => [styles.headerRoundButton, styles.settingsSunButton, pressed && styles.touchPressedTight]}
         >
           <SettingsSunGlyph />
         </Pressable>
@@ -2579,29 +2627,42 @@ function Header({ onAccount, onNotifications, showTitle, showSettings = true, sh
   );
 }
 
+// ヘッダーの二つのグリフはSVGで引く。Viewの組み木より線が痩せず、
+// 夜の金の線(Niloの光と同じ系統)として細部まで揃えられる。
+const headerGlyphStroke = "rgba(228,209,175,0.66)";
+
 function NotificationBellGlyph() {
   return (
-    <View pointerEvents="none" style={styles.notificationBellGlyph}>
-      <View style={styles.notificationBellBody} />
-      <View style={styles.notificationBellBase} />
-      <View style={styles.notificationBellClapper} />
-    </View>
+    <Svg pointerEvents="none" width={18} height={18} viewBox="0 0 18 18" fill="none">
+      <Path
+        d="M9 2.7c-2.5 0-4 1.9-4 4.3 0 2.8-.8 3.9-1.5 4.6h11c-.7-.7-1.5-1.8-1.5-4.6 0-2.4-1.5-4.3-4-4.3Z"
+        stroke={headerGlyphStroke}
+        strokeWidth={1.3}
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M7.4 14.2a1.7 1.7 0 0 0 3.2 0"
+        stroke={headerGlyphStroke}
+        strokeWidth={1.3}
+        strokeLinecap="round"
+      />
+    </Svg>
   );
 }
 
 function SettingsSunGlyph() {
   return (
-    <View pointerEvents="none" style={styles.settingsSunGlyph}>
-      <View style={styles.settingsSunCore} />
-      <View style={[styles.settingsSunRay, styles.settingsSunRayTop]} />
-      <View style={[styles.settingsSunRay, styles.settingsSunRayBottom]} />
-      <View style={[styles.settingsSunRay, styles.settingsSunRayLeft]} />
-      <View style={[styles.settingsSunRay, styles.settingsSunRayRight]} />
-      <View style={[styles.settingsSunRay, styles.settingsSunRaySlashA]} />
-      <View style={[styles.settingsSunRay, styles.settingsSunRaySlashB]} />
-      <View style={[styles.settingsSunRay, styles.settingsSunRaySlashC]} />
-      <View style={[styles.settingsSunRay, styles.settingsSunRaySlashD]} />
-    </View>
+    <Svg pointerEvents="none" width={18} height={18} viewBox="0 0 18 18" fill="none">
+      <Circle cx={9} cy={9} r={3.1} stroke={headerGlyphStroke} strokeWidth={1.3} />
+      <Line x1={9} y1={1.4} x2={9} y2={3.4} stroke={headerGlyphStroke} strokeWidth={1.3} strokeLinecap="round" />
+      <Line x1={9} y1={14.6} x2={9} y2={16.6} stroke={headerGlyphStroke} strokeWidth={1.3} strokeLinecap="round" />
+      <Line x1={1.4} y1={9} x2={3.4} y2={9} stroke={headerGlyphStroke} strokeWidth={1.3} strokeLinecap="round" />
+      <Line x1={14.6} y1={9} x2={16.6} y2={9} stroke={headerGlyphStroke} strokeWidth={1.3} strokeLinecap="round" />
+      <Line x1={3.6} y1={3.6} x2={5.05} y2={5.05} stroke={headerGlyphStroke} strokeWidth={1.3} strokeLinecap="round" />
+      <Line x1={12.95} y1={12.95} x2={14.4} y2={14.4} stroke={headerGlyphStroke} strokeWidth={1.3} strokeLinecap="round" />
+      <Line x1={12.95} y1={5.05} x2={14.4} y2={3.6} stroke={headerGlyphStroke} strokeWidth={1.3} strokeLinecap="round" />
+      <Line x1={3.6} y1={14.4} x2={5.05} y2={12.95} stroke={headerGlyphStroke} strokeWidth={1.3} strokeLinecap="round" />
+    </Svg>
   );
 }
 
@@ -3276,7 +3337,7 @@ function AuthGate({
           <>
             {!otpSent && (
               <>
-                <Pressable disabled={authBusy} onPress={onGoogleSignIn} style={[styles.gateButton, authBusy && styles.disabledButton]}>
+                <Pressable disabled={authBusy} onPress={onGoogleSignIn} accessibilityRole="button" style={[styles.gateButton, authBusy && styles.disabledButton]}>
                   <Text style={styles.gateButtonText}>{authBusy ? t("gate.connecting") : t("gate.googleLogin")}</Text>
                 </Pressable>
                 <View style={styles.gateDivider}>
@@ -3289,6 +3350,7 @@ function AuthGate({
             <TextInput
               value={email}
               onChangeText={setEmail}
+              accessibilityLabel={t("gate.emailPlaceholder")}
               placeholder={t("gate.emailPlaceholder")}
               placeholderTextColor="rgba(246,239,228,0.42)"
               keyboardType="email-address"
@@ -3298,7 +3360,7 @@ function AuthGate({
               style={styles.gateInput}
             />
             {!otpSent ? (
-              <Pressable disabled={authBusy || !email.trim()} onPress={handleSendEmail} style={[styles.gateGhostButton, (authBusy || !email.trim()) && styles.disabledButton]}>
+              <Pressable disabled={authBusy || !email.trim()} onPress={handleSendEmail} accessibilityRole="button" accessibilityState={{ disabled: authBusy || !email.trim() }} style={[styles.gateGhostButton, (authBusy || !email.trim()) && styles.disabledButton]}>
                 <Text style={styles.gateGhostText}>{authBusy ? t("gate.sendingCode") : t("gate.receiveCodeByEmail")}</Text>
               </Pressable>
             ) : (
@@ -3307,6 +3369,7 @@ function AuthGate({
                 <TextInput
                   value={emailCode}
                   onChangeText={(value) => setEmailCode(value.replace(/\D/g, "").slice(0, 6))}
+                  accessibilityLabel={t("gate.codePlaceholder")}
                   placeholder={t("gate.codePlaceholder")}
                   placeholderTextColor="rgba(246,239,228,0.42)"
                   keyboardType="number-pad"
@@ -3318,13 +3381,13 @@ function AuthGate({
                   }}
                   style={styles.gateInput}
                 />
-                <Pressable disabled={authBusy || !email.trim() || emailCode.length < 6} onPress={() => onVerifyEmailLogin(email, emailCode)} style={[styles.gateButton, (authBusy || !email.trim() || emailCode.length < 6) && styles.disabledButton]}>
+                <Pressable disabled={authBusy || !email.trim() || emailCode.length < 6} onPress={() => onVerifyEmailLogin(email, emailCode)} accessibilityRole="button" style={[styles.gateButton, (authBusy || !email.trim() || emailCode.length < 6) && styles.disabledButton]}>
                   <Text style={styles.gateButtonText}>{authBusy ? t("gate.verifying") : t("gate.loginWithCode")}</Text>
                 </Pressable>
-                <Pressable disabled={authBusy} onPress={handleSendEmail} style={styles.gateGhostButton}>
+                <Pressable disabled={authBusy} onPress={handleSendEmail} accessibilityRole="button" style={styles.gateGhostButton}>
                   <Text style={styles.gateGhostText}>{authBusy ? t("gate.resending") : t("gate.resendCode")}</Text>
                 </Pressable>
-                <Pressable disabled={authBusy} onPress={() => { setOtpSent(false); setEmailCode(""); }} style={styles.gateTextButton}>
+                <Pressable disabled={authBusy} onPress={() => { setOtpSent(false); setEmailCode(""); }} accessibilityRole="button" style={styles.gateTextButton}>
                   <Text style={styles.gateTextButtonText}>{t("gate.changeEmail")}</Text>
                 </Pressable>
               </>
@@ -3359,6 +3422,7 @@ function ProfileGate({ profile, setProfile, authBusy, authError, onSignOut }) {
         <TextInput
           value={name}
           onChangeText={setName}
+          accessibilityLabel={t("gate.namePlaceholder")}
           placeholder={t("gate.namePlaceholder")}
           placeholderTextColor="rgba(246,239,228,0.42)"
           style={styles.gateInput}
@@ -3366,6 +3430,7 @@ function ProfileGate({ profile, setProfile, authBusy, authError, onSignOut }) {
         <TextInput
           value={birthdate}
           onChangeText={setBirthdate}
+          accessibilityLabel="YYYY-MM-DD"
           placeholder="YYYY-MM-DD"
           placeholderTextColor="rgba(246,239,228,0.42)"
           style={styles.gateInput}
@@ -3374,6 +3439,8 @@ function ProfileGate({ profile, setProfile, authBusy, authError, onSignOut }) {
         <Pressable
           disabled={!canSubmit}
           onPress={() => setProfile((current) => ({ ...current, name: name.trim(), birthdate: birthdate.trim() }))}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !canSubmit }}
           style={[styles.gateButton, !canSubmit && styles.disabledButton]}
         >
           <Text style={styles.gateButtonText}>{t("gate.startArc")}</Text>
@@ -3701,7 +3768,7 @@ function OnboardOpeningWordsStep({ onBegin }) {
 }
 
 // 04の暗号化可視化（最小版）: はじめての記録が封じられる間だけ、鍵の点と
-// 「あなた以外には読めない構造になっています」の一文を灯す。
+// 「暗号化して、たいせつに保存しています」の一文を灯す。
 function EncryptionSealNotice({ visible }) {
   const t = useT();
   const opacity = useRef(new Animated.Value(0)).current;
@@ -4130,7 +4197,7 @@ function NiloDialogQuestion({ question, dimmed, closing }) {
 // reference layout, but the answer is captured with the OS keyboard rather than
 // the prototype's mock 五十音 grid. The save / question-advance / seal logic is
 // the existing night-ritual flow, unchanged.
-function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLabel, inputRef, input, setInput, enabled, support, onSubmit, onExit, exitConfirmOpen, onConfirmExit, onCancelExit, onBlur }) {
+function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLabel, inputRef, input, setInput, enabled, support, answerLimit, onSubmit, onExit, exitConfirmOpen, onConfirmExit, onCancelExit, onBlur }) {
   const t = useT();
   const fade = useRef(new Animated.Value(0)).current;
   const [moteToken, setMoteToken] = useState(0);
@@ -4192,7 +4259,7 @@ function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLa
             <TextInput
               ref={inputRef}
               value={input}
-              onChangeText={(value) => setInput(value.replace(/\n/g, "").slice(0, 120))}
+              onChangeText={(value) => setInput(value.replace(/\n/g, "").slice(0, answerLimit))}
               onKeyPress={(event) => {
                 if (event.nativeEvent.key === "Enter") {
                   event.preventDefault?.();
@@ -4200,7 +4267,8 @@ function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLa
                 }
               }}
               placeholder={t("ritual.placeholder")}
-              placeholderTextColor="rgba(190,180,162,0.32)"
+              placeholderTextColor="rgba(190,180,162,0.55)"
+              accessibilityLabel={t("ritual.placeholder")}
               style={styles.niloDraftInput}
               multiline
               autoFocus
@@ -4213,7 +4281,7 @@ function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLa
               onBlur={onBlur}
             />
             {input.trim().length > 0 && (
-              <Pressable onPress={onSubmit} style={({ pressed }) => [styles.niloSendButton, pressed && styles.touchPressedTight]}>
+              <Pressable onPress={onSubmit} accessibilityRole="button" accessibilityLabel={t("ritual.send")} style={({ pressed }) => [styles.niloSendButton, pressed && styles.touchPressedTight]}>
                 <Text style={styles.niloSendText}>{t("ritual.send")}</Text>
               </Pressable>
             )}
@@ -4221,16 +4289,16 @@ function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLa
               <View style={styles.niloExitConfirmRow}>
                 <Text style={styles.niloExitConfirmText}>{t("ritual.exitConfirmQuestion")}</Text>
                 <View style={styles.niloExitConfirmActions}>
-                  <Pressable onPress={onCancelExit} style={({ pressed }) => [styles.niloExitConfirmGhost, pressed && styles.touchPressedTight]}>
+                  <Pressable onPress={onCancelExit} accessibilityRole="button" style={({ pressed }) => [styles.niloExitConfirmGhost, pressed && styles.touchPressedTight]}>
                     <Text style={styles.niloExitConfirmGhostText}>{t("ritual.exitConfirmNo")}</Text>
                   </Pressable>
-                  <Pressable onPress={onConfirmExit} style={({ pressed }) => [styles.niloExitConfirmPrimary, pressed && styles.touchPressedTight]}>
+                  <Pressable onPress={onConfirmExit} accessibilityRole="button" style={({ pressed }) => [styles.niloExitConfirmPrimary, pressed && styles.touchPressedTight]}>
                     <Text style={styles.niloExitConfirmPrimaryText}>{t("ritual.exitConfirmYes")}</Text>
                   </Pressable>
                 </View>
               </View>
             ) : (
-              <Pressable onPress={onExit} style={styles.niloExitLink}>
+              <Pressable onPress={onExit} accessibilityRole="button" style={styles.niloExitLink}>
                 <Text style={styles.niloExitText}>{t("ritual.exitLink")}</Text>
               </Pressable>
             )}
@@ -4604,12 +4672,20 @@ function QuestScreen({ onUiSound, active, proposals, explorations, onAccept, onD
 // 日記タブ (per the Diary spec): 意味を主役にした二層のタイムライン。直近の
 // 窓だけを詳細に見せ、それ以前は月の帯に畳み、さらに古い日々は章へ委ねる。
 // 糸は「今」に最も近い一点だけが淡く光る。
-function JournalScreen({ journal, active }) {
+function JournalScreen({ journal, active, onOpenDetail, onGoToStory, compareLastYear }) {
   const token = useEntrancePlay(active);
   const t = useT();
   const lang = useLang();
-  const { cumulativeEntries } = getDiaryModel(journal, { lang });
+  const { recentEntries, monthlyBands, hasOlder } = getDiaryModel(journal, { lang });
+  const [expandedBands, setExpandedBands] = useState([]);
+  // 一年前のこの頃（初年は「◯週間前の今夜」）。設定でOFFにできる。
+  const echoEntry = compareLastYear ? findLastYearEcho(journal, { lang }) : null;
   const now = new Date(`${getJournalDateKey()}T00:00:00`);
+
+  function toggleBand(monthKey) {
+    setExpandedBands((keys) =>
+      keys.includes(monthKey) ? keys.filter((key) => key !== monthKey) : [...keys, monthKey]);
+  }
 
   return (
     <ScrollView contentContainerStyle={styles.journalScrollContent} showsVerticalScrollIndicator={false}>
@@ -4624,6 +4700,11 @@ function JournalScreen({ journal, active }) {
           </View>
         </View>
       </RiseIn>
+      {!!echoEntry && (
+        <RiseIn index={1} playToken={token}>
+          <DiaryLastYearEcho entry={echoEntry} onOpenDetail={onOpenDetail} />
+        </RiseIn>
+      )}
       <View style={styles.timeline}>
         <LinearGradient
           pointerEvents="none"
@@ -4631,17 +4712,31 @@ function JournalScreen({ journal, active }) {
           locations={[0, 0.1, 0.82, 1]}
           style={styles.timelineLine}
         />
-        {cumulativeEntries.length === 0 && (
+        {recentEntries.length === 0 && (
           <RiseIn index={1} playToken={token}>
             <Text style={styles.diaryEmptyRecent}>{t("journal.emptyRecent")}</Text>
           </RiseIn>
         )}
-        {cumulativeEntries.map((entry, index) => (
-          <RiseIn key={entry.id} index={index + 1} playToken={token} duration={550}>
+        {recentEntries.map((entry, index) => (
+          <RiseIn key={entry.id} index={index + 2} playToken={token} duration={550}>
             <DiaryEntryRow entry={entry} isCurrent={index === 0} />
           </RiseIn>
         ))}
       </View>
+      {monthlyBands.length > 0 && (
+        <FirstBandReveal firstEver={monthlyBands.length === 1}>
+          {monthlyBands.map((band) => (
+            <DiaryMonthBand
+              key={band.monthKey}
+              band={band}
+              expanded={expandedBands.includes(band.monthKey)}
+              onToggle={() => toggleBand(band.monthKey)}
+              onOpenDetail={onOpenDetail}
+            />
+          ))}
+        </FirstBandReveal>
+      )}
+      {hasOlder && <DiaryStoryGuide onGoToStory={onGoToStory} />}
     </ScrollView>
   );
 }
@@ -4804,6 +4899,7 @@ function DiaryLastYearEcho({ entry, onOpenDetail }) {
   return (
     <Pressable
       onPress={() => onOpenDetail?.(entry)}
+      accessibilityRole="button"
       style={({ pressed }) => [styles.diaryEchoCard, pressed && styles.touchPressedSubtle]}
       accessibilityRole="button"
     >
@@ -4816,7 +4912,11 @@ function DiaryLastYearEcho({ entry, onOpenDetail }) {
         style={styles.diaryEchoWash}
       />
       <View style={styles.diaryEchoTopRow}>
-        <Text style={styles.diaryEchoLabel}>{t("journal.lastYearEchoLabel")}</Text>
+        <Text style={styles.diaryEchoLabel}>
+          {entry.echoMode === "weeksAgo"
+            ? t("journal.weeksAgoEchoLabel", entry.weeksAgo)
+            : t("journal.lastYearEchoLabel")}
+        </Text>
         <DiaryEchoMark />
       </View>
       <Text style={styles.diaryEchoMeaning}>{entry.meaning}</Text>
@@ -4839,6 +4939,35 @@ function DiaryBandToggleIcon({ expanded }) {
   const rotate = progress.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "90deg"] });
   const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
   return <Animated.Text style={[styles.diaryBandToggle, { transform: [{ rotate }, { scale }] }]}>{expanded ? "−" : "+"}</Animated.Text>;
+}
+
+// 30日目の返礼（90日設計）: 最初の月の帯が現れた一度だけ、金色がひと呼吸ぶん
+// 灯って消える。蓄積が初めて「構造」に見えた瞬間の小さな演出。通知はしない。
+function FirstBandReveal({ firstEver, children }) {
+  const glow = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!firstEver) return undefined;
+    let cancelled = false;
+    AsyncStorage.getItem(FIRST_BAND_SEEN_KEY)
+      .then((seen) => {
+        if (cancelled || seen) return;
+        AsyncStorage.setItem(FIRST_BAND_SEEN_KEY, "1").catch(() => undefined);
+        Animated.sequence([
+          Animated.timing(glow, { toValue: 1, duration: 1600, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(glow, { toValue: 0, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true })
+        ]).start();
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [firstEver, glow]);
+  return (
+    <View>
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, styles.diaryBandFirstGlow, { opacity: glow }]} />
+      {children}
+    </View>
+  );
 }
 
 function DiaryMonthBand({ band, expanded, onToggle, onOpenDetail }) {
@@ -4981,6 +5110,11 @@ function StoryScreen({ chapters, proposals, eligibleCount, busy, onPropose, onCo
               <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerStyle={styles.chpPageScroll}>
                 <Text style={styles.chpEndLabel}>{t("chapter.endLabel")}</Text>
                 <Text style={styles.chpEndNote}>{t("chapter.endNote")}</Text>
+                {/* 章の予感（90日設計）: 60日を越えて材料が満ちてきたら、命名も
+                    確定も急かさず「流れがある」ことだけを匂わせる。 */}
+                {eligibleCount > 0 && !(proposals || []).length && !busy && (
+                  <Text style={styles.chpForeshadow}>{t("chapter.foreshadow")}</Text>
+                )}
                 {eligibleCount > 0 && (
                   <Pressable
                     disabled={busy}
@@ -5303,7 +5437,7 @@ function NotificationsModal({ visible, notifications, onClose, onMarkRead, onNav
         <NightGrain />
         <FloatingOrbs />
         <View style={styles.modalHeader}>
-          <Pressable focusable={false} onPress={onClose} style={({ pressed }) => [styles.modalBackButton, pressed && styles.touchPressedTight]}>
+          <Pressable focusable={false} onPress={onClose} accessibilityRole="button" accessibilityLabel={t("common.back")} style={({ pressed }) => [styles.modalBackButton, pressed && styles.touchPressedTight]}>
             <Text style={styles.modalBackText}>‹</Text>
           </Pressable>
           <View style={styles.modalTitleWrap}>
@@ -5322,6 +5456,8 @@ function NotificationsModal({ visible, notifications, onClose, onMarkRead, onNav
                       onMarkRead(item.id);
                       if (item.tab) onNavigate(item.tab);
                     }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${item.title}${item.body ? ` — ${item.body}` : ""}`}
                     style={({ pressed }) => [
                       styles.notificationRow,
                       !item.read && styles.notificationRowUnread,
@@ -5717,6 +5853,9 @@ function TabBar({ activeTab, setActiveTab, hidden, opacity, unlocks }) {
             key={tab.id}
             onPress={() => setActiveTab(tab.id)}
             focusable={false}
+            accessibilityRole="tab"
+            accessibilityLabel={tab.label}
+            accessibilityState={{ selected: isActive, disabled: !isUnlocked }}
             style={({ pressed }) => [
               styles.tabItem,
               tab.id === "home" && styles.tabItemHome,
@@ -5831,6 +5970,7 @@ function SettingsModal({
   setMemories,
   chapters,
   setChapters,
+  exportState,
   session,
   authLoading,
   authBusy,
@@ -5853,6 +5993,7 @@ function SettingsModal({
   const [exportFormat, setExportFormat] = useState("json");
   const [exportPassphrase, setExportPassphrase] = useState("");
   const [exportStatus, setExportStatus] = useState("");
+  const [accountDeleteStatus, setAccountDeleteStatus] = useState("");
   const [recoveryKey, setRecoveryKey] = useState("");
   const [recoveryStatus, setRecoveryStatus] = useState("");
   const [emergencyEmail, setEmergencyEmail] = useState("");
@@ -5985,7 +6126,7 @@ function SettingsModal({
       const isMarkdown = exportFormat === "markdown";
       const content = isMarkdown
         ? buildExportMarkdown({ journal, memories, chapters }, lang)
-        : buildExportJson({ journal, memories, chapters, profile, settings });
+        : buildExportJson(exportState);
       const passphrase = exportPassphrase.trim();
       const dateKey = toDateKey(new Date());
       if (passphrase) {
@@ -6031,6 +6172,44 @@ function SettingsModal({
         }
       ]
     );
+  }
+
+  // GDPR Art.17: アカウントとサーバー上の全データ(user_state行ごと)を完全削除する。
+  // 「アーカイブの削除」(ローカルのみ)とは別物なので、二段階確認も別文言にしている。
+  function confirmDeleteAccount() {
+    onUiSound?.();
+    confirmDialog(
+      t("settings.deletion.accountConfirmTitle"),
+      t("settings.deletion.accountConfirmBody"),
+      [
+        { text: t("settings.deletion.keepBack"), style: "cancel" },
+        {
+          text: t("settings.deletion.deleteAction"),
+          style: "destructive",
+          onPress: () => confirmDialog(t("settings.deletion.accountFinalTitle"), t("settings.deletion.accountFinalBody"), [
+            { text: t("settings.deletion.keepBack"), style: "cancel" },
+            { text: t("settings.deletion.deleteAction"), style: "destructive", onPress: runDeleteAccount }
+          ])
+        }
+      ]
+    );
+  }
+
+  async function runDeleteAccount() {
+    setAccountDeleteStatus(t("settings.deletion.accountDeleting"));
+    try {
+      const { error } = await supabase.functions.invoke("delete-account", { body: { confirm: true } });
+      if (error) throw error;
+      // サーバー側は消えた。ローカルの写しも消してからサインアウトする。
+      setJournal([]);
+      setMemories([]);
+      setChapters([]);
+      setAccountDeleteStatus("");
+      onSignOut?.();
+      onClose?.();
+    } catch {
+      setAccountDeleteStatus(t("settings.deletion.accountFailed"));
+    }
   }
 
   async function issueRecoveryKey() {
@@ -6169,7 +6348,7 @@ function SettingsModal({
         <NightGrain />
         <FloatingOrbs />
         <View style={styles.modalHeader}>
-          <Pressable focusable={false} onPress={onClose} style={({ pressed }) => [styles.modalBackButton, pressed && styles.touchPressedTight]}>
+          <Pressable focusable={false} onPress={onClose} accessibilityRole="button" accessibilityLabel={t("common.back")} style={({ pressed }) => [styles.modalBackButton, pressed && styles.touchPressedTight]}>
             <Text style={styles.modalBackText}>‹</Text>
           </Pressable>
           <View style={styles.modalTitleWrap}>
@@ -6246,7 +6425,7 @@ function SettingsModal({
                     secureTextEntry
                     autoCapitalize="none"
                     placeholder={t("settings.export.passphrasePlaceholder")}
-                    placeholderTextColor="rgba(190,180,162,0.38)"
+                    placeholderTextColor="rgba(190,180,162,0.55)"
                     style={styles.settingInput}
                   />
                   <Pressable onPress={runExport} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
@@ -6280,6 +6459,17 @@ function SettingsModal({
                     <Text style={styles.dangerButtonText}>{t("settings.deletion.deleteArchiveButton")}</Text>
                   </Pressable>
                 </View>
+                {!!session && (
+                  <View style={styles.dangerCard}>
+                    <GlassBackdrop intensity={20} />
+                    <Text style={styles.settingLabel}>{t("settings.deletion.accountLabel")}</Text>
+                    <Text style={styles.mutedText}>{t("settings.deletion.accountNote")}</Text>
+                    <Pressable onPress={confirmDeleteAccount} style={({ pressed }) => [styles.dangerButton, pressed && styles.touchPressedSoft]}>
+                      <Text style={styles.dangerButtonText}>{t("settings.deletion.accountButton")}</Text>
+                    </Pressable>
+                    {!!accountDeleteStatus && <Text style={styles.mutedText}>{accountDeleteStatus}</Text>}
+                  </View>
+                )}
               </View>
             )}
 
@@ -6296,7 +6486,7 @@ function SettingsModal({
                     autoCapitalize="none"
                     keyboardType="email-address"
                     placeholder="example@mail.com"
-                    placeholderTextColor="rgba(190,180,162,0.38)"
+                    placeholderTextColor="rgba(190,180,162,0.55)"
                     style={styles.settingInput}
                   />
                   <Pressable onPress={addHeir} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
@@ -6334,9 +6524,9 @@ function SettingsModal({
                   <GlassBackdrop intensity={24} />
                   <Text style={styles.settingLabel}>{t("settings.inheritance.disclosureLabel")}</Text>
                   <Text style={styles.mutedText}>{t("settings.inheritance.disclosureNote")}</Text>
-                  <TextInput value={disclosureTarget} onChangeText={setDisclosureTarget} placeholder={t("settings.inheritance.disclosureTargetPlaceholder")} placeholderTextColor="rgba(190,180,162,0.38)" style={styles.settingInput} />
-                  <TextInput value={disclosureDate} onChangeText={setDisclosureDate} placeholder={t("settings.inheritance.disclosureDatePlaceholder")} placeholderTextColor="rgba(190,180,162,0.38)" style={styles.settingInput} />
-                  <TextInput value={disclosureRecipient} onChangeText={setDisclosureRecipient} autoCapitalize="none" keyboardType="email-address" placeholder={t("settings.inheritance.disclosureRecipientPlaceholder")} placeholderTextColor="rgba(190,180,162,0.38)" style={styles.settingInput} />
+                  <TextInput value={disclosureTarget} onChangeText={setDisclosureTarget} placeholder={t("settings.inheritance.disclosureTargetPlaceholder")} placeholderTextColor="rgba(190,180,162,0.55)" style={styles.settingInput} />
+                  <TextInput value={disclosureDate} onChangeText={setDisclosureDate} placeholder={t("settings.inheritance.disclosureDatePlaceholder")} placeholderTextColor="rgba(190,180,162,0.55)" style={styles.settingInput} />
+                  <TextInput value={disclosureRecipient} onChangeText={setDisclosureRecipient} autoCapitalize="none" keyboardType="email-address" placeholder={t("settings.inheritance.disclosureRecipientPlaceholder")} placeholderTextColor="rgba(190,180,162,0.55)" style={styles.settingInput} />
                   <Pressable onPress={addDisclosure} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
                     <Text style={styles.secondaryButtonText}>{t("settings.inheritance.disclosureAddButton")}</Text>
                   </Pressable>
@@ -6405,7 +6595,7 @@ function SettingsModal({
                     autoCapitalize="none"
                     keyboardType="email-address"
                     placeholder="trusted@mail.com"
-                    placeholderTextColor="rgba(190,180,162,0.38)"
+                    placeholderTextColor="rgba(190,180,162,0.55)"
                     style={styles.settingInput}
                   />
                   <Pressable onPress={addEmergencyContact} style={({ pressed }) => [styles.secondaryButton, pressed && styles.touchPressedSoft]}>
@@ -6571,7 +6761,7 @@ function SettingsModal({
                       setNotificationDraft(null);
                     }}
                     placeholder="22:00"
-                    placeholderTextColor="rgba(190,180,162,0.38)"
+                    placeholderTextColor="rgba(190,180,162,0.55)"
                     style={[styles.settingInput, styles.settingTimeInput]}
                   />
                   <Text style={styles.mutedText}>{t("settings.app.timeSavedNote")}</Text>
@@ -6617,7 +6807,7 @@ function SettingsModal({
                         setWindowStartDraft(null);
                       }}
                       placeholder="20:00"
-                      placeholderTextColor="rgba(190,180,162,0.38)"
+                      placeholderTextColor="rgba(190,180,162,0.55)"
                       style={[styles.settingInput, styles.settingTimeInput]}
                     />
                     <Text style={styles.settingTimeRangeTilde}>〜</Text>
@@ -6629,7 +6819,7 @@ function SettingsModal({
                         setWindowEndDraft(null);
                       }}
                       placeholder="03:00"
-                      placeholderTextColor="rgba(190,180,162,0.38)"
+                      placeholderTextColor="rgba(190,180,162,0.55)"
                       style={[styles.settingInput, styles.settingTimeInput]}
                     />
                   </View>
@@ -6725,8 +6915,8 @@ function SettingsModal({
                 <View style={styles.settingsCard}>
                   <GlassBackdrop intensity={24} />
                   <Text style={styles.settingLabel}>{t("settings.account.basicInfoLabel")}</Text>
-                  <TextInput value={name} onChangeText={setName} placeholder={t("settings.account.namePlaceholder")} placeholderTextColor="rgba(190,180,162,0.38)" style={styles.settingInput} />
-                  <TextInput value={birthdate} onChangeText={setBirthdate} placeholder="YYYY-MM-DD" placeholderTextColor="rgba(190,180,162,0.38)" style={styles.settingInput} />
+                  <TextInput value={name} onChangeText={setName} placeholder={t("settings.account.namePlaceholder")} placeholderTextColor="rgba(190,180,162,0.55)" style={styles.settingInput} />
+                  <TextInput value={birthdate} onChangeText={setBirthdate} placeholder="YYYY-MM-DD" placeholderTextColor="rgba(190,180,162,0.55)" style={styles.settingInput} />
                   <Text style={styles.mutedText}>{t("settings.account.journeyDayNote")}</Text>
                   <View style={styles.profileSaveRow}>
                     <Pressable
@@ -7043,18 +7233,45 @@ function ArcSettingGroup({ label, index = 0, playToken = 0, children }) {
   );
 }
 
+// オン/オフの灯。OFFはニュートラルに沈み、ONは金色に灯る。
+// ノブの滑走と色の移ろいをひと呼吸のアニメーションで繋ぐ。
+function ArcSwitch({ value }) {
+  const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: value ? 1 : 0,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false
+    }).start();
+  }, [value, anim]);
+  const trackColor = anim.interpolate({ inputRange: [0, 1], outputRange: ["rgba(246,239,228,0.07)", "rgba(221,180,111,0.5)"] });
+  const borderColor = anim.interpolate({ inputRange: [0, 1], outputRange: ["rgba(255,254,244,0.16)", "rgba(242,200,142,0.6)"] });
+  const knobColor = anim.interpolate({ inputRange: [0, 1], outputRange: ["rgba(238,224,202,0.45)", "#ffd08a"] });
+  const knobX = anim.interpolate({ inputRange: [0, 1], outputRange: [0, 26] });
+  return (
+    <Animated.View style={[styles.arcSwitch, { backgroundColor: trackColor, borderColor }, value && styles.arcSwitchOn]}>
+      <Animated.View style={[styles.arcSwitchKnob, { backgroundColor: knobColor, transform: [{ translateX: knobX }] }]} />
+    </Animated.View>
+  );
+}
+
 function ArcSettingRow({ title, body, value, toggle, onPress, last = false }) {
   const hasToggle = typeof toggle === "boolean";
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.arcSettingRow, last && styles.arcSettingRowLast, pressed && styles.touchPressedSubtle]}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole={hasToggle ? "switch" : "button"}
+      accessibilityLabel={body ? `${title}. ${body}` : title}
+      accessibilityState={hasToggle ? { checked: toggle } : undefined}
+      style={({ pressed }) => [styles.arcSettingRow, last && styles.arcSettingRowLast, pressed && styles.touchPressedSubtle]}
+    >
       <View style={styles.arcSettingCopy}>
         <Text style={styles.arcSettingTitle}>{title}</Text>
         {!!body && <Text style={styles.arcSettingBody}>{body}</Text>}
       </View>
       {hasToggle ? (
-        <View style={[styles.arcSwitch, toggle && styles.arcSwitchOn]}>
-          <View style={[styles.arcSwitchKnob, toggle && styles.arcSwitchKnobOn]} />
-        </View>
+        <ArcSwitch value={toggle} />
       ) : (
         <View style={styles.arcSettingValueWrap}>
           {!!value && <Text style={styles.arcSettingValue}>{value}</Text>}
@@ -7209,10 +7426,15 @@ function SettingToggleRow({ title, body, value, onPress }) {
           <Text style={styles.settingValue}>{title}</Text>
           <Text style={styles.mutedText}>{body}</Text>
         </View>
-        <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.touchPressedTight]}>
-          <View style={[styles.arcSwitch, value && styles.arcSwitchOn]}>
-            <View style={[styles.arcSwitchKnob, value && styles.arcSwitchKnobOn]} />
-          </View>
+        <Pressable
+          onPress={onPress}
+          hitSlop={10}
+          accessibilityRole="switch"
+          accessibilityLabel={title}
+          accessibilityState={{ checked: !!value }}
+          style={({ pressed }) => [pressed && styles.touchPressedTight]}
+        >
+          <ArcSwitch value={value} />
         </Pressable>
       </View>
     </View>
@@ -7380,7 +7602,8 @@ function toJapaneseWeekday(value) {
 function findLastYearEcho(journal, options = {}) {
   const source = getJournalDisplayEntries(journal, options.includeDemo ?? DEV_MODE);
   const lang = normalizeLanguageCode(options.lang);
-  const target = new Date(`${getJournalDateKey()}T00:00:00`);
+  const today = new Date(`${getJournalDateKey()}T00:00:00`);
+  const target = new Date(today);
   target.setFullYear(target.getFullYear() - 1);
   let best = null;
   let bestDistance = Infinity;
@@ -7394,7 +7617,46 @@ function findLastYearEcho(journal, options = {}) {
       best = normalizeDiaryEntry(entry, index, lang);
     }
   });
-  return best;
+  if (best) return { ...best, echoMode: "lastYear" };
+
+  // 初年フォールバック（90日設計）: 昨年の同じ頃がまだ存在しない最初の年は、
+  // 「◯週間前の今夜」を代わりに差し出す。振り返る距離ができてからにする。
+  const fallbackEdge = new Date(today);
+  fallbackEdge.setDate(fallbackEdge.getDate() - ECHO_FALLBACK_MIN_DAYS);
+  let fallback = null;
+  let fallbackIndex = -1;
+  source.forEach((entry, index) => {
+    if (!entry.dateKey) return;
+    const date = new Date(`${entry.dateKey}T00:00:00`);
+    if (Number.isNaN(date.getTime()) || date > fallbackEdge) return;
+    if (!fallback || entry.dateKey > fallback.dateKey) {
+      fallback = entry;
+      fallbackIndex = index;
+    }
+  });
+  if (!fallback) return null;
+  const weeksAgo = Math.max(1, Math.floor((today - new Date(`${fallback.dateKey}T00:00:00`)) / (7 * 86400000)));
+  return { ...normalizeDiaryEntry(fallback, fallbackIndex, lang), echoMode: "weeksAgo", weeksAgo };
+}
+
+// Niloの最初の手紙（90日設計）が引用する一節。直近7夜のユーザー自身の言葉から、
+// 短すぎず長すぎない一文を選ぶ。生成も要約もしない — 引用するだけ。
+function pickFirstLetterQuote(entries) {
+  const edge = new Date(`${getJournalDateKey()}T00:00:00`);
+  edge.setDate(edge.getDate() - 7);
+  const edgeKey = toDateKey(edge);
+  const texts = [];
+  entries.forEach((entry) => {
+    if (!entry.dateKey || entry.dateKey < edgeKey) return;
+    const dialogue = entry.dialogue || entry.messages || [];
+    dialogue.forEach((message) => {
+      if (message?.role === "user" && message.text) texts.push(String(message.text).trim());
+    });
+    if (entry.meaning) texts.push(String(entry.meaning).trim());
+  });
+  const candidates = texts.filter((text) => text.length >= 4 && text.length <= 60);
+  if (!candidates.length) return "";
+  return candidates.reduce((best, text) => (text.length > best.length ? text : best), candidates[0]);
 }
 
 function toJapaneseNumber(value) {
@@ -7563,15 +7825,13 @@ async function generateRecoveryKey() {
   return Array.from(bytes).map((byte) => RECOVERY_WORDLIST[byte % RECOVERY_WORDLIST.length]).join(" ");
 }
 
-function buildExportJson({ journal, memories, chapters, profile, settings }) {
+// Art. 20 (data portability): the JSON export must cover everything we sync,
+// so it takes the same collectSyncedState() shape rather than hand-picked keys.
+function buildExportJson(state) {
   return JSON.stringify({
     exportedAt: new Date().toISOString(),
     app: "ARC",
-    journal,
-    memories,
-    chapters,
-    profile,
-    settings
+    ...(state || {})
   }, null, 2);
 }
 
@@ -7768,7 +8028,7 @@ const TOKENS = {
     ink: "#f6efe4",
     inkSoft: "rgba(246,239,228,0.72)",
     muted: "#c2bbb0",
-    faint: "rgba(190,180,162,0.5)",
+    faint: "rgba(190,180,162,0.66)",
     hairline: "rgba(255,254,244,0.18)",
     onGold: "#201a14"
   },
@@ -8493,7 +8753,7 @@ const baseStyleDefs = ({
     width: 1.5
   },
   counter: {
-    color: "rgba(255,254,244,0.46)",
+    color: "rgba(255,254,244,0.58)",
     fontSize: 12,
     marginLeft: 12,
     minWidth: 34,
@@ -8729,7 +8989,7 @@ const baseStyleDefs = ({
     letterSpacing: 0.5
   },
   chapterCardTitleEmpty: {
-    color: "rgba(246,239,228,0.45)",
+    color: "rgba(246,239,228,0.56)",
     fontFamily: Platform.select({ ios: "Georgia", default: "serif" }),
     fontSize: 20,
     fontStyle: "italic",
@@ -9540,7 +9800,7 @@ const baseStyleDefs = ({
     letterSpacing: 0.8
   },
   baseStatLabel: {
-    color: "rgba(190,180,162,0.46)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 10,
     letterSpacing: 0.8,
@@ -10128,7 +10388,7 @@ const baseStyleDefs = ({
     lineHeight: 16
   },
   settingLabel: {
-    color: "rgba(217,168,108,0.58)",
+    color: "rgba(217,168,108,0.72)",
     fontFamily: fontSerifJa,
     fontSize: 11,
     letterSpacing: 2.2
@@ -10150,7 +10410,7 @@ const baseStyleDefs = ({
     paddingTop: 10
   },
   soundStatusText: {
-    color: "rgba(190,180,162,0.58)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 12,
     letterSpacing: 0.7
@@ -10343,7 +10603,7 @@ const baseStyleDefs = ({
     shadowRadius: 14
   },
   toggleText: {
-    color: "rgba(190,180,162,0.58)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifEnMedium,
     fontSize: 12,
     letterSpacing: 1.2
@@ -10373,7 +10633,7 @@ const baseStyleDefs = ({
     shadowRadius: 14
   },
   segmentText: {
-    color: "rgba(190,180,162,0.58)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 13,
     letterSpacing: 0.7
@@ -10446,82 +10706,41 @@ const baseStyleDefs = ({
     textAlign: "center",
     top: 20
   },
-  settingsSunButton: {
+  // ヘッダー右上の二つの操作は「夜に浮かぶ小さな光の輪」として揃える。
+  // 円形・同径・同じ淡い縁で、Niloの光やタブの灯りと同じ系統に見せる。
+  headerRoundButton: {
     alignItems: "center",
-    backgroundColor: "rgba(255,254,244,0.06)",
-    borderColor: "rgba(255,254,244,0.14)",
-    borderRadius: 12,
+    backgroundColor: "rgba(255,254,244,0.05)",
+    borderColor: "rgba(232,214,180,0.18)",
+    borderRadius: 999,
     borderWidth: 1,
-    height: 34,
+    height: 38,
     justifyContent: "center",
     outlineStyle: "none",
     position: "absolute",
-    right: 28,
-    top: 52,
-    width: 34
+    top: 48,
+    width: 38
+  },
+  settingsSunButton: {
+    right: 24
   },
   notificationButton: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,254,244,0.06)",
-    borderColor: "rgba(255,254,244,0.14)",
-    borderRadius: 12,
-    borderWidth: 1,
-    height: 34,
-    justifyContent: "center",
-    outlineStyle: "none",
-    position: "absolute",
-    right: 72,
-    top: 52,
-    width: 34
-  },
-  notificationBellGlyph: {
-    height: 19,
-    position: "relative",
-    width: 19
-  },
-  notificationBellBody: {
-    borderBottomLeftRadius: 2,
-    borderBottomRightRadius: 2,
-    borderColor: "rgba(225,205,170,0.5)",
-    borderTopLeftRadius: 7,
-    borderTopRightRadius: 7,
-    borderWidth: 1.3,
-    height: 10,
-    left: 4.5,
-    position: "absolute",
-    top: 3,
-    width: 10
-  },
-  notificationBellBase: {
-    backgroundColor: "rgba(225,205,170,0.5)",
-    borderRadius: 999,
-    height: 1.3,
-    left: 3,
-    position: "absolute",
-    top: 13,
-    width: 13
-  },
-  notificationBellClapper: {
-    backgroundColor: "rgba(225,205,170,0.5)",
-    borderRadius: 999,
-    height: 2.6,
-    left: 8.2,
-    position: "absolute",
-    top: 15,
-    width: 2.6
+    right: 72
   },
   notificationBellDot: {
     backgroundColor: "#E8B25E",
+    borderColor: "rgba(24,20,14,0.9)",
     borderRadius: 999,
-    height: 7,
+    borderWidth: 1.5,
+    height: 9,
     position: "absolute",
-    right: 6,
+    right: 4,
     shadowColor: "#E8B25E",
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.7,
     shadowRadius: 4,
-    top: 6,
-    width: 7
+    top: 4,
+    width: 9
   },
   notificationRow: {
     backgroundColor: "rgba(46,36,26,0.42)",
@@ -10576,83 +10795,13 @@ const baseStyleDefs = ({
     marginTop: 10
   },
   notificationEmptyNote: {
-    color: "rgba(190,180,162,0.5)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 14,
     letterSpacing: 0.3,
     lineHeight: 24,
     marginTop: 8,
     textAlign: "center"
-  },
-  settingsSunGlyph: {
-    height: 19,
-    position: "relative",
-    width: 19
-  },
-  settingsSunCore: {
-    borderColor: "rgba(225,205,170,0.5)",
-    borderRadius: 999,
-    borderWidth: 1.3,
-    height: 7,
-    left: 6,
-    position: "absolute",
-    top: 6,
-    width: 7
-  },
-  settingsSunRay: {
-    backgroundColor: "rgba(225,205,170,0.5)",
-    borderRadius: 999,
-    height: 3.1,
-    position: "absolute",
-    width: 1.3
-  },
-  settingsSunRayTop: {
-    left: 8.85,
-    top: 0
-  },
-  settingsSunRayBottom: {
-    bottom: 0,
-    left: 8.85
-  },
-  settingsSunRayLeft: {
-    height: 1.3,
-    left: 0,
-    top: 8.85,
-    width: 3.1
-  },
-  settingsSunRayRight: {
-    height: 1.3,
-    right: 0,
-    top: 8.85,
-    width: 3.1
-  },
-  settingsSunRaySlashA: {
-    height: 1.3,
-    left: 3,
-    top: 3,
-    transform: [{ rotate: "45deg" }],
-    width: 3.1
-  },
-  settingsSunRaySlashB: {
-    bottom: 3,
-    height: 1.3,
-    right: 3,
-    transform: [{ rotate: "45deg" }],
-    width: 3.1
-  },
-  settingsSunRaySlashC: {
-    height: 1.3,
-    right: 3,
-    top: 3,
-    transform: [{ rotate: "-45deg" }],
-    width: 3.1
-  },
-  settingsSunRaySlashD: {
-    bottom: 3,
-    height: 1.3,
-    left: 3,
-    transform: [{ rotate: "-45deg" }],
-    width: 3.1
   },
   content: {
     flex: 1
@@ -10922,7 +11071,7 @@ const baseStyleDefs = ({
     marginTop: 34
   },
   questGroupTitle: {
-    color: "rgba(190,180,162,0.5)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 11,
     letterSpacing: 3.3
@@ -10951,7 +11100,7 @@ const baseStyleDefs = ({
     marginTop: 10
   },
   questQuietNote: {
-    color: "rgba(190,180,162,0.45)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifJa,
     fontSize: 12,
     letterSpacing: 0.6,
@@ -11265,7 +11414,7 @@ const baseStyleDefs = ({
     paddingHorizontal: 16
   },
   journalMetaLabel: {
-    color: "rgba(190,180,162,0.42)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifJa,
     fontSize: 10,
     letterSpacing: 1.8,
@@ -11409,7 +11558,7 @@ const baseStyleDefs = ({
     borderColor: "rgba(190,180,162,0.22)",
     borderRadius: 18,
     borderWidth: 1,
-    color: "rgba(190,180,162,0.45)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifEn,
     fontSize: 9,
     letterSpacing: 1.8,
@@ -11506,7 +11655,7 @@ const baseStyleDefs = ({
     lineHeight: 35
   },
   chapterPastTitle: {
-    color: "rgba(246,239,228,0.46)"
+    color: "rgba(246,239,228,0.56)"
   },
   chapterTimelineSummary: {
     color: "rgba(222,206,180,0.62)",
@@ -11554,7 +11703,7 @@ const baseStyleDefs = ({
     paddingVertical: 16
   },
   chapterNewText: {
-    color: "rgba(190,180,162,0.55)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 14,
     letterSpacing: 0.8
@@ -11610,7 +11759,7 @@ const baseStyleDefs = ({
     marginTop: 12
   },
   lifeQuestDetailMeta: {
-    color: "rgba(190,180,162,0.55)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 11,
     letterSpacing: 0.7,
@@ -11658,7 +11807,7 @@ const baseStyleDefs = ({
     marginTop: 34
   },
   recordTrailLabel: {
-    color: "rgba(190,180,162,0.5)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 11,
     letterSpacing: 3.1
@@ -11690,7 +11839,7 @@ const baseStyleDefs = ({
     letterSpacing: 0.6
   },
   lifeQuestPhilosophy: {
-    color: "rgba(190,180,162,0.4)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifJa,
     fontSize: 11,
     lineHeight: 19,
@@ -11786,7 +11935,7 @@ const baseStyleDefs = ({
     borderColor: "rgba(190,180,162,0.24)",
     borderRadius: 18,
     borderWidth: 1,
-    color: "rgba(190,180,162,0.5)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifEn,
     fontSize: 9,
     letterSpacing: 1.8,
@@ -11848,7 +11997,7 @@ const baseStyleDefs = ({
     marginTop: 44
   },
   entryDetailRelatedLabel: {
-    color: "rgba(190,180,162,0.5)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 11,
     letterSpacing: 2.42
@@ -11877,7 +12026,7 @@ const baseStyleDefs = ({
     marginTop: 6
   },
   entryDetailFooter: {
-    color: "rgba(190,180,162,0.3)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifJa,
     fontSize: 11,
     fontWeight: "300",
@@ -11929,7 +12078,7 @@ const baseStyleDefs = ({
     marginTop: 13
   },
   niloDateLabel: {
-    color: "rgba(190,180,162,0.4)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifEn,
     fontSize: 10,
     letterSpacing: 2.4,
@@ -11960,7 +12109,7 @@ const baseStyleDefs = ({
     paddingTop: 4
   },
   niloClosingText: {
-    color: "rgba(190,180,162,0.5)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 12,
     letterSpacing: 0.96,
@@ -12052,7 +12201,7 @@ const baseStyleDefs = ({
     paddingVertical: 8
   },
   niloExitText: {
-    color: "rgba(190,180,162,0.4)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifJa,
     fontSize: 12,
     letterSpacing: 1.44
@@ -12152,7 +12301,7 @@ const baseStyleDefs = ({
     position: "relative"
   },
   tabText: {
-    color: "rgba(190,180,162,0.4)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifJa,
     fontSize: 13,
     letterSpacing: 1.04
@@ -12204,7 +12353,7 @@ const baseStyleDefs = ({
     marginTop: 9
   },
   modalSub: {
-    color: "rgba(190,180,162,0.45)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifEnMedium,
     fontSize: 11,
     letterSpacing: 3.7
@@ -12244,7 +12393,7 @@ const baseStyleDefs = ({
     lineHeight: 24
   },
   arcSettingBody: {
-    color: "rgba(190,180,162,0.45)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifJa,
     fontSize: 12,
     fontWeight: "300",
@@ -12268,9 +12417,6 @@ const baseStyleDefs = ({
     marginTop: -2
   },
   arcSwitch: {
-    alignItems: "center",
-    backgroundColor: "rgba(217,168,108,0.28)",
-    borderColor: "rgba(217,168,108,0.26)",
     borderRadius: 999,
     borderWidth: 1,
     height: 30,
@@ -12279,25 +12425,22 @@ const baseStyleDefs = ({
     width: 58
   },
   arcSwitchOn: {
-    backgroundColor: "rgba(221,180,111,0.48)",
     shadowColor: TOKENS.color.goldBright,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.42,
     shadowRadius: 14
   },
   arcSwitchKnob: {
-    alignSelf: "flex-start",
-    backgroundColor: "rgba(238,224,202,0.5)",
     borderRadius: 999,
     height: 22,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
     width: 22
   },
-  arcSwitchKnobOn: {
-    alignSelf: "flex-end",
-    backgroundColor: "#ffd08a"
-  },
   arcGroupLabel: {
-    color: "rgba(217,168,108,0.42)",
+    color: "rgba(217,168,108,0.66)",
     fontFamily: fontSerifJa,
     fontSize: 11,
     letterSpacing: 2.6,
@@ -12308,7 +12451,7 @@ const baseStyleDefs = ({
     marginTop: 44
   },
   arcSectionIndex: {
-    color: "rgba(217,168,108,0.5)",
+    color: "rgba(217,168,108,0.66)",
     fontFamily: fontSerifEnLight,
     fontSize: 15,
     letterSpacing: 1.6,
@@ -12341,7 +12484,7 @@ const baseStyleDefs = ({
     letterSpacing: 11
   },
   settingsVersion: {
-    color: "rgba(190,180,162,0.28)",
+    color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifEn,
     fontSize: 10,
     letterSpacing: 2.2,
@@ -12363,7 +12506,7 @@ const baseStyleDefs = ({
     paddingHorizontal: 18
   },
   settingTimeCaption: {
-    color: "rgba(190,180,162,0.5)",
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
     fontSize: 12,
     letterSpacing: 0.4,
@@ -12593,6 +12736,15 @@ const baseStyleDefs = ({
     marginTop: 16,
     textAlign: "center"
   },
+  chpForeshadow: {
+    color: "rgba(217,168,108,0.7)",
+    fontFamily: fontSerifJa,
+    fontSize: 12,
+    letterSpacing: 1.1,
+    lineHeight: 22,
+    marginBottom: 18,
+    textAlign: "center"
+  },
   chpThread: {
     alignItems: "flex-end",
     bottom: 0,
@@ -12799,6 +12951,10 @@ const baseStyleDefs = ({
     lineHeight: 24,
     paddingVertical: 18
   },
+  diaryBandFirstGlow: {
+    backgroundColor: "rgba(217,168,108,0.09)",
+    borderRadius: 16
+  },
   diaryBandRow: {
     alignItems: "center",
     borderBottomColor: "rgba(232,226,214,0.055)",
@@ -12947,7 +13103,7 @@ const baseStyleDefs = ({
     fontSize: 14
   },
   onboardConsentRowChevron: {
-    color: "rgba(246,239,228,0.42)",
+    color: "rgba(246,239,228,0.56)",
     fontSize: 18
   },
   onboardSovereignty: {
