@@ -56,7 +56,14 @@ const ja = {
     intro: "あなたのこれまでの記録から、Niloが探して差し出します。",
     placeholder: "記録に、たずねたいことを",
     error: "いまは応えられないようです。少し待って、もう一度どうぞ。",
-    close: "とじる"
+    close: "とじる",
+    summarize: "この対話を日記にまとめる",
+    summarizing: "日記にまとめています…",
+    summaryPreview: "日記の下書き",
+    summarySave: "日記に残す",
+    summaryDiscard: "やめる",
+    summarySaved: "日記に残しました。対話ログは日記の詳細から見返せます。",
+    summaryError: "いまは日記にまとめられないようです。もう一度どうぞ。"
   },
   tabs: { home: "ホーム", quests: "クエスト", journal: "日記", story: "章" },
   header: { openNotifications: "通知を開く", openSettings: "設定を開く" },
@@ -162,6 +169,9 @@ const ja = {
 
   home: {
     leadText: "今日もおつかれさま。",
+    leadTextMorning: "おはようございます。",
+    leadTextDaytime: "こんにちは。",
+    lifeChatPrompt: "たずねたいことが\nあれば、どうぞ。",
     defaultQuestion: "今日はどんな日\nだった？",
     firstRunProfileTitle: "プロフィールを完成させましょう",
     firstRunStartTitle: "Arcを始める準備",
@@ -669,7 +679,14 @@ const en = {
     intro: "Nilo will look through your records and offer what it finds.",
     placeholder: "Ask about your records",
     error: "Nilo can't answer right now. Please try again in a moment.",
-    close: "Close"
+    close: "Close",
+    summarize: "Turn this conversation into a diary entry",
+    summarizing: "Creating a diary entry…",
+    summaryPreview: "Diary draft",
+    summarySave: "Keep in diary",
+    summaryDiscard: "Discard",
+    summarySaved: "Saved to your diary. You can revisit the conversation in the diary details.",
+    summaryError: "Nilo can't create a diary entry right now. Please try again."
   },
   tabs: { home: "Home", quests: "Quests", journal: "Diary", story: "Chapters" },
   header: { openNotifications: "Open notifications", openSettings: "Open settings" },
@@ -775,6 +792,9 @@ const en = {
 
   home: {
     leadText: "Well done today.",
+    leadTextMorning: "Good morning.",
+    leadTextDaytime: "Good afternoon.",
+    lifeChatPrompt: "If anything comes to mind,\nfeel free to ask.",
     defaultQuestion: "What kind of day\ndid you have?",
     firstRunProfileTitle: "Let's finish your profile",
     firstRunStartTitle: "Getting ready to start Arc",
@@ -1274,7 +1294,14 @@ const fr = {
     intro: "Nilo cherchera dans vos enregistrements et vous offrira ce qu'il trouve.",
     placeholder: "Interrogez vos enregistrements",
     error: "Nilo ne peut pas répondre pour le moment. Réessayez dans un instant.",
-    close: "Fermer"
+    close: "Fermer",
+    summarize: "Transformer cet échange en journal",
+    summarizing: "Création du journal…",
+    summaryPreview: "Brouillon de journal",
+    summarySave: "Garder dans le journal",
+    summaryDiscard: "Annuler",
+    summarySaved: "Ajouté à votre journal. Vous pouvez relire l’échange dans le détail du journal.",
+    summaryError: "Nilo ne peut pas créer ce journal pour le moment. Réessayez."
   },
   tabs: { home: "Accueil", quests: "Quêtes", journal: "Journal", story: "Chapitres" },
   header: { openNotifications: "Ouvrir les notifications", openSettings: "Ouvrir les réglages" },
@@ -1380,6 +1407,9 @@ const fr = {
 
   home: {
     leadText: "Bon travail aujourd'hui.",
+    leadTextMorning: "Bonjour.",
+    leadTextDaytime: "Bonjour.",
+    lifeChatPrompt: "Si quelque chose vous vient,\ndemandez, tout simplement.",
     defaultQuestion: "Quel genre de journée\navez-vous vécu ?",
     firstRunProfileTitle: "Terminons votre profil",
     firstRunStartTitle: "Préparation du démarrage d'Arc",
@@ -1879,7 +1909,14 @@ const de = {
     intro: "Nilo sucht in deinen Aufzeichnungen und reicht dir, was es findet.",
     placeholder: "Frag deine Aufzeichnungen",
     error: "Nilo kann gerade nicht antworten. Versuche es gleich noch einmal.",
-    close: "Schließen"
+    close: "Schließen",
+    summarize: "Dieses Gespräch als Tagebucheintrag festhalten",
+    summarizing: "Tagebucheintrag wird erstellt…",
+    summaryPreview: "Tagebuchentwurf",
+    summarySave: "Im Tagebuch behalten",
+    summaryDiscard: "Verwerfen",
+    summarySaved: "Im Tagebuch gespeichert. Du kannst das Gespräch in den Tagebuchdetails nachlesen.",
+    summaryError: "Nilo kann gerade keinen Tagebucheintrag erstellen. Versuche es erneut."
   },
   tabs: { home: "Start", quests: "Quests", journal: "Tagebuch", story: "Kapitel" },
   header: { openNotifications: "Benachrichtigungen öffnen", openSettings: "Einstellungen öffnen" },
@@ -1985,6 +2022,9 @@ const de = {
 
   home: {
     leadText: "Gut gemacht heute.",
+    leadTextMorning: "Guten Morgen.",
+    leadTextDaytime: "Guten Tag.",
+    lifeChatPrompt: "Wenn dir etwas in den Sinn kommt,\nfrag einfach.",
     defaultQuestion: "Was für ein Tag\nwar es heute?",
     firstRunProfileTitle: "Lass uns dein Profil vervollständigen",
     firstRunStartTitle: "Vorbereitung auf den Start von Arc",
@@ -2484,7 +2524,14 @@ const zh = {
     intro: "Nilo 会在你过去的记录中寻找，并轻轻递给你。",
     placeholder: "向你的记录提问",
     error: "Nilo 现在无法回应。请稍后再试。",
-    close: "关闭"
+    close: "关闭",
+    summarize: "将这段对话整理成日记",
+    summarizing: "正在整理成日记…",
+    summaryPreview: "日记草稿",
+    summarySave: "保存到日记",
+    summaryDiscard: "放弃",
+    summarySaved: "已保存到日记。你可以在日记详情中回看这段对话。",
+    summaryError: "Nilo 现在无法整理成日记。请稍后再试。"
   },
   tabs: { home: "首页", quests: "探索", journal: "日记", story: "章节" },
   header: { openNotifications: "打开通知", openSettings: "打开设置" },
@@ -2590,6 +2637,9 @@ const zh = {
 
   home: {
     leadText: "今天也辛苦了。",
+    leadTextMorning: "早上好。",
+    leadTextDaytime: "下午好。",
+    lifeChatPrompt: "有想问的，\n随时问一问。",
     defaultQuestion: "今天是\n怎样的一天？",
     firstRunProfileTitle: "让我们完善个人资料吧",
     firstRunStartTitle: "准备开始使用Arc",
@@ -3089,7 +3139,14 @@ const ko = {
     intro: "Nilo가 지금까지의 기록에서 찾아 건네드립니다.",
     placeholder: "기록에게 물어보고 싶은 것을",
     error: "지금은 응답할 수 없어요. 잠시 후 다시 시도해 주세요.",
-    close: "닫기"
+    close: "닫기",
+    summarize: "이 대화를 일기로 정리하기",
+    summarizing: "일기로 정리하고 있어요…",
+    summaryPreview: "일기 초안",
+    summarySave: "일기에 남기기",
+    summaryDiscard: "그만두기",
+    summarySaved: "일기에 남겼어요. 일기 상세에서 이 대화를 다시 볼 수 있어요.",
+    summaryError: "지금은 일기로 정리할 수 없어요. 다시 시도해 주세요."
   },
   tabs: { home: "홈", quests: "퀘스트", journal: "일기", story: "챕터" },
   header: { openNotifications: "알림 열기", openSettings: "설정 열기" },
@@ -3195,6 +3252,9 @@ const ko = {
 
   home: {
     leadText: "오늘도 수고하셨습니다.",
+    leadTextMorning: "좋은 아침입니다.",
+    leadTextDaytime: "안녕하세요.",
+    lifeChatPrompt: "묻고 싶은 것이 있다면,\n언제든지요.",
     defaultQuestion: "오늘은 어떤\n하루였나요?",
     firstRunProfileTitle: "프로필을 완성해 볼까요",
     firstRunStartTitle: "Arc를 시작할 준비",
@@ -3712,7 +3772,14 @@ const es = mergeTranslation(en, {
     intro: "Nilo buscará entre tus registros y te ofrecerá lo que encuentre.",
     placeholder: "Pregunta sobre tus registros",
     error: "Nilo no puede responder ahora. Inténtalo de nuevo en un momento.",
-    close: "Cerrar"
+    close: "Cerrar",
+    summarize: "Convertir esta conversación en una entrada de diario",
+    summarizing: "Creando una entrada de diario…",
+    summaryPreview: "Borrador de diario",
+    summarySave: "Guardar en el diario",
+    summaryDiscard: "Descartar",
+    summarySaved: "Guardado en tu diario. Puedes volver a ver la conversación en los detalles del diario.",
+    summaryError: "Nilo no puede crear una entrada de diario ahora. Inténtalo de nuevo."
   },
   tabs: { home: "Inicio", quests: "Misiones", journal: "Diario", story: "Capítulos" },
   header: { openNotifications: "Abrir notificaciones", openSettings: "Abrir ajustes" },
@@ -3817,6 +3884,9 @@ const es = mergeTranslation(en, {
 
   home: {
     leadText: "Buen trabajo hoy.",
+    leadTextMorning: "Buenos días.",
+    leadTextDaytime: "Buenas tardes.",
+    lifeChatPrompt: "Si algo te viene a la mente,\npregunta cuando quieras.",
     defaultQuestion: "¿Qué clase de día\ntuviste?",
     firstRunProfileTitle: "Terminemos tu perfil",
     firstRunStartTitle: "Preparando Arc",

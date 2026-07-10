@@ -1876,6 +1876,42 @@ function AppContent() {
     });
   }
 
+  // 「たずねる」の生ログは残さない。ユーザーが明示して残すのは、
+  // 対話から作った短い日記要約だけにする。
+  async function summarizeLifeChat(sessionMessages) {
+    return await invokeNilo("life-chat-summary", {
+      language: lang,
+      messages: sessionMessages.slice(-12).map((message) => ({
+        role: message.role === "user" ? "user" : "nilo",
+        text: String(message.text || "").slice(0, 300)
+      }))
+    });
+  }
+
+  function saveLifeChatSummary(summary, sessionMessages) {
+    const savedLines = Array.isArray(summary?.summaryLines) && summary.summaryLines.length
+      ? summary.summaryLines.slice(0, 5)
+      : [t("ritual.defaultSummaryLine")];
+    const entryDateKey = getJournalDateKey();
+    setJournal((items) => [{
+      id: createId("journal"),
+      dateKey: entryDateKey,
+      dateLabel: formatDotDate(entryDateKey),
+      title: String(summary?.title || t("ritual.defaultTitle")).slice(0, 32),
+      lines: savedLines,
+      event: savedLines[0] || "",
+      meaning: String(summary?.niloLine || savedLines[savedLines.length - 1] || "").slice(0, 90),
+      source: "life-chat-summary",
+      // 明示保存したときだけ、日記詳細で読み返せる対話ログも残す。
+      dialogue: sessionMessages.map((message) => ({
+        role: message.role === "user" ? "user" : "nilo",
+        text: String(message.text || "").slice(0, 300)
+      })),
+      niloLine: String(summary?.niloLine || "").slice(0, 56),
+      messages: []
+    }, ...items]);
+  }
+
   const pageViews = [
     {
       id: "home",
@@ -2643,7 +2679,9 @@ function AppContent() {
           {!ritualLocked && !sealActive && (
             <NightRitualButton
               enabled={reflectionInputEnabled}
-              visible={activeTab === "home" && homePromptVisible && !sealActive}
+              // 「たずねる」が出ている間は(無効状態でも)儀式ボタンを出さない —
+              // 相互排他(創業者指示 2026-07-10)をホームの見た目にも揃える。
+              visible={activeTab === "home" && homePromptVisible && !sealActive && !lifeChatAvailable}
               streakDays={journalStreakDays}
               onPress={beginReflectionInput}
             />
@@ -2695,6 +2733,8 @@ function AppContent() {
           visible={lifeChatOpen}
           onClose={() => setLifeChatOpen(false)}
           onSend={sendLifeChatMessage}
+          onSummarize={summarizeLifeChat}
+          onSaveSummary={saveLifeChatSummary}
           answerLimit={getRitualAnswerLimit(lang)}
         />
 
@@ -4063,10 +4103,15 @@ function HomeScreen({
   const needsProfile = !profile.name?.trim() || !profile.birthdate?.trim();
   const showFirstRun = !authLoading && (!session || needsProfile);
   const compact = keyboardVisible;
+  const leadHour = new Date().getHours();
   const liftedY = inputLocked ? 0 : screenHeight < 720 ? -118 : screenHeight < 820 ? -140 : -164;
-  const displayQuestion = reflectionQuestion === getFirstRecordQuestion(lang)
-    ? t("home.defaultQuestion")
-    : reflectionQuestion;
+  // 「たずねる」が出ている間は儀式の問いではなく、静かな誘いの一行に差し替える
+  // (創業者指示 2026-07-11)。問いの描画(開花アニメーション)はそのまま使う。
+  const displayQuestion = lifeChatVisible
+    ? t("home.lifeChatPrompt")
+    : reflectionQuestion === getFirstRecordQuestion(lang)
+      ? t("home.defaultQuestion")
+      : reflectionQuestion;
 
   useEffect(() => {
     Animated.timing(questionLift, {
@@ -4127,7 +4172,9 @@ function HomeScreen({
       >
         {!answerPreview && (
           <Animated.Text style={[styles.homeLeadText, questionTransitioning && styles.homeLeadTextDimmed]}>
-            {t("home.leadText")}
+            {/* 挨拶は時間帯に合わせる(創業者指摘 2026-07-11: 真昼の「おつかれさま」は不自然)。
+                夕方〜深夜(17時〜翌5時)は従来どおり「今日もおつかれさま。」 */}
+            {t(leadHour >= 17 || leadHour < 5 ? "home.leadText" : leadHour < 12 ? "home.leadTextMorning" : "home.leadTextDaytime")}
           </Animated.Text>
         )}
         <View pointerEvents="none" style={[styles.homeQuestionFrame, compact && styles.homeQuestionFrameCompact]}>
@@ -4483,7 +4530,7 @@ function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLa
     <Animated.View style={[styles.niloScreen, { opacity: fade }]}>
       <BackgroundTexture />
       <OuterGradient />
-      <View style={styles.scrim} />
+      <View style={styles.niloScreenScrim} />
       <NightGrain />
       <FloatingOrbs />
       <View style={styles.niloScreenSafe}>
@@ -4602,13 +4649,15 @@ function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLa
 // Niloは司書: 本人の記録から引いて差し出すだけで、導かない・評価しない。
 // セッションはこのコンポーネントのstateにのみ存在し、閉じたら破棄される
 // (AsyncStorageにもcollectSyncedStateにも入れない = 履歴を残さない構造保証)。
-function LifeChatScreen({ visible, onClose, onSend, answerLimit }) {
+function LifeChatScreen({ visible, onClose, onSend, onSummarize, onSaveSummary, answerLimit }) {
   const t = useT();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [support, setSupport] = useState(false);
+  const [summary, setSummary] = useState(null);
+  const [summaryBusy, setSummaryBusy] = useState(false);
   const scrollRef = useRef(null);
 
   useEffect(() => {
@@ -4618,6 +4667,8 @@ function LifeChatScreen({ visible, onClose, onSend, answerLimit }) {
       setBusy(false);
       setNotice("");
       setSupport(false);
+      setSummary(null);
+      setSummaryBusy(false);
     }
   }, [visible]);
 
@@ -4644,6 +4695,36 @@ function LifeChatScreen({ visible, onClose, onSend, answerLimit }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function handleSummarize() {
+    if (!messages.some((message) => message.role === "user") || busy || summaryBusy) return;
+    setNotice("");
+    setSummaryBusy(true);
+    try {
+      const result = await onSummarize(messages);
+      const summaryLines = Array.isArray(result?.summaryLines)
+        ? result.summaryLines.map((line) => String(line || "").trim()).filter(Boolean).slice(0, 5)
+        : [];
+      if (!summaryLines.length) throw new Error("No summary");
+      setSummary({
+        title: String(result?.title || t("ritual.defaultTitle")).trim(),
+        summaryLines,
+        niloLine: String(result?.niloLine || "").trim()
+      });
+    } catch {
+      setNotice(t("lifeChat.summaryError"));
+    } finally {
+      setSummaryBusy(false);
+    }
+  }
+
+  function handleSaveSummary() {
+    if (!summary) return;
+    onSaveSummary(summary, messages);
+    setSummary(null);
+    setMessages([]);
+    setNotice(t("lifeChat.summarySaved"));
   }
 
   return (
@@ -4676,6 +4757,34 @@ function LifeChatScreen({ visible, onClose, onSend, answerLimit }) {
                 <Text style={message.role === "user" ? styles.lifeChatUserText : styles.lifeChatNiloText}>{message.text}</Text>
               </View>
             ))}
+            {messages.length > 0 && !summary && (
+              <Pressable
+                onPress={handleSummarize}
+                disabled={busy || summaryBusy}
+                accessibilityRole="button"
+                accessibilityLabel={t("lifeChat.summarize")}
+                accessibilityState={{ disabled: busy || summaryBusy }}
+                style={({ pressed }) => [styles.lifeChatSummaryButton, (busy || summaryBusy) && styles.lifeChatSummaryButtonDisabled, pressed && styles.touchPressedSubtle]}
+              >
+                <Text style={styles.lifeChatSummaryButtonText}>{summaryBusy ? t("lifeChat.summarizing") : t("lifeChat.summarize")}</Text>
+              </Pressable>
+            )}
+            {summary && (
+              <View style={styles.lifeChatSummaryCard}>
+                <Text style={styles.lifeChatSummaryEyebrow}>{t("lifeChat.summaryPreview")}</Text>
+                <Text style={styles.lifeChatSummaryTitle}>{summary.title}</Text>
+                {summary.summaryLines.map((line, index) => <Text key={`${index}-${line}`} style={styles.lifeChatSummaryLine}>{line}</Text>)}
+                {!!summary.niloLine && <Text style={styles.lifeChatSummaryNote}>{summary.niloLine}</Text>}
+                <View style={styles.lifeChatSummaryActions}>
+                  <Pressable onPress={() => setSummary(null)} accessibilityRole="button" accessibilityLabel={t("lifeChat.summaryDiscard")} style={({ pressed }) => [styles.lifeChatSummaryDiscard, pressed && styles.touchPressedSubtle]}>
+                    <Text style={styles.lifeChatSummaryDiscardText}>{t("lifeChat.summaryDiscard")}</Text>
+                  </Pressable>
+                  <Pressable onPress={handleSaveSummary} accessibilityRole="button" accessibilityLabel={t("lifeChat.summarySave")} style={({ pressed }) => [styles.lifeChatSummarySave, pressed && styles.touchPressedTight]}>
+                    <Text style={styles.lifeChatSummarySaveText}>{t("lifeChat.summarySave")}</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
             {busy && <NiloThinkingIndicator />}
           </ScrollView>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.lifeChatComposer}>
@@ -4692,7 +4801,7 @@ function LifeChatScreen({ visible, onClose, onSend, answerLimit }) {
                 accessibilityLabel={t("lifeChat.placeholder")}
                 style={styles.lifeChatInput}
                 multiline
-                editable={!busy}
+                editable={!busy && !summary}
                 selectionColor="#F2C88E"
                 cursorColor="#F2C88E"
                 returnKeyType="send"
@@ -4701,13 +4810,13 @@ function LifeChatScreen({ visible, onClose, onSend, answerLimit }) {
               />
               <Pressable
                 onPress={handleSend}
-                disabled={!input.trim() || busy}
+                disabled={!input.trim() || busy || !!summary}
                 accessibilityRole="button"
                 accessibilityLabel={t("ritual.send")}
-                accessibilityState={{ disabled: !input.trim() || busy }}
+                accessibilityState={{ disabled: !input.trim() || busy || !!summary }}
                 style={({ pressed }) => [
                   styles.lifeChatSendButton,
-                  (!input.trim() || busy) && styles.lifeChatSendButtonDisabled,
+                  (!input.trim() || busy || !!summary) && styles.lifeChatSendButtonDisabled,
                   pressed && styles.touchPressedTight
                 ]}
               >
@@ -11067,7 +11176,7 @@ const baseStyleDefs = ({
   backgroundTexture: {
     ...StyleSheet.absoluteFillObject,
     height: "100%",
-    opacity: 0.1,
+    opacity: 1,
     width: "100%"
   },
   scrim: {
@@ -12458,6 +12567,10 @@ const baseStyleDefs = ({
     elevation: 50,
     zIndex: 50
   },
+  niloScreenScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(8,6,4,0.36)"
+  },
   niloScreenSafe: {
     flex: 1
   },
@@ -13704,7 +13817,9 @@ const baseStyleDefs = ({
     borderColor: "rgba(217,168,108,0.35)",
     borderRadius: 999,
     borderWidth: 1,
-    bottom: 24,
+    // タブバー(bottom:0, height:90)と重ならないよう、儀式ボタンの定位置
+    // (composerAvoider bottom:92)と同じ高さに置く。
+    bottom: 92,
     justifyContent: "center",
     minHeight: 40,
     paddingHorizontal: 26,
@@ -13827,6 +13942,86 @@ const baseStyleDefs = ({
     color: TOKENS.color.onGold,
     fontFamily: fontUi,
     fontSize: 16,
+    fontWeight: "600"
+  },
+  lifeChatSummaryButton: {
+    alignSelf: "center",
+    borderColor: "rgba(217,168,108,0.4)",
+    borderRadius: 999,
+    borderWidth: 1,
+    minHeight: 44,
+    paddingHorizontal: 18,
+    paddingVertical: 10
+  },
+  lifeChatSummaryButtonDisabled: {
+    opacity: 0.45
+  },
+  lifeChatSummaryButtonText: {
+    color: "rgba(233,196,124,0.92)",
+    fontFamily: fontUi,
+    fontSize: 12,
+    letterSpacing: 0.8
+  },
+  lifeChatSummaryCard: {
+    backgroundColor: "rgba(217,168,108,0.1)",
+    borderColor: "rgba(217,168,108,0.3)",
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 8,
+    padding: 16
+  },
+  lifeChatSummaryEyebrow: {
+    color: "rgba(233,196,124,0.72)",
+    fontFamily: fontUi,
+    fontSize: 10,
+    letterSpacing: 1.3
+  },
+  lifeChatSummaryTitle: {
+    color: TOKENS.color.ink,
+    fontFamily: fontSerifJa,
+    fontSize: 18
+  },
+  lifeChatSummaryLine: {
+    color: "rgba(238,226,205,0.9)",
+    fontFamily: fontSerifJa,
+    fontSize: 14,
+    lineHeight: 22
+  },
+  lifeChatSummaryNote: {
+    color: "rgba(190,180,162,0.82)",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: 2
+  },
+  lifeChatSummaryActions: {
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "flex-end",
+    marginTop: 6
+  },
+  lifeChatSummaryDiscard: {
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: 10
+  },
+  lifeChatSummaryDiscardText: {
+    color: "rgba(190,180,162,0.82)",
+    fontFamily: fontUi,
+    fontSize: 12
+  },
+  lifeChatSummarySave: {
+    alignItems: "center",
+    backgroundColor: "rgba(217,168,108,0.95)",
+    borderRadius: 999,
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: 16
+  },
+  lifeChatSummarySaveText: {
+    color: TOKENS.color.onGold,
+    fontFamily: fontUi,
+    fontSize: 12,
     fontWeight: "600"
   },
   devRitualToggle: {
