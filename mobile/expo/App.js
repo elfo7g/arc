@@ -20,7 +20,7 @@ import {
   useWindowDimensions,
   View
 } from "react-native";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
@@ -166,6 +166,9 @@ const QUEST_FIRST_PROPOSAL_MIN_MEMORIES = 5; // 最初の探求提案（2〜3週
 const NILO_FIRST_LETTER_MIN_NIGHTS = 3;      // Niloの最初の手紙（3〜7夜目）
 const NILO_FIRST_LETTER_MAX_NIGHTS = 10;     // これを過ぎた既存ユーザーには送らない
 const ECHO_FALLBACK_MIN_DAYS = 21;           // 初年の「◯週間前の今夜」に必要な最小距離
+const LIFE_CHAT_MIN_MEMORIES = 5;            // 「たずねる」入口が現れる最小の記録数（空っぽの部屋対策）
+const RITUAL_ACK_DISPLAY_MS = 2600;          // 相槌を単独で映す時間。消えてから次の問いへ移る
+const RITUAL_ENTER_BLACK_HOLD_MS = 700;      // 儀式入場で黒を保つ時間。キーボード上昇と入力欄の配置を黒の下で終わらせる
 const FIRST_BAND_SEEN_KEY = "arc.firstMonthBandSeen.v1";
 const DEV_MODE = true;
 // 初回起動フロー（Onboarding Spec v1.0）をDEV_MODEでも通しで確認したいときだけ true。
@@ -697,8 +700,8 @@ const demoChapters = [
   {
     id: "demo-chapter-recovery",
     title: "静かな回復",
-    ordinal: "第二章",
-    period: "2023 — いま",
+    ordinal: "第四章",
+    period: "2025 — いま",
     summary: "波が引くように、痛みが遠ざかる。",
     current: true,
     tint: "rgba(214,168,106,0.16)",
@@ -726,7 +729,63 @@ const demoChapters = [
     ],
     figures: ["母", "川沿いの道", "実家の台所"],
     niloLetter: "この章のあなたは、急がなくなりましたね。遠くを見る代わりに、足元の言葉が増えました。それは戻ることではなく、深くなることだと、私は思っています。",
-    stats: { records: "34の記録", span: "1年と6ヶ月", emotion: "中心にあった感情 ・ 安心" }
+    stats: { records: "34の記録", span: "8ヶ月", emotion: "中心にあった感情 ・ 安心" }
+  },
+  {
+    id: "demo-chapter-desk-sky",
+    title: "机と空",
+    ordinal: "第三章",
+    period: "2024 — 2025",
+    summary: "夢が、日付のある言葉になった。",
+    tint: "rgba(168,152,196,0.13)",
+    recordCount: 47,
+    excerpts: [
+      { date: "2025年2月", text: "空港へ行く用事はないのに、展望デッキまで行った。" },
+      { date: "2024年9月", text: "過去問を開いた。まだ半分もわからない。でも、開いた。" },
+      { date: "2024年4月", text: "この夢を、はじめてちゃんと言葉にした日。" }
+    ],
+    wish: {
+      theme: "航空大学校に合格する",
+      line: "願いが、机の上の毎日に変わった章。"
+    },
+    words: [
+      { text: "過去問", weight: 3 },
+      { text: "空", weight: 2 },
+      { text: "朝", weight: 2 },
+      { text: "数学", weight: 2 },
+      { text: "すこしずつ", weight: 1 }
+    ],
+    figures: ["展望デッキ", "過去問のページ"],
+    niloLetter: "憧れと呼んでいたものが、この章では日付を持ちはじめました。空を見上げる言葉より、机に向かった言葉のほうが多くなっています。",
+    stats: { records: "47の記録", span: "1年", emotion: "中心にあった感情 ・ 集中" }
+  },
+  {
+    id: "demo-chapter-words-return",
+    title: "言葉を取り戻す",
+    ordinal: "第二章",
+    period: "2023 — 2024",
+    summary: "短い一行から、夜がまた始まった。",
+    tint: "rgba(126,160,144,0.14)",
+    recordCount: 41,
+    excerpts: [
+      { date: "2024年3月", text: "読み返したら、去年より言葉がやわらかくなっていた。" },
+      { date: "2024年1月", text: "夜に机へ向かうのが、少しずつ普通になってきた。" },
+      { date: "2023年10月", text: "三行だけ書いた。それでも、書いたことに変わりはない。" }
+    ],
+    reunion: {
+      fromLabel: "第一章 ・ 遠回りの年",
+      quote: "書くことだけはやめていない。"
+    },
+    words: [
+      { text: "夜", weight: 2 },
+      { text: "机", weight: 3 },
+      { text: "三行", weight: 1 },
+      { text: "また", weight: 2 },
+      { text: "やわらかい", weight: 1 }
+    ],
+    figures: ["夜の机", "古いノート"],
+    niloLetter: "この章で、あなたの言葉は数を取り戻しました。長く書いた日よりも、短くても続いた日のほうが多い。それがこの章の形です。",
+    stats: { records: "41の記録", span: "1年", emotion: "中心にあった感情 ・ 静けさ" }
   },
   {
     id: "demo-chapter-detour",
@@ -742,7 +801,7 @@ const demoChapters = [
       { date: "2021年9月", text: "全部を疑った日。それでも朝は来た。" }
     ],
     reunion: {
-      fromLabel: "第二章 ・ 静かな回復",
+      fromLabel: "第四章 ・ 静かな回復",
       quote: "あの遠回りがなければ、この静けさに気づけなかった。"
     },
     words: [
@@ -881,6 +940,8 @@ function AppContent() {
   const [questionTransitioning, setQuestionTransitioning] = useState(false);
   const [answerPreview, setAnswerPreview] = useState(null);
   const [questionCount, setQuestionCount] = useState(1);
+  // 意味を受け取れない回答を送ったときだけ一瞬灯る、Niloの声ではないシステム表示（創業者決定 2026-07-10）。
+  const [ritualNotice, setRitualNotice] = useState("");
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [session, setSession] = useState(() => DEV_MODE ? DEV_SESSION : null);
@@ -900,6 +961,7 @@ function AppContent() {
   const [journal, setJournal] = useState([]);
   const [memories, setMemories] = useState([]);
   const [chapters, setChapters] = useState([]);
+  const [lifeChatOpen, setLifeChatOpen] = useState(false);
   const [chaptersBusy, setChaptersBusy] = useState(false);
   const [chapterProposals, setChapterProposals] = useState([]);
   // 章の「あの日の自分へ」— one note per chapter id, kept across sessions.
@@ -924,6 +986,9 @@ function AppContent() {
   // 初回起動フロー（Onboarding Spec v1.0）。完了フラグは保存データに含め、
   // 再インストール・別デバイスでもリモート復元後に再表示されないようにする。
   const [onboardingComplete, setOnboardingComplete] = useState(() => DEV_MODE && !DEV_SHOW_ONBOARDING);
+  // DEV専用: 儀式/たずねるの強制切替(創業者指示 2026-07-11)。
+  // null=自動(本番と同一の判定) / "ritual"=儀式の扉を強制的に開く / "lifeChat"=「たずねる」を強制表示。
+  const [devRitualForce, setDevRitualForce] = useState(null);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [firstRecordPending, setFirstRecordPending] = useState(false);
   // はじめての記録の封時だけ、鍵アイコンと暗号化の一文を灯す。
@@ -978,6 +1043,7 @@ function AppContent() {
 
   const lang = normalizeLanguageCode(settings.language);
   const t = (key, ...args) => translate(lang, key, ...args);
+  const insets = useSafeAreaInsets();
   const tabs = getTabs(lang);
   const bgmTracks = getBgmTracks(lang);
   const reflectionQuestions = getReflectionQuestions(lang);
@@ -992,7 +1058,23 @@ function AppContent() {
   const ritualSettings = settings.ritual || {};
   const ritualQuestionTarget = Math.max(1, Math.min(maxReflectionQuestions, Number(ritualSettings.questionCount) || maxReflectionQuestions));
   const ritualAvailable = !journalRecordedThisPeriod;
-  const reflectionInputEnabled = ritualLocked || ritualAvailable || DEV_MODE;
+  // 儀式の扉は「未記録 かつ 20:00〜27:00(設定のwindow)」のときだけ開く(創業者決定
+  // 2026-07-11)。例外は初回の「はじめての記録」だけ — オンボーディングは時間を選ばない。
+  // DEV_MODEにも扉の例外を与えない: 「たずねる」との相互排他を本番と同じ条件で確認するため
+  // (創業者決定 2026-07-11。時間外に儀式を試したいときは設定のwindowを一時変更する)。
+  // → 追記 2026-07-11(創業者指示): DEV専用の明示トグル(devRitualForce)を追加。
+  //   自動(null)のときの判定は本番と同一のまま。トグルを立てたときだけ上書きする。
+  const devRitualForceActive = DEV_MODE ? devRitualForce : null;
+  const ritualDoorOpen = devRitualForceActive
+    ? devRitualForceActive === "ritual"
+    : ritualAvailable && (isRitualWindow(new Date(), ritualSettings) || journal.length === 0);
+  const reflectionInputEnabled = ritualLocked || ritualDoorOpen;
+  // 「たずねる」は儀式と共存しない: 扉が開いている間と儀式中は出さない。
+  // 記録が育つ前(5件未満)は入口自体を出さない。
+  const lifeChatAvailable = devRitualForceActive
+    ? devRitualForceActive === "lifeChat" && !ritualLocked
+    : memories.length >= LIFE_CHAT_MIN_MEMORIES
+      && !ritualDoorOpen && !ritualLocked;
   const composerPrompt = journalRecordedThisPeriod
     ? t(`ritual.reflectionDonePrompts.${reflectionFrequency}`)
     : t("ritual.answerShortPrompt");
@@ -1019,8 +1101,12 @@ function AppContent() {
   const ritualBlackout = useRef(new Animated.Value(0)).current;
   const unlockNoticeTimer = useRef(null);
   const sealTimer = useRef(null);
+  const ritualNoticeTimer = useRef(null);
+  const acknowledgmentTimer = useRef(null);
   const composerInputRef = useRef(null);
   const ritualLockedRef = useRef(false);
+  const exitConfirmOpenRef = useRef(false);
+  const exitConfirmPendingRef = useRef(false);
   const ritualFocusTimers = useRef([]);
   const ritualRunIdRef = useRef(0);
   const didShowInitialHomePrompt = useRef(false);
@@ -1050,6 +1136,8 @@ function AppContent() {
   function exitNightRitual() {
     ritualRunIdRef.current += 1;
     ritualLockedRef.current = false;
+    exitConfirmOpenRef.current = false;
+    exitConfirmPendingRef.current = false;
     ritualFocusTimers.current.forEach(clearTimeout);
     ritualFocusTimers.current = [];
     if (sealTimer.current) clearTimeout(sealTimer.current);
@@ -1074,7 +1162,7 @@ function AppContent() {
   // as before — the only change is that arriving at black is now a short fade
   // rather than an instant cut, so both entering and leaving read as a smooth
   // cross-dissolve instead of a hard jump.
-  function dipToBlack(onBlack) {
+  function dipToBlack(onBlack, holdMs = 120) {
     ritualBlackout.stopAnimation();
     Animated.timing(ritualBlackout, {
       toValue: 1,
@@ -1085,7 +1173,7 @@ function AppContent() {
       if (!finished) return;
       onBlack?.();
       Animated.sequence([
-        Animated.delay(120),
+        Animated.delay(holdMs),
         Animated.timing(ritualBlackout, {
           toValue: 0,
           duration: 640,
@@ -1099,6 +1187,8 @@ function AppContent() {
   // Same blackout-then-fade the ritual opens with, played in reverse on the
   // way out — so leaving reads as deliberately as arriving did.
   function exitNightRitualWithBlackout() {
+    exitConfirmOpenRef.current = true;
+    exitConfirmPendingRef.current = false;
     dipToBlack(exitNightRitual);
   }
 
@@ -1107,7 +1197,14 @@ function AppContent() {
       exitNightRitualWithBlackout();
       return;
     }
-    setExitConfirmOpen(true);
+    exitConfirmOpenRef.current = true;
+    if (!keyboardVisible) {
+      setExitConfirmOpen(true);
+      return;
+    }
+    // iOSではキーボードが完全に閉じてから確認を出し、位置が途中で動かないようにする。
+    exitConfirmPendingRef.current = true;
+    Keyboard.dismiss();
   }
 
   function confirmExitNightRitual() {
@@ -1115,6 +1212,8 @@ function AppContent() {
   }
 
   function cancelExitNightRitual() {
+    exitConfirmOpenRef.current = false;
+    exitConfirmPendingRef.current = false;
     setExitConfirmOpen(false);
     keepRitualInputFocused();
   }
@@ -1140,6 +1239,7 @@ function AppContent() {
     ritualFocusTimers.current = [];
     if (unlockNoticeTimer.current) clearTimeout(unlockNoticeTimer.current);
     if (sealTimer.current) clearTimeout(sealTimer.current);
+    if (ritualNoticeTimer.current) clearTimeout(ritualNoticeTimer.current);
   }, []);
 
   useEffect(() => {
@@ -1369,15 +1469,25 @@ function AppContent() {
       syncKeyboardMotion(event);
       setKeyboardVisible(true);
     });
+    const revealExitConfirmation = () => {
+      if (!exitConfirmPendingRef.current) return;
+      exitConfirmPendingRef.current = false;
+      requestAnimationFrame(() => setExitConfirmOpen(true));
+    };
     const hideSub = Keyboard.addListener(hideEvent, (event) => {
       syncKeyboardMotion(event);
-      if (ritualLockedRef.current) keepRitualInputFocused();
+      if (ritualLockedRef.current && !exitConfirmOpenRef.current) keepRitualInputFocused();
       setKeyboardVisible(false);
+      if (Platform.OS !== "ios") revealExitConfirmation();
     });
+    const hideCompleteSub = Platform.OS === "ios"
+      ? Keyboard.addListener("keyboardDidHide", revealExitConfirmation)
+      : null;
 
     return () => {
       showSub.remove();
       hideSub.remove();
+      hideCompleteSub?.remove();
     };
   }, []);
 
@@ -1695,8 +1805,11 @@ function AppContent() {
 
   function beginReflectionInput() {
     if (!reflectionInputEnabled || isSending) return;
+    setLifeChatOpen(false); // 儀式が主役。開いていた「たずねる」は静かに閉じる
     playUiSound();
     setSupportVisible(false);
+    // 黒を長めに保つ: フォーカス→キーボード上昇→入力欄のせり上がりを
+    // すべて黒の下で終わらせ、完全に組み上がった対話画面へ明ける(創業者指摘 2026-07-11)。
     dipToBlack(() => {
       setActiveTab("home");
       setRitualLocked(true);
@@ -1705,6 +1818,61 @@ function AppContent() {
       ritualLockedRef.current = true;
       ritualRunIdRef.current += 1;
       keepRitualInputFocused();
+    }, RITUAL_ENTER_BLACK_HOLD_MS);
+  }
+
+  // 「たずねる」と夜の儀式は共存させない(創業者指示 2026-07-10)。儀式が始まったら
+  // 閉じ、開いたまま儀式時間帯に入った場合も(その日の儀式が未了なら)静かに閉じる。
+  useEffect(() => {
+    if (!lifeChatOpen) return;
+    if (ritualLocked || sealActive) {
+      setLifeChatOpen(false);
+      return;
+    }
+    // DEVトグルで「たずねる」を強制中は時間帯による自動クローズもしない。
+    if (devRitualForceActive === "lifeChat") return;
+    const timer = setInterval(() => {
+      if (!journalRecordedThisPeriod && isRitualWindow(new Date(), settings.ritual || {})) {
+        setLifeChatOpen(false);
+      }
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [lifeChatOpen, ritualLocked, sealActive, journalRecordedThisPeriod, settings.ritual, devRitualForceActive]);
+
+  function openLifeChat() {
+    if (ritualLocked || sealActive || isSending) return;
+    if (devRitualForceActive !== "lifeChat") {
+      // 判定は押した瞬間に取り直す(描画時の値は儀式時間帯をまたいで古くなりうる)。
+      if (devRitualForceActive === "ritual") return;
+      const doorOpenNow = !journalRecordedThisPeriod
+        && (isRitualWindow(new Date(), ritualSettings) || journal.length === 0);
+      if (doorOpenNow || memories.length < LIFE_CHAT_MIN_MEMORIES) return;
+    }
+    playUiSound();
+    setLifeChatOpen(true);
+  }
+
+  // 「たずねる」の送信。セッションのメッセージは呼び出し元(LifeChatScreen)の
+  // stateにのみ存在し、ここでは保存しない。送るのは抜粋のみ(§4.5 / G3):
+  // memory抜粋と章メタは既存route(quest-proposals / chapter-seal)と同カテゴリ。
+  async function sendLifeChatMessage(sessionMessages) {
+    return await invokeNilo("life-chat", {
+      language: lang,
+      messages: sessionMessages.slice(-12).map((message) => ({
+        role: message.role === "user" ? "user" : "nilo",
+        text: String(message.text || "").slice(0, 300)
+      })),
+      memories: memories.slice(0, 120).map((memory) => ({
+        dateKey: memory.dateKey,
+        essence: memory.essence,
+        keptPhrase: memory.keptPhrase,
+        moodLabel: memory.moodLabel
+      })),
+      chapters: chapters.slice(0, 12).map((chapter) => ({
+        title: chapter.title,
+        period: chapter.period,
+        observation: chapter.observation
+      }))
     });
   }
 
@@ -1731,6 +1899,8 @@ function AppContent() {
           sealed={sealActive}
           screenHeight={height}
           onBeginInput={beginReflectionInput}
+          lifeChatVisible={lifeChatAvailable && !sealActive}
+          onOpenLifeChat={openLifeChat}
         />
       )
     },
@@ -1790,6 +1960,7 @@ function AppContent() {
     // つらさが続く兆しを端末内で見て、あれば相談導線を灯す(§03)。一度灯したら消さない。
     if (!supportVisible && detectPersistentDistress(nextMessages)) setSupportVisible(true);
     setAnswerPreview({ id: createId("answer"), text });
+    setRitualNotice("");
     setInput("");
     setRitualLocked(true);
     setInputMode(true);
@@ -1801,6 +1972,7 @@ function AppContent() {
 
     try {
       const result = await invokeNilo("night-ritual", {
+        language: lang,
         messages: nextMessages,
         questionCount,
         forceFinish: questionCount >= ritualQuestionTarget,
@@ -1823,6 +1995,12 @@ function AppContent() {
           }))
       });
       if (activeRitualRunId !== ritualRunIdRef.current || !ritualLockedRef.current) return;
+      // 意味を受け取れない回答: 対話には何も足さず、回答をログに残さず差し戻して
+      // 同じ問いのまま書き直させる。短いシステム表示だけを一瞬灯す（創業者決定 2026-07-10）。
+      if (result.unintelligible) {
+        applyUnintelligibleAnswer(text, ritualMessages);
+        return;
+      }
       applyNightResult(result, nextMessages);
     } catch {
       if (activeRitualRunId !== ritualRunIdRef.current || !ritualLockedRef.current) return;
@@ -1902,12 +2080,39 @@ function AppContent() {
     }
 
     const nextQuestion = result.nextQuestion || createLocalFollowUpQuestion(messages);
+    const acknowledgment = String(result.acknowledgment || "").trim();
     setQuestionCount((value) => Math.min(ritualQuestionTarget, value + 1));
+    // 対話ログに残すのは問いだけ。相槌は画面上の一拍であって、記録の一部ではない。
     setRitualMessages([
       ...messages,
       { role: "nilo", text: nextQuestion }
     ]);
+    if (acknowledgment) {
+      // 相槌はまず単独で一定時間映し、消えてから次の問いへ移る(創業者指示 2026-07-11)。
+      showReflectionQuestion(acknowledgment);
+      if (acknowledgmentTimer.current) clearTimeout(acknowledgmentTimer.current);
+      const activeRunId = ritualRunIdRef.current;
+      acknowledgmentTimer.current = setTimeout(() => {
+        if (activeRunId !== ritualRunIdRef.current || !ritualLockedRef.current) return;
+        showReflectionQuestion(nextQuestion);
+        requestAnimationFrame(() => composerInputRef.current?.focus());
+      }, RITUAL_ACK_DISPLAY_MS);
+      return;
+    }
     showReflectionQuestion(nextQuestion);
+    requestAnimationFrame(() => composerInputRef.current?.focus());
+  }
+
+  // 意味を受け取れない回答の差し戻し。回答は対話ログに入れず（revertMessages に戻す）、
+  // questionCount も進めない。入力欄に元の文字を戻して同じ問いのまま書き直せるようにし、
+  // Niloの声ではない短いシステム表示だけを一瞬灯す。
+  function applyUnintelligibleAnswer(text, revertMessages) {
+    setRitualMessages(revertMessages);
+    setAnswerPreview(null);
+    setInput(text);
+    setRitualNotice(t("ritual.unintelligibleNotice"));
+    if (ritualNoticeTimer.current) clearTimeout(ritualNoticeTimer.current);
+    ritualNoticeTimer.current = setTimeout(() => setRitualNotice(""), 2600);
     requestAnimationFrame(() => composerInputRef.current?.focus());
   }
 
@@ -2027,6 +2232,7 @@ function AppContent() {
     setChaptersBusy(true);
     try {
       const result = await invokeNilo("chapters", {
+        language: lang,
         split: Boolean(splitFrom),
         memories: source.map((memory) => ({
           id: memory.id,
@@ -2139,6 +2345,7 @@ function AppContent() {
     questScanRef.current = true;
     try {
       const result = await invokeNilo("quest-proposals", {
+        language: lang,
         memories: memories.slice(0, 120).map((memory) => ({
           dateKey: memory.dateKey,
           essence: memory.essence,
@@ -2395,6 +2602,25 @@ function AppContent() {
           }}
         />
 
+        {/* DEV専用: 儀式/たずねる強制切替トグル(創業者指示 2026-07-11)。
+            絶対配置なのでSafeAreaのpaddingは効かない → insetsを明示(§4.3)。
+            Headerと重ならないよう一段下(top: insets.top + 60)に置く。 */}
+        {DEV_MODE && activeTab === "home" && !ritualLocked && !sealActive && (
+          <Pressable
+            onPress={() => {
+              playUiSound();
+              setDevRitualForce((prev) => (prev === null ? "ritual" : prev === "ritual" ? "lifeChat" : null));
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={t("devTools.ritualForceLabel")}
+            style={({ pressed }) => [styles.devRitualToggle, { top: insets.top + 60 }, pressed && styles.touchPressedTight]}
+          >
+            <Text style={styles.devRitualToggleText}>
+              {`DEV ${devRitualForce === "ritual" ? t("devTools.forceRitual") : devRitualForce === "lifeChat" ? t("lifeChat.entry") : t("devTools.forceAuto")}`}
+            </Text>
+          </Pressable>
+        )}
+
         <View style={styles.content}>
           <View style={styles.pageFrame}>
             {pageViews.find((page) => page.id === activeTab)?.node}
@@ -2454,6 +2680,7 @@ function AppContent() {
           enabled={reflectionInputEnabled}
           support={supportVisible}
           answerLimit={getRitualAnswerLimit(lang)}
+          notice={ritualNotice}
           onSubmit={submitRitual}
           onExit={requestExitNightRitual}
           exitConfirmOpen={exitConfirmOpen}
@@ -2462,6 +2689,13 @@ function AppContent() {
           onBlur={() => {
             if (ritualLockedRef.current) keepRitualInputFocused();
           }}
+        />
+
+        <LifeChatScreen
+          visible={lifeChatOpen}
+          onClose={() => setLifeChatOpen(false)}
+          onSend={sendLifeChatMessage}
+          answerLimit={getRitualAnswerLimit(lang)}
         />
 
         <EncryptionSealNotice visible={encryptionNoticeVisible && sealActive} />
@@ -3816,7 +4050,9 @@ function HomeScreen({
   inputLocked,
   sealed,
   screenHeight,
-  onBeginInput
+  onBeginInput,
+  lifeChatVisible,
+  onOpenLifeChat
 }) {
   const t = useT();
   const lang = useLang();
@@ -3931,6 +4167,17 @@ function HomeScreen({
         }}
       />
 
+      {lifeChatVisible && !compact && !inputLocked && !answerPreview && !showFirstRun && (
+        <Pressable
+          onPress={onOpenLifeChat}
+          accessibilityRole="button"
+          accessibilityLabel={t("lifeChat.entry")}
+          style={({ pressed }) => [styles.lifeChatEntry, pressed && styles.touchPressedTight]}
+        >
+          <Text style={styles.lifeChatEntryText}>{t("lifeChat.entry")}</Text>
+        </Pressable>
+      )}
+
       {showFirstRun && (
         <FirstRunCard
           session={session}
@@ -4019,7 +4266,7 @@ function RitualComposer({
           <Text style={styles.ritualExitText}>×</Text>
         </Pressable>
       )}
-      <Pressable onPress={onPress} onPressIn={onPress} style={styles.composerLine}>
+      <Pressable onPress={onPress} onPressIn={onPress} style={[styles.composerLine, focused && styles.composerLineFocused]}>
         <GlassBackdrop intensity={28} />
         <Animated.Text style={[styles.composerSparkle, { opacity: cursorPulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }) }]}>✦</Animated.Text>
         <View style={styles.composerInputWrap}>
@@ -4152,10 +4399,14 @@ function NiloMark({ thinking }) {
 // Nilo's question in the night dialogue. Each glyph blooms into place —
 // the same breath as the home stage — and the old line lifts away like smoke
 // while it fades, so question-to-question feels like turning a page of air.
+// (タイピング演出は創業者確認済み 2026-07-11: 直すべきはホーム→対話の遷移側)
 function NiloDialogQuestion({ question, dimmed, closing }) {
   const opacity = useRef(new Animated.Value(1)).current;
   const drift = useRef(new Animated.Value(0)).current;
   const [shownQuestion, setShownQuestion] = useState(question || "");
+  // 最初の問いだけ、黒が明けてから咲き始めるよう入場の黒保持ぶん遅らせる。
+  // 黒の下で咲き始めると、明けた瞬間に「途中から生えた」姿になってしまう。
+  const [bloomDelay, setBloomDelay] = useState(340 + RITUAL_ENTER_BLACK_HOLD_MS);
 
   useEffect(() => {
     if (dimmed) {
@@ -4177,15 +4428,16 @@ function NiloDialogQuestion({ question, dimmed, closing }) {
     }
     drift.setValue(0);
     opacity.setValue(1);
+    if ((question || "") !== shownQuestion) setBloomDelay(340);
     setShownQuestion(question || "");
-  }, [dimmed, opacity, drift, question]);
+  }, [dimmed, opacity, drift, question, shownQuestion]);
 
   return (
     <Animated.View style={{ alignItems: "center", opacity, transform: [{ translateY: drift }] }}>
       <GlyphBloomText
         text={shownQuestion}
         textStyle={styles.niloDialogQuestion}
-        initialDelay={340}
+        initialDelay={bloomDelay}
         charDelay={48}
         duration={700}
       />
@@ -4197,14 +4449,25 @@ function NiloDialogQuestion({ question, dimmed, closing }) {
 // reference layout, but the answer is captured with the OS keyboard rather than
 // the prototype's mock 五十音 grid. The save / question-advance / seal logic is
 // the existing night-ritual flow, unchanged.
-function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLabel, inputRef, input, setInput, enabled, support, answerLimit, onSubmit, onExit, exitConfirmOpen, onConfirmExit, onCancelExit, onBlur }) {
+function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLabel, inputRef, input, setInput, enabled, support, answerLimit, notice, onSubmit, onExit, exitConfirmOpen, onConfirmExit, onCancelExit, onBlur }) {
   const t = useT();
+  // ×ボタンは絶対配置なのでSafeAreaViewのpaddingが効かない — insetsを明示する(§4.3)。
+  const insets = useSafeAreaInsets();
   const fade = useRef(new Animated.Value(0)).current;
   const [moteToken, setMoteToken] = useState(0);
+  const [inputFocused, setInputFocused] = useState(false);
   const wasThinking = useRef(false);
 
   useEffect(() => {
-    Animated.timing(fade, { toValue: visible ? 1 : 0, duration: visible ? 520 : 240, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start();
+    // 現れるときは即座に不透明にする。開幕はdipToBlackの黒が覆っており、自前の
+    // フェードを重ねると半透明の間ホーム(消えていく問い)が透けてしまう
+    // (創業者指摘 2026-07-11)。消えるときだけ短いフェードで退く(封の明け)。
+    if (visible) {
+      fade.stopAnimation();
+      fade.setValue(1);
+      return;
+    }
+    Animated.timing(fade, { toValue: 0, duration: 240, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start();
   }, [fade, visible]);
 
   // 答えを送った瞬間(thinkingが立った瞬間)、入力欄のあたりからNiloの灯へ
@@ -4224,6 +4487,16 @@ function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLa
       <NightGrain />
       <FloatingOrbs />
       <View style={styles.niloScreenSafe}>
+        {!closing && (
+          <Pressable
+            onPress={onExit}
+            accessibilityRole="button"
+            accessibilityLabel={t("ritual.exitLink")}
+            style={({ pressed }) => [styles.niloExitTopButton, { top: insets.top + 10 }, pressed && styles.touchPressedTight]}
+          >
+            <Text style={styles.niloExitTopGlyph}>×</Text>
+          </Pressable>
+        )}
         <View style={styles.niloTopTier}>
           <NiloMark thinking={thinking} />
           <Text style={styles.niloMarkLabel}>NILO</Text>
@@ -4256,56 +4529,195 @@ function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLa
               <Text style={styles.niloYouLabel}>YOU</Text>
               <LinearGradient colors={["rgba(217,168,108,0.2)", "rgba(217,168,108,0)"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.niloYouLine} />
             </View>
-            <TextInput
-              ref={inputRef}
-              value={input}
-              onChangeText={(value) => setInput(value.replace(/\n/g, "").slice(0, answerLimit))}
-              onKeyPress={(event) => {
-                if (event.nativeEvent.key === "Enter") {
-                  event.preventDefault?.();
-                  onSubmit();
-                }
-              }}
-              placeholder={t("ritual.placeholder")}
-              placeholderTextColor="rgba(190,180,162,0.55)"
-              accessibilityLabel={t("ritual.placeholder")}
-              style={styles.niloDraftInput}
-              multiline
-              autoFocus
-              editable={enabled}
-              selectionColor="#F2C88E"
-              cursorColor="#F2C88E"
-              returnKeyType="send"
-              blurOnSubmit={false}
-              onSubmitEditing={onSubmit}
-              onBlur={onBlur}
-            />
-            {input.trim().length > 0 && (
-              <Pressable onPress={onSubmit} accessibilityRole="button" accessibilityLabel={t("ritual.send")} style={({ pressed }) => [styles.niloSendButton, pressed && styles.touchPressedTight]}>
-                <Text style={styles.niloSendText}>{t("ritual.send")}</Text>
+            <View style={[styles.niloDraftInputShell, inputFocused && styles.niloDraftInputShellFocused]}>
+              <TextInput
+                ref={inputRef}
+                value={input}
+                onChangeText={(value) => setInput(value.replace(/\n/g, "").slice(0, answerLimit))}
+                onKeyPress={(event) => {
+                  if (event.nativeEvent.key === "Enter") {
+                    event.preventDefault?.();
+                    onSubmit();
+                  }
+                }}
+                placeholder={t("ritual.placeholder")}
+                placeholderTextColor="rgba(190,180,162,0.55)"
+                accessibilityLabel={t("ritual.placeholder")}
+                style={styles.niloDraftInput}
+                multiline
+                autoFocus
+                editable={enabled}
+                selectionColor="#F2C88E"
+                cursorColor="#F2C88E"
+                returnKeyType="send"
+                blurOnSubmit={false}
+                onFocus={() => setInputFocused(true)}
+                onSubmitEditing={onSubmit}
+                onBlur={() => {
+                  setInputFocused(false);
+                  onBlur();
+                }}
+              />
+              <Pressable
+                onPress={onSubmit}
+                disabled={!input.trim() || !enabled}
+                accessibilityRole="button"
+                accessibilityLabel={t("ritual.send")}
+                accessibilityState={{ disabled: !input.trim() || !enabled }}
+                style={({ pressed }) => [
+                  styles.niloInlineSendButton,
+                  (!input.trim() || !enabled) && styles.niloInlineSendButtonDisabled,
+                  pressed && styles.touchPressedTight
+                ]}
+              >
+                <Text style={styles.niloInlineSendGlyph}>↑</Text>
               </Pressable>
-            )}
-            {exitConfirmOpen ? (
-              <View style={styles.niloExitConfirmRow}>
-                <Text style={styles.niloExitConfirmText}>{t("ritual.exitConfirmQuestion")}</Text>
-                <View style={styles.niloExitConfirmActions}>
-                  <Pressable onPress={onCancelExit} accessibilityRole="button" style={({ pressed }) => [styles.niloExitConfirmGhost, pressed && styles.touchPressedTight]}>
-                    <Text style={styles.niloExitConfirmGhostText}>{t("ritual.exitConfirmNo")}</Text>
-                  </Pressable>
-                  <Pressable onPress={onConfirmExit} accessibilityRole="button" style={({ pressed }) => [styles.niloExitConfirmPrimary, pressed && styles.touchPressedTight]}>
-                    <Text style={styles.niloExitConfirmPrimaryText}>{t("ritual.exitConfirmYes")}</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ) : (
-              <Pressable onPress={onExit} accessibilityRole="button" style={styles.niloExitLink}>
-                <Text style={styles.niloExitText}>{t("ritual.exitLink")}</Text>
-              </Pressable>
-            )}
+            </View>
+            {notice ? (
+              <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.niloNoticeText}>⚠ {notice}</Text>
+            ) : null}
           </KeyboardAvoidingView>
+        )}
+        {exitConfirmOpen && (
+          <View style={styles.niloExitConfirmOverlay}>
+            <View style={styles.niloExitConfirmRow}>
+              <Text style={styles.niloExitConfirmText}>{t("ritual.exitConfirmQuestion")}</Text>
+              <View style={styles.niloExitConfirmActions}>
+                <Pressable onPress={onCancelExit} accessibilityRole="button" style={({ pressed }) => [styles.niloExitConfirmGhost, pressed && styles.touchPressedTight]}>
+                  <Text style={styles.niloExitConfirmGhostText}>{t("ritual.exitConfirmNo")}</Text>
+                </Pressable>
+                <Pressable onPress={onConfirmExit} accessibilityRole="button" style={({ pressed }) => [styles.niloExitConfirmPrimary, pressed && styles.touchPressedTight]}>
+                  <Text style={styles.niloExitConfirmPrimaryText}>{t("ritual.exitConfirmYes")}</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
         )}
       </View>
     </Animated.View>
+  );
+}
+
+// 「たずねる」— 記録に係留されたチャット(cpo/specs/arc_nilo_life_access.md)。
+// Niloは司書: 本人の記録から引いて差し出すだけで、導かない・評価しない。
+// セッションはこのコンポーネントのstateにのみ存在し、閉じたら破棄される
+// (AsyncStorageにもcollectSyncedStateにも入れない = 履歴を残さない構造保証)。
+function LifeChatScreen({ visible, onClose, onSend, answerLimit }) {
+  const t = useT();
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [support, setSupport] = useState(false);
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (!visible) {
+      setMessages([]);
+      setInput("");
+      setBusy(false);
+      setNotice("");
+      setSupport(false);
+    }
+  }, [visible]);
+
+  async function handleSend() {
+    const text = input.replace(/\n/g, "").trim().slice(0, answerLimit);
+    if (!text || busy) return;
+    const next = [...messages, { id: createId("lifechat"), role: "user", text }];
+    setMessages(next);
+    setInput("");
+    setNotice("");
+    setBusy(true);
+    if (!support && detectPersistentDistress(next)) setSupport(true);
+    try {
+      const result = await onSend(next);
+      const reply = String(result?.reply || "").trim();
+      if (reply) {
+        setMessages((current) => [...current, { id: createId("lifechat"), role: "nilo", text: reply }]);
+      } else {
+        // Niloの声を捏造せず、システム表示だけで済ませる(儀式のunintelligibleと同じ思想)。
+        setNotice(t("lifeChat.error"));
+      }
+    } catch {
+      setNotice(t("lifeChat.error"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal visible={visible} animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <View style={styles.lifeChatRoot}>
+        <BackgroundTexture />
+        <OuterGradient />
+        <View style={styles.scrim} />
+        <View style={styles.lifeChatSafe}>
+          <View style={styles.lifeChatHeader}>
+            <Text style={styles.niloMarkLabel}>NILO</Text>
+            <Pressable
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel={t("lifeChat.close")}
+              style={({ pressed }) => [styles.lifeChatCloseLink, pressed && styles.touchPressedTight]}
+            >
+              <Text style={styles.lifeChatCloseText}>{t("lifeChat.close")}</Text>
+            </Pressable>
+          </View>
+          <ScrollView
+            ref={scrollRef}
+            style={styles.lifeChatScroll}
+            contentContainerStyle={styles.lifeChatScrollContent}
+            onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+          >
+            {!messages.length && <Text style={styles.lifeChatIntro}>{t("lifeChat.intro")}</Text>}
+            {messages.map((message) => (
+              <View key={message.id} style={message.role === "user" ? styles.lifeChatUserRow : styles.lifeChatNiloRow}>
+                <Text style={message.role === "user" ? styles.lifeChatUserText : styles.lifeChatNiloText}>{message.text}</Text>
+              </View>
+            ))}
+            {busy && <NiloThinkingIndicator />}
+          </ScrollView>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.lifeChatComposer}>
+            {support && <SupportResourceCard />}
+            {notice ? (
+              <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.niloNoticeText}>⚠ {notice}</Text>
+            ) : null}
+            <View style={styles.lifeChatInputRow}>
+              <TextInput
+                value={input}
+                onChangeText={(value) => setInput(value.replace(/\n/g, "").slice(0, answerLimit))}
+                placeholder={t("lifeChat.placeholder")}
+                placeholderTextColor="rgba(190,180,162,0.55)"
+                accessibilityLabel={t("lifeChat.placeholder")}
+                style={styles.lifeChatInput}
+                multiline
+                editable={!busy}
+                selectionColor="#F2C88E"
+                cursorColor="#F2C88E"
+                returnKeyType="send"
+                blurOnSubmit={false}
+                onSubmitEditing={handleSend}
+              />
+              <Pressable
+                onPress={handleSend}
+                disabled={!input.trim() || busy}
+                accessibilityRole="button"
+                accessibilityLabel={t("ritual.send")}
+                accessibilityState={{ disabled: !input.trim() || busy }}
+                style={({ pressed }) => [
+                  styles.lifeChatSendButton,
+                  (!input.trim() || busy) && styles.lifeChatSendButtonDisabled,
+                  pressed && styles.touchPressedTight
+                ]}
+              >
+                <Text style={styles.lifeChatSendGlyph}>↑</Text>
+              </Pressable>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -8717,6 +9129,12 @@ const baseStyleDefs = ({
     shadowRadius: 28,
     shadowOffset: { width: -8, height: -10 }
   },
+  composerLineFocused: {
+    backgroundColor: "rgba(255,254,244,0.15)",
+    borderColor: "rgba(255,254,244,0.42)",
+    shadowOpacity: 0.21,
+    shadowRadius: 32
+  },
   composerSparkle: {
     color: "rgba(255,254,244,0.84)",
     fontSize: 17,
@@ -12053,6 +12471,7 @@ const baseStyleDefs = ({
     height: 46,
     justifyContent: "center",
     marginTop: 10,
+    transform: [{ translateY: 6 }],
     width: 46
   },
   niloMarkGlow: {
@@ -12165,35 +12584,71 @@ const baseStyleDefs = ({
   },
   niloDraftInput: {
     color: "#F3EDE1",
+    flex: 1,
     fontFamily: fontSerifJa,
-    fontSize: 23,
-    letterSpacing: 0.69,
-    lineHeight: 44,
-    maxHeight: 150,
-    minHeight: 64,
+    fontSize: 17,
+    letterSpacing: 0.3,
+    lineHeight: 30,
+    maxHeight: 108,
+    minHeight: 54,
     outlineStyle: "none",
-    paddingBottom: 13,
-    paddingHorizontal: 32,
-    paddingTop: 15,
-    textAlign: "center"
+    paddingBottom: 10,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    textAlign: "left",
+    textAlignVertical: "center"
   },
-  niloSendButton: {
-    alignSelf: "center",
+  niloDraftInputShell: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,254,244,0.065)",
+    borderColor: "rgba(255,254,244,0.18)",
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: "row",
+    marginHorizontal: 22,
+    marginTop: 10,
+    shadowColor: TOKENS.color.goldCore,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20
+  },
+  niloDraftInputShellFocused: {
+    backgroundColor: "rgba(255,254,244,0.09)",
+    borderColor: "rgba(217,168,108,0.5)",
+    shadowOpacity: 0.22,
+    shadowRadius: 24
+  },
+  niloInlineSendButton: {
+    alignItems: "center",
     backgroundColor: "rgba(217,168,108,0.95)",
-    borderRadius: 999,
-    marginTop: 4,
-    paddingHorizontal: 28,
-    paddingVertical: 9,
+    borderRadius: 13,
+    height: 42,
+    justifyContent: "center",
+    marginRight: 6,
     shadowColor: TOKENS.color.gold,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.42,
-    shadowRadius: 16
+    shadowRadius: 16,
+    width: 42
   },
-  niloSendText: {
+  niloInlineSendButtonDisabled: {
+    backgroundColor: "rgba(217,168,108,0.2)",
+    shadowOpacity: 0
+  },
+  niloInlineSendGlyph: {
     color: TOKENS.color.onGold,
+    fontFamily: fontUi,
+    fontSize: 20,
+    fontWeight: "600",
+    lineHeight: 22
+  },
+  niloNoticeText: {
+    color: "rgba(190,180,162,0.7)",
     fontFamily: fontSerifJa,
-    fontSize: 14,
-    letterSpacing: 0.7
+    fontSize: 12,
+    letterSpacing: 0.4,
+    marginTop: 8,
+    textAlign: "center"
   },
   niloExitLink: {
     alignItems: "center",
@@ -12208,9 +12663,24 @@ const baseStyleDefs = ({
   },
   niloExitConfirmRow: {
     alignItems: "center",
+    backgroundColor: "rgba(30,24,20,0.96)",
+    borderColor: "rgba(217,168,108,0.3)",
+    borderRadius: 18,
+    borderWidth: 1,
     gap: 10,
-    marginTop: 10,
-    paddingVertical: 8
+    paddingHorizontal: 28,
+    paddingVertical: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.35,
+    shadowRadius: 28
+  },
+  niloExitConfirmOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    backgroundColor: "rgba(8,6,5,0.56)",
+    justifyContent: "center",
+    zIndex: 20
   },
   niloExitConfirmText: {
     color: "rgba(238,224,202,0.6)",
@@ -13228,6 +13698,170 @@ const baseStyleDefs = ({
     fontFamily: fontUi,
     fontSize: 12,
     letterSpacing: 0.6
+  },
+  lifeChatEntry: {
+    alignSelf: "center",
+    borderColor: "rgba(217,168,108,0.35)",
+    borderRadius: 999,
+    borderWidth: 1,
+    bottom: 24,
+    justifyContent: "center",
+    minHeight: 40,
+    paddingHorizontal: 26,
+    position: "absolute",
+    zIndex: 60
+  },
+  lifeChatEntryText: {
+    color: "rgba(233,196,124,0.8)",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    letterSpacing: 2.4
+  },
+  lifeChatRoot: {
+    backgroundColor: "#07090D",
+    flex: 1
+  },
+  lifeChatSafe: {
+    flex: 1,
+    paddingBottom: 18,
+    paddingHorizontal: 22,
+    paddingTop: 64
+  },
+  lifeChatHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between"
+  },
+  lifeChatCloseLink: {
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: 8
+  },
+  lifeChatCloseText: {
+    color: "rgba(190,180,162,0.75)",
+    fontFamily: fontUi,
+    fontSize: 13,
+    letterSpacing: 1.2
+  },
+  lifeChatScroll: {
+    flex: 1,
+    marginTop: 12
+  },
+  lifeChatScrollContent: {
+    gap: 14,
+    paddingBottom: 24
+  },
+  lifeChatIntro: {
+    color: "rgba(190,180,162,0.7)",
+    fontFamily: fontSerifJa,
+    fontSize: 14,
+    lineHeight: 24,
+    marginTop: 28,
+    textAlign: "center"
+  },
+  lifeChatNiloRow: {
+    alignSelf: "flex-start",
+    maxWidth: "86%"
+  },
+  lifeChatNiloText: {
+    color: "rgba(238,226,205,0.95)",
+    fontFamily: fontSerifJa,
+    fontSize: 15,
+    lineHeight: 26
+  },
+  lifeChatUserRow: {
+    alignSelf: "flex-end",
+    maxWidth: "86%"
+  },
+  lifeChatUserText: {
+    color: "rgba(233,196,124,0.9)",
+    fontFamily: fontSerifJa,
+    fontSize: 14,
+    lineHeight: 24,
+    textAlign: "right"
+  },
+  lifeChatComposer: {
+    paddingTop: 8
+  },
+  lifeChatInputRow: {
+    alignItems: "flex-end",
+    backgroundColor: "rgba(20,24,31,0.85)",
+    borderColor: "rgba(217,168,108,0.22)",
+    borderRadius: 26,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6
+  },
+  lifeChatInput: {
+    color: "#F3EDE1",
+    flex: 1,
+    fontFamily: fontSerifJa,
+    fontSize: 15,
+    lineHeight: 22,
+    maxHeight: 110,
+    minHeight: 40,
+    outlineStyle: "none",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    textAlignVertical: "center"
+  },
+  lifeChatSendButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(217,168,108,0.95)",
+    borderRadius: 999,
+    height: 40,
+    justifyContent: "center",
+    shadowColor: TOKENS.color.gold,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    width: 40
+  },
+  lifeChatSendButtonDisabled: {
+    backgroundColor: "rgba(217,168,108,0.28)",
+    shadowOpacity: 0
+  },
+  lifeChatSendGlyph: {
+    color: TOKENS.color.onGold,
+    fontFamily: fontUi,
+    fontSize: 16,
+    fontWeight: "600"
+  },
+  devRitualToggle: {
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.35)",
+    borderColor: "rgba(190,180,162,0.4)",
+    borderRadius: 14,
+    borderWidth: 1,
+    justifyContent: "center",
+    left: 12,
+    minHeight: 28,
+    paddingHorizontal: 10,
+    position: "absolute",
+    zIndex: 80
+  },
+  devRitualToggleText: {
+    color: "rgba(190,180,162,0.85)",
+    fontFamily: fontUi,
+    fontSize: 11,
+    letterSpacing: 1
+  },
+  niloExitTopButton: {
+    alignItems: "center",
+    height: 44,
+    justifyContent: "center",
+    position: "absolute",
+    right: 12,
+    width: 44,
+    zIndex: 80
+  },
+  niloExitTopGlyph: {
+    color: "rgba(190,180,162,0.72)",
+    fontFamily: fontUi,
+    fontSize: 22,
+    lineHeight: 24
   }
 });
 

@@ -1,4 +1,4 @@
-const primaryGeminiModel = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
+﻿const primaryGeminiModel = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
 const fallbackGeminiModel = Deno.env.get("GEMINI_FALLBACK_MODEL") || "gemini-2.5-flash";
 const geminiModels = Array.from(new Set([primaryGeminiModel, fallbackGeminiModel].filter(Boolean)));
 
@@ -35,6 +35,7 @@ const STRINGS: Record<SupportedLanguage, Record<string, string>> = {
     defaultTag: "Night Ritual",
     emptyRitualLog: "Night Ritualの会話ログが空です。",
     emptyChapterMemories: "章にする記憶がまだありません。",
+    emptyLifeChat: "たずねる対話のメッセージが空です。",
     unknownRoute: "Unknown Nilo route.",
     geminiKeyMissing: "GEMINI_API_KEY is not set.",
     geminiNotJson: "Gemini response was not JSON.",
@@ -50,6 +51,7 @@ const STRINGS: Record<SupportedLanguage, Record<string, string>> = {
     defaultTag: "Night Ritual",
     emptyRitualLog: "The Night Ritual conversation log is empty.",
     emptyChapterMemories: "There are no memories yet to form a chapter.",
+    emptyLifeChat: "The life chat message is empty.",
     unknownRoute: "Unknown Nilo route.",
     geminiKeyMissing: "GEMINI_API_KEY is not set.",
     geminiNotJson: "Gemini response was not JSON.",
@@ -65,6 +67,7 @@ const STRINGS: Record<SupportedLanguage, Record<string, string>> = {
     defaultTag: "Night Ritual",
     emptyRitualLog: "El registro de conversación del Night Ritual está vacío.",
     emptyChapterMemories: "Aún no hay recuerdos para formar un capítulo.",
+    emptyLifeChat: "El mensaje del chat está vacío.",
     unknownRoute: "Unknown Nilo route.",
     geminiKeyMissing: "GEMINI_API_KEY is not set.",
     geminiNotJson: "Gemini response was not JSON.",
@@ -80,6 +83,7 @@ const STRINGS: Record<SupportedLanguage, Record<string, string>> = {
     defaultTag: "Night Ritual",
     emptyRitualLog: "Le journal de conversation du Night Ritual est vide.",
     emptyChapterMemories: "Il n'y a pas encore de souvenirs pour former un chapitre.",
+    emptyLifeChat: "Le message du chat est vide.",
     unknownRoute: "Unknown Nilo route.",
     geminiKeyMissing: "GEMINI_API_KEY is not set.",
     geminiNotJson: "Gemini response was not JSON.",
@@ -95,6 +99,7 @@ const STRINGS: Record<SupportedLanguage, Record<string, string>> = {
     defaultTag: "Night Ritual",
     emptyRitualLog: "Das Gesprächsprotokoll des Night Ritual ist leer.",
     emptyChapterMemories: "Es gibt noch keine Erinnerungen für ein Kapitel.",
+    emptyLifeChat: "Die Chat-Nachricht ist leer.",
     unknownRoute: "Unknown Nilo route.",
     geminiKeyMissing: "GEMINI_API_KEY is not set.",
     geminiNotJson: "Gemini response was not JSON.",
@@ -110,6 +115,7 @@ const STRINGS: Record<SupportedLanguage, Record<string, string>> = {
     defaultTag: "Night Ritual",
     emptyRitualLog: "Night Ritual的对话记录为空。",
     emptyChapterMemories: "还没有可以组成章节的记忆。",
+    emptyLifeChat: "对话消息为空。",
     unknownRoute: "Unknown Nilo route.",
     geminiKeyMissing: "GEMINI_API_KEY is not set.",
     geminiNotJson: "Gemini response was not JSON.",
@@ -125,6 +131,7 @@ const STRINGS: Record<SupportedLanguage, Record<string, string>> = {
     defaultTag: "Night Ritual",
     emptyRitualLog: "Night Ritual의 대화 기록이 비어 있습니다.",
     emptyChapterMemories: "아직 챕터로 만들 기억이 없습니다.",
+    emptyLifeChat: "대화 메시지가 비어 있습니다.",
     unknownRoute: "Unknown Nilo route.",
     geminiKeyMissing: "GEMINI_API_KEY is not set.",
     geminiNotJson: "Gemini response was not JSON.",
@@ -329,9 +336,13 @@ function normalizeNightRitual(value: JsonRecord, strings: Record<string, string>
     })).filter((quest) => quest.title)
     : [];
 
+  const unintelligible = Boolean(value.unintelligible);
+
   return {
     done,
+    unintelligible,
     nextQuestion: done ? "" : String(value.nextQuestion || "").slice(0, 40),
+    acknowledgment: done ? "" : String(value.acknowledgment || "").slice(0, 120),
     title: String(value.title || strings.defaultTitle).slice(0, 32),
     summaryLines: done && summaryLines.length < 3
       ? summaryLines.concat([strings.defaultSummaryLine]).slice(0, 3)
@@ -477,6 +488,15 @@ ${buildLanguageInstruction(lang)}
 - 質問は1つだけ。複数質問を混ぜないでください。
 - 十分に記録できたら5問未満でも done:true にしてください。
 - forceFinish が true、または現在の質問数が5以上なら必ず done:true にしてください。
+- 直前のユーザー回答が、言葉として意味を受け取れないもの（ランダムな文字列、キーボードの打鍵、記号の羅列、どの言語としても成立していない断片など）だったときだけ、unintelligible を true にし、nextQuestion は空文字、done は false にしてください。この場合は他のフィールドを埋めなくてよいです。これは forceFinish よりも優先します（意味を受け取れない回答では締めない）。
+- 「短い」「曖昧」「感情だけ」「話題がそれている」「一語だけ」は unintelligible ではありません。『疲れた』『わからない』『特にない』『うん』のように短くても言葉として意味が取れるものは、通常どおり扱ってください（unintelligible にしない）。迷ったら unintelligible にしないでください。
+
+相槌（受け止めの一言・任意 = acknowledgment）:
+- 次の問いの前に、直前のユーザー回答を受け止める短い一言を acknowledgment に入れてよいです。毎回は入れないでください（機械的な相槌の連発は避ける）。1〜2文で短く。
+- 聞き上手な人のように、言外の文脈や経緯を一歩だけ読んで差し出してよいです。ただし言い当てる（断定する）のではなく、差し出す形にしてください（「〜かもしれませんね」「〜のようにも聞こえます」など）。真偽の判断はユーザーに残します。
+- 推論は「横」（出来事の文脈・経緯・状況）に限ります。「上」（意味・象徴・価値・人生観）へ持ち上げないでください。これは上の抽象度の天井と同じ原則です。
+- 評価や太鼓判を打たないでください（「いい」「面白い」「楽しそう」「素敵」「すごい」「えらい」などを足さない）。ユーザーが口にしていない感情は、断定せず、仮説として一度だけ差し出すに留めてください（「さびしかったんですね」ではなく「さびしさも、あったのかもしれませんね」）。
+- done:true（締め）のときは acknowledgment は空文字にしてください（締めは closingMessage が担います）。
 
 今日の対話スタイル:
 ${styleGuidance}
@@ -505,7 +525,7 @@ ${questLines}
 - questUpdates[].id には必ず activeQuest の id を入れてください。
 
 done:false の場合:
-- nextQuestion だけが重要です。
+- nextQuestion が主役です。acknowledgment は任意で添えてよいです（毎回は不要）。
 - title, summaryLines, niloLine などは空でもよいです。
 
 done:true の場合:
@@ -517,6 +537,8 @@ done:true の場合:
 JSONだけを返してください。Markdownは禁止です。
 {
   "done": false,
+  "unintelligible": false,
+  "acknowledgment": "",
   "nextQuestion": "直前の回答に基づく短い問い",
   "title": "",
   "summaryLines": [],
@@ -770,6 +792,62 @@ ${avoid.length ? `\n次のテーマは既に差し出したか、いま探求の
 `.trim();
 }
 
+// 「たずねる」(life-chat): ホーム画面の、記録に係留されたチャット
+// (cpo/specs/arc_nilo_life_access.md)。Niloは司書として本人の記録の引用で応える。
+// 送られてくるのは memory抜粋と章メタのみ(既存routeと同カテゴリ)。履歴はサーバーに残らない。
+function normalizeLifeChat(value: JsonRecord) {
+  return { reply: String(value?.reply || "").slice(0, 400) };
+}
+
+function buildLifeChatPrompt(body: JsonRecord, lang: SupportedLanguage) {
+  const messages = Array.isArray(body.messages) ? body.messages as JsonRecord[] : [];
+  const safeMessages = messages.slice(-12).map((message, index) => {
+    const speaker = message.role === "user" ? "User" : "Nilo";
+    return `${index + 1}. ${speaker}: ${String(message.text || "").slice(0, 300)}`;
+  }).join("\n");
+  const memories = Array.isArray(body.memories) ? body.memories as JsonRecord[] : [];
+  const safeMemories = memories.slice(0, 120).map((memory) => {
+    const date = String(memory.dateKey || memory.dateLabel || "").slice(0, 10);
+    const essence = String(memory.essence || "").slice(0, 120);
+    const kept = String(memory.keptPhrase || "").slice(0, 80);
+    const mood = String(memory.moodLabel || "").slice(0, 16);
+    return `- ${date || "日付不明"} / 意味:${essence}${kept ? ` / 言葉:「${kept}」` : ""}${mood ? ` / 気分:${mood}` : ""}`;
+  }).join("\n");
+  const chapters = Array.isArray(body.chapters) ? body.chapters as JsonRecord[] : [];
+  const chapterLines = chapters.slice(0, 12).map((chapter) => {
+    const title = String((chapter as any).title || "").slice(0, 40);
+    const period = String((chapter as any).period || "").slice(0, 40);
+    const observation = String((chapter as any).observation || "").slice(0, 160);
+    return `- 章「${title}」（${period}）: ${observation}`;
+  }).join("\n");
+
+  return `
+あなたは人生アプリ ARC の Nilo です。
+これは夜の儀式ではありません。ユーザーが自分の過去の記録について、あなたに尋ねる短い時間です。
+あなたの役割は「司書」です。ユーザー自身が残してきた記録のなかから探し、そっと差し出します。
+
+Niloの原則（この対話でも一貫して守る）:
+- コーチしない・アドバイスしない・導かない。応答の中心は、常にユーザー自身の記録の引用。
+- 評価しない・断定しない（「いい」「すごい」「成長した」などの物差しを当てない）。
+- 記録にないことを推測で語らない。尋ねられたことに近い記録が見当たらなければ、正直に「記録のなかには見つけられませんでした」と伝える。記録の捏造は最悪の裏切りです。
+- 推論は「横」（記録同士の時期・言葉の並び・繰り返し）に限る。「上」（意味・象徴・人生観）へ持ち上げない。差し出すときは断定せず「〜のようにも見えます」の形で。
+- 短く。1〜3文。記録の「言葉:」を引用するときは一字も変えない。
+- 人生相談・悩み相談には踏み込まない。相談の形の問いにも、関係する記録を差し出すところまでで止まる。
+
+${buildLanguageInstruction(lang)}
+
+ユーザーの記録（古い順・抜粋）:
+${safeMemories || "なし"}
+
+${chapterLines ? `確定している章:\n${chapterLines}\n` : ""}
+ここまでの対話:
+${safeMessages || "なし"}
+
+次のJSONだけを返してください。Markdownは禁止です。
+{ "reply": "記録から差し出す短い応答" }
+`.trim();
+}
+
 async function handleRoute(route: string, body: JsonRecord) {
   const lang = normalizeLanguage(body.language);
   const strings = STRINGS[lang];
@@ -795,6 +873,13 @@ async function handleRoute(route: string, body: JsonRecord) {
     const allowedQuotes = otherChapters.flatMap((other) => toStrList((other as any).quotes, 3, 100));
     const json = await callGeminiJson(buildChapterSealPrompt(body, lang), { temperature: 0.7 });
     return jsonResponse(200, normalizeChapterSeal(json, allowedQuotes));
+  }
+
+  if (route === "life-chat") {
+    const messages = Array.isArray(body.messages) ? body.messages : [];
+    if (!messages.length) return jsonResponse(400, { message: strings.emptyLifeChat });
+    const json = await callGeminiJson(buildLifeChatPrompt(body, lang), { temperature: 0.6 });
+    return jsonResponse(200, normalizeLifeChat(json));
   }
 
   if (route === "quest-proposals") {

@@ -46,6 +46,18 @@ export const NILO_LANGUAGE_NAMES = {
 };
 
 const ja = {
+  devTools: {
+    ritualForceLabel: "儀式／たずねるの切り替え（開発用）",
+    forceAuto: "自動",
+    forceRitual: "儀式"
+  },
+  lifeChat: {
+    entry: "たずねる",
+    intro: "あなたのこれまでの記録から、Niloが探して差し出します。",
+    placeholder: "記録に、たずねたいことを",
+    error: "いまは応えられないようです。少し待って、もう一度どうぞ。",
+    close: "とじる"
+  },
   tabs: { home: "ホーム", quests: "クエスト", journal: "日記", story: "章" },
   header: { openNotifications: "通知を開く", openSettings: "設定を開く" },
 
@@ -174,6 +186,7 @@ const ja = {
     tonightSuffix: "今夜",
     followUpQuestion: (seed) => `「${seed}」の何が残っていますか？`,
     followUpFallback: "もう少しだけ、残しておきますか？",
+    unintelligibleNotice: "うまく送信できませんでした",
     closingDefault: "今夜の記録を、静かに残しました。",
     defaultTitle: "今夜の記録",
     defaultSummaryLine: "今日の言葉を短く残しました。",
@@ -646,6 +659,18 @@ const ja = {
 };
 
 const en = {
+  devTools: {
+    ritualForceLabel: "Toggle ritual / Ask (dev only)",
+    forceAuto: "Auto",
+    forceRitual: "Ritual"
+  },
+  lifeChat: {
+    entry: "Ask",
+    intro: "Nilo will look through your records and offer what it finds.",
+    placeholder: "Ask about your records",
+    error: "Nilo can't answer right now. Please try again in a moment.",
+    close: "Close"
+  },
   tabs: { home: "Home", quests: "Quests", journal: "Diary", story: "Chapters" },
   header: { openNotifications: "Open notifications", openSettings: "Open settings" },
 
@@ -774,6 +799,7 @@ const en = {
     tonightSuffix: "tonight",
     followUpQuestion: (seed) => `What still remains from "${seed}"?`,
     followUpFallback: "Would you like to leave just a little more?",
+    unintelligibleNotice: "Couldn't send that",
     closingDefault: "Tonight's record has been quietly kept.",
     defaultTitle: "Tonight's record",
     defaultSummaryLine: "Kept a short trace of today's words.",
@@ -1238,6 +1264,18 @@ const en = {
 };
 
 const fr = {
+  devTools: {
+    ritualForceLabel: "Basculer rituel / Demander (dév uniquement)",
+    forceAuto: "Auto",
+    forceRitual: "Rituel"
+  },
+  lifeChat: {
+    entry: "Demander",
+    intro: "Nilo cherchera dans vos enregistrements et vous offrira ce qu'il trouve.",
+    placeholder: "Interrogez vos enregistrements",
+    error: "Nilo ne peut pas répondre pour le moment. Réessayez dans un instant.",
+    close: "Fermer"
+  },
   tabs: { home: "Accueil", quests: "Quêtes", journal: "Journal", story: "Chapitres" },
   header: { openNotifications: "Ouvrir les notifications", openSettings: "Ouvrir les réglages" },
 
@@ -1366,6 +1404,7 @@ const fr = {
     tonightSuffix: "ce soir",
     followUpQuestion: (seed) => `Que reste-t-il de « ${seed} » ?`,
     followUpFallback: "Voulez-vous en garder juste un peu plus ?",
+    unintelligibleNotice: "Envoi impossible",
     closingDefault: "L'enregistrement de ce soir a été gardé, tranquillement.",
     defaultTitle: "L'enregistrement de ce soir",
     defaultSummaryLine: "Une courte trace des mots d'aujourd'hui a été gardée.",
@@ -1830,6 +1869,18 @@ const fr = {
 };
 
 const de = {
+  devTools: {
+    ritualForceLabel: "Ritual / Fragen umschalten (nur Entwicklung)",
+    forceAuto: "Auto",
+    forceRitual: "Ritual"
+  },
+  lifeChat: {
+    entry: "Fragen",
+    intro: "Nilo sucht in deinen Aufzeichnungen und reicht dir, was es findet.",
+    placeholder: "Frag deine Aufzeichnungen",
+    error: "Nilo kann gerade nicht antworten. Versuche es gleich noch einmal.",
+    close: "Schließen"
+  },
   tabs: { home: "Start", quests: "Quests", journal: "Tagebuch", story: "Kapitel" },
   header: { openNotifications: "Benachrichtigungen öffnen", openSettings: "Einstellungen öffnen" },
 
@@ -1958,6 +2009,7 @@ const de = {
     tonightSuffix: "heute Nacht",
     followUpQuestion: (seed) => `Was bleibt noch von „${seed}“?`,
     followUpFallback: "Möchtest du noch ein wenig mehr festhalten?",
+    unintelligibleNotice: "Konnte nicht gesendet werden",
     closingDefault: "Die Aufzeichnung von heute Nacht wurde still bewahrt.",
     defaultTitle: "Die Aufzeichnung von heute Nacht",
     defaultSummaryLine: "Eine kurze Spur der heutigen Worte wurde bewahrt.",
@@ -2422,6 +2474,18 @@ const de = {
 };
 
 const zh = {
+  devTools: {
+    ritualForceLabel: "切换仪式／问一问（仅开发用）",
+    forceAuto: "自动",
+    forceRitual: "仪式"
+  },
+  lifeChat: {
+    entry: "问一问",
+    intro: "Nilo 会在你过去的记录中寻找，并轻轻递给你。",
+    placeholder: "向你的记录提问",
+    error: "Nilo 现在无法回应。请稍后再试。",
+    close: "关闭"
+  },
   tabs: { home: "首页", quests: "探索", journal: "日记", story: "章节" },
   header: { openNotifications: "打开通知", openSettings: "打开设置" },
 
@@ -2550,6 +2614,7 @@ const zh = {
     tonightSuffix: "今晚",
     followUpQuestion: (seed) => `关于"${seed}"，还留下了些什么？`,
     followUpFallback: "要不要再多留下一点点？",
+    unintelligibleNotice: "未能发送",
     closingDefault: "今晚的记录，已静静保存。",
     defaultTitle: "今晚的记录",
     defaultSummaryLine: "简短地留下了今天的话语。",
@@ -3014,6 +3079,18 @@ const zh = {
 };
 
 const ko = {
+  devTools: {
+    ritualForceLabel: "의식／물어보기 전환(개발용)",
+    forceAuto: "자동",
+    forceRitual: "의식"
+  },
+  lifeChat: {
+    entry: "물어보기",
+    intro: "Nilo가 지금까지의 기록에서 찾아 건네드립니다.",
+    placeholder: "기록에게 물어보고 싶은 것을",
+    error: "지금은 응답할 수 없어요. 잠시 후 다시 시도해 주세요.",
+    close: "닫기"
+  },
   tabs: { home: "홈", quests: "퀘스트", journal: "일기", story: "챕터" },
   header: { openNotifications: "알림 열기", openSettings: "설정 열기" },
 
@@ -3142,6 +3219,7 @@ const ko = {
     tonightSuffix: "오늘 밤",
     followUpQuestion: (seed) => `"${seed}"에서 무엇이 남아있나요?`,
     followUpFallback: "조금만 더 남겨두시겠어요?",
+    unintelligibleNotice: "전송하지 못했습니다",
     closingDefault: "오늘 밤의 기록을, 조용히 남겼습니다.",
     defaultTitle: "오늘 밤의 기록",
     defaultSummaryLine: "오늘의 말을 짧게 남겼습니다.",
@@ -3624,6 +3702,18 @@ function mergeTranslation(base = {}, overrides = {}) {
 }
 
 const es = mergeTranslation(en, {
+  devTools: {
+    ritualForceLabel: "Alternar ritual / Preguntar (solo desarrollo)",
+    forceAuto: "Auto",
+    forceRitual: "Ritual"
+  },
+  lifeChat: {
+    entry: "Preguntar",
+    intro: "Nilo buscará entre tus registros y te ofrecerá lo que encuentre.",
+    placeholder: "Pregunta sobre tus registros",
+    error: "Nilo no puede responder ahora. Inténtalo de nuevo en un momento.",
+    close: "Cerrar"
+  },
   tabs: { home: "Inicio", quests: "Misiones", journal: "Diario", story: "Capítulos" },
   header: { openNotifications: "Abrir notificaciones", openSettings: "Abrir ajustes" },
 
@@ -3751,6 +3841,7 @@ const es = mergeTranslation(en, {
     tonightSuffix: "esta noche",
     followUpQuestion: (seed) => `¿Qué sigue quedando de "${seed}"?`,
     followUpFallback: "¿Quieres dejar un poco más?",
+    unintelligibleNotice: "No se pudo enviar",
     closingDefault: "El registro de esta noche quedó guardado en silencio.",
     defaultTitle: "Registro de esta noche",
     defaultSummaryLine: "Se guardó una breve huella de las palabras de hoy.",
