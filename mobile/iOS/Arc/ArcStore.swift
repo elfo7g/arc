@@ -89,6 +89,13 @@ func isRitualWindow(_ date: Date = Date()) -> Bool {
     return minutes >= 20 * 60 || minutes < 3 * 60
 }
 
+struct JournalMonth: Identifiable {
+    let monthKey: String
+    let entries: [JournalEntry]
+
+    var id: String { monthKey }
+}
+
 @MainActor
 final class ArcStore: ObservableObject {
     @Published var selectedTab: ArcTab = .home
@@ -154,7 +161,7 @@ final class ArcStore: ObservableObject {
 
     /// Journal grouped into the most recent months, newest first, capped to the
     /// picker's archive window (App.js `getJournalMonthView`).
-    var journalMonths: [(monthKey: String, entries: [JournalEntry])] {
+    var journalMonths: [JournalMonth] {
         let currentKey = String(journalDateKey().prefix(7))
         guard let oldest = Calendar.current.date(byAdding: .month, value: -(diaryArchiveMonths - 1), to: Date()) else { return [] }
         let oldestKey = String(toDateKey(oldest).prefix(7))
@@ -167,7 +174,7 @@ final class ArcStore: ObservableObject {
         return grouped
             .sorted { $0.key > $1.key }
             .map { key, entries in
-                (key, entries.sorted { $0.dateKey > $1.dateKey })
+                JournalMonth(monthKey: key, entries: entries.sorted { $0.dateKey > $1.dateKey })
             }
     }
 
@@ -388,7 +395,7 @@ final class ArcStore: ObservableObject {
         do {
             var chapters: [[String: Any]] = []
             if case .array(let items)? = userState.rest["chapters"] {
-                chapters = items.prefix(12).compactMap { item in
+                chapters = items.prefix(12).compactMap { item -> [String: Any]? in
                     guard let object = item.objectValue else { return nil }
                     return [
                         "title": object["title"]?.stringValue ?? "",

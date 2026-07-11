@@ -428,7 +428,7 @@ private struct JournalTabView: View {
     @EnvironmentObject private var store: ArcStore
     @State private var selectedMonthKey: String?
 
-    private var months: [(monthKey: String, entries: [JournalEntry])] {
+    private var months: [JournalMonth] {
         store.journalMonths
     }
 
@@ -449,7 +449,7 @@ private struct JournalTabView: View {
             if months.count > 1 {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(months, id: \.monthKey) { month in
+                        ForEach(months) { month in
                             let selected = month.monthKey == activeMonthKey
                             Button {
                                 selectedMonthKey = month.monthKey

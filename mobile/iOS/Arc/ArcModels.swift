@@ -46,6 +46,10 @@ struct DialogueMessage: Codable, Equatable, Identifiable {
 
     var id: String { "\(role)-\(text)" }
 
+    enum CodingKeys: String, CodingKey {
+        case role, text
+    }
+
     init(role: String, text: String) {
         self.role = role
         self.text = text
@@ -311,7 +315,7 @@ struct UserStateBlob: Codable, Equatable {
     /// The excerpt fields the RN app sends to the `nilo` routes (§4.5: only
     /// dateKey / essence / keptPhrase / moodLabel — never journal bodies).
     func memoryExcerpts(limit: Int) -> [[String: Any]] {
-        memories.prefix(limit).compactMap { memory in
+        memories.prefix(limit).compactMap { memory -> [String: Any]? in
             guard let object = memory.objectValue else { return nil }
             return [
                 "dateKey": object["dateKey"]?.stringValue ?? "",
