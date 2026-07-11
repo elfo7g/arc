@@ -529,7 +529,7 @@ private struct JournalEntryRow: View {
                         ForEach(Array(entry.dialogue.enumerated()), id: \.offset) { _, message in
                             Text(message.text)
                                 .font(.footnote)
-                                .foregroundStyle(message.role == "user" ? .secondary : .primary.opacity(0.8))
+                                .foregroundStyle(message.role == "user" ? Color.secondary : Color.primary.opacity(0.8))
                         }
                     }
                     .padding(.top, 2)
