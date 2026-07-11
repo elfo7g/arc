@@ -1,0 +1,12 @@
+[functions.nilo]
+# The client calls this via supabase.functions.invoke(), which attaches the
+# user's session JWT automatically. Keeping this explicit (rather than relying
+# on the CLI's default) means an unauthenticated caller can never reach
+# Gemini or burn API quota on this project, even if someone redeploys with a
+# different `supabase functions deploy` invocation later.
+verify_jwt = true
+
+[functions.delete-account]
+# GDPR Art.17: deletes the caller's auth user (user_state row cascades).
+# Must never be reachable without a valid session JWT.
+verify_jwt = true

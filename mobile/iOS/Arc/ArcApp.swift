@@ -9,6 +9,9 @@ struct ArcApp: App {
             ContentView()
                 .environmentObject(store)
                 .preferredColorScheme(.dark)
+                .task {
+                    await store.loadStateIfSignedIn()
+                }
         }
     }
 }

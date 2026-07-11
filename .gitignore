@@ -1,0 +1,7 @@
+.vercel
+.env*
+Web/.chrome-profile/
+Web/.chrome-profile2/
+Web/server.err.log
+Web/server.out.log
+supabase/.temp/

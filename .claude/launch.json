@@ -9,11 +9,10 @@
       "autoPort": false
     },
     {
-      "name": "web-api",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["server.js"],
-      "cwd": "Web",
-      "port": 4173,
+      "name": "expo-web-dev-build",
+      "runtimeExecutable": "scripts\\expo-web-dev-build.cmd",
+      "runtimeArgs": [],
+      "port": 8091,
       "autoPort": false
     }
   ]

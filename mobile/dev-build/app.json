@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "Arc Dev",
+    "slug": "arc-nilo-dev",
+    "scheme": "arc-nilo-dev",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#03050b"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.arc.nilo.dev",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#03050b"
+      },
+      "package": "app.arc.nilo.dev",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
+    },
+    "extra": {
+      "supabaseUrl": "https://fbpczitkbxefjxudcqmq.supabase.co",
+      "eas": {
+        "projectId": "6afa4e56-57e1-4554-bd30-3b3a1ae13d75"
+      }
+    },
+    "plugins": [
+      "expo-web-browser",
+      "expo-audio",
+      "@sentry/react-native",
+      "expo-secure-store"
+    ],
+    "owner": "erfo7g",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/6afa4e56-57e1-4554-bd30-3b3a1ae13d75"
+    }
+  }
+}

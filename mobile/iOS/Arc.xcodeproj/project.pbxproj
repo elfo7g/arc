@@ -13,6 +13,7 @@
 		100000000000000000000014 /* ArcAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000004 /* ArcAPI.swift */; };
 		100000000000000000000015 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000005 /* ContentView.swift */; };
 		100000000000000000000016 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000006 /* Assets.xcassets */; };
+		100000000000000000000017 /* ArcSupabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000009 /* ArcSupabase.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,6 +25,7 @@
 		100000000000000000000006 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		100000000000000000000007 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		100000000000000000000008 /* Arc.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Arc.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		100000000000000000000009 /* ArcSupabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArcSupabase.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -52,6 +54,7 @@
 				100000000000000000000002 /* ArcModels.swift */,
 				100000000000000000000003 /* ArcStore.swift */,
 				100000000000000000000004 /* ArcAPI.swift */,
+				100000000000000000000009 /* ArcSupabase.swift */,
 				100000000000000000000005 /* ContentView.swift */,
 				100000000000000000000006 /* Assets.xcassets */,
 				100000000000000000000007 /* Info.plist */,
@@ -141,6 +144,7 @@
 				100000000000000000000012 /* ArcModels.swift in Sources */,
 				100000000000000000000013 /* ArcStore.swift in Sources */,
 				100000000000000000000014 /* ArcAPI.swift in Sources */,
+				100000000000000000000017 /* ArcSupabase.swift in Sources */,
 				100000000000000000000015 /* ContentView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -198,7 +202,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -224,7 +228,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
@@ -244,13 +248,13 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Arc/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = app.arc.nilo;
+				PRODUCT_BUNDLE_IDENTIFIER = app.arc.nilo.native;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.9;
@@ -267,13 +271,13 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Arc/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = app.arc.nilo;
+				PRODUCT_BUNDLE_IDENTIFIER = app.arc.nilo.native;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.9;

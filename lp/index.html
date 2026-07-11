@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arc — 夜に一日を静かに閉じる日記</title>
+<meta name="description" content="Arcは、夜に一日を静かに記録する儀式。AIコンパニオンNiloは導かず、評価せず、記録を手伝うだけ。記録は数年単位で人生の章になる。">
+<style>
+  :root {
+    --night: #0b0e17;
+    --night-soft: #121628;
+    --gold: rgba(228, 209, 175, 1);
+    --gold-66: rgba(228, 209, 175, 0.66);
+    --gold-30: rgba(228, 209, 175, 0.3);
+    --gold-12: rgba(228, 209, 175, 0.12);
+    --ink: rgba(255, 254, 244, 0.92);
+    --ink-soft: rgba(255, 254, 244, 0.64);
+    --ink-faint: rgba(255, 254, 244, 0.4);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--night);
+    color: var(--ink);
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", Georgia, "Times New Roman", serif;
+    line-height: 1.9;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 24px; }
+
+  /* header */
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(11, 14, 23, 0.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--gold-12);
+  }
+  .nav { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; max-width: 960px; margin: 0 auto; }
+  .brand { font-size: 20px; letter-spacing: 0.35em; color: var(--gold-66); }
+  .lang { display: flex; gap: 4px; }
+  .lang button {
+    background: none; border: 1px solid transparent; border-radius: 8px;
+    color: var(--ink-faint); font-size: 12px; padding: 4px 8px; cursor: pointer;
+    font-family: inherit; letter-spacing: 0.08em;
+  }
+  .lang button:hover { color: var(--ink-soft); }
+  .lang button.active { color: var(--gold-66); border-color: var(--gold-30); }
+
+  /* hero */
+  .hero { padding: 110px 0 90px; text-align: center; position: relative; overflow: hidden; }
+  .hero h1 {
+    font-size: clamp(28px, 5.5vw, 44px);
+    font-weight: 500; letter-spacing: 0.06em; line-height: 1.7;
+  }
+  .hero p.lead { margin-top: 28px; color: var(--ink-soft); font-size: clamp(15px, 2.5vw, 17px); }
+  .stars { position: absolute; inset: 0; pointer-events: none; }
+  .stars span {
+    position: absolute; width: 2px; height: 2px; border-radius: 50%;
+    background: var(--gold-66); opacity: 0.5;
+    animation: twinkle 4s ease-in-out infinite;
+  }
+  @keyframes twinkle { 0%,100% { opacity: 0.15; } 50% { opacity: 0.6; } }
+
+  .cta {
+    display: inline-block; margin-top: 44px;
+    border: 1px solid var(--gold-30); border-radius: 999px;
+    color: var(--gold); text-decoration: none;
+    padding: 14px 40px; font-size: 15px; letter-spacing: 0.12em;
+    transition: background 0.3s, border-color 0.3s;
+  }
+  .cta:hover { background: var(--gold-12); border-color: var(--gold-66); }
+
+  /* sections */
+  section { padding: 72px 0; border-top: 1px solid var(--gold-12); }
+  h2 {
+    font-size: clamp(20px, 3.5vw, 26px); font-weight: 500;
+    letter-spacing: 0.1em; margin-bottom: 40px; text-align: center;
+    color: var(--gold-66);
+  }
+  .refusals { list-style: none; display: grid; gap: 20px; }
+  .refusals li {
+    border: 1px solid var(--gold-12); border-radius: 16px; padding: 24px 28px;
+    background: var(--night-soft);
+  }
+  .refusals li strong { display: block; color: var(--gold-66); font-weight: 500; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .refusals li span { color: var(--ink-soft); font-size: 14.5px; }
+
+  .steps { display: grid; gap: 32px; counter-reset: step; }
+  .step { display: flex; gap: 20px; align-items: baseline; }
+  .step .num {
+    flex: none; width: 40px; height: 40px; border-radius: 50%;
+    border: 1px solid var(--gold-30); color: var(--gold-66);
+    display: flex; align-items: center; justify-content: center; font-size: 15px;
+  }
+  .step h3 { font-weight: 500; letter-spacing: 0.06em; font-size: 17px; }
+  .step p { color: var(--ink-soft); font-size: 14.5px; margin-top: 4px; }
+
+  .trust { color: var(--ink-soft); font-size: 15px; text-align: center; }
+  .trust p + p { margin-top: 18px; }
+  .trust .badges { margin-top: 32px; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .trust .badges span {
+    border: 1px solid var(--gold-12); border-radius: 999px;
+    padding: 6px 16px; font-size: 12.5px; letter-spacing: 0.08em; color: var(--ink-faint);
+  }
+
+  .closing { text-align: center; }
+  .closing p { color: var(--ink-soft); }
+
+  footer { border-top: 1px solid var(--gold-12); padding: 40px 24px; text-align: center; color: var(--ink-faint); font-size: 12.5px; letter-spacing: 0.08em; }
+  footer .brand-foot { color: var(--gold-30); letter-spacing: 0.35em; margin-bottom: 10px; font-size: 15px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="nav">
+    <div class="brand">ARC</div>
+    <nav class="lang" aria-label="Language">
+      <button data-lang="ja" class="active">日本語</button>
+      <button data-lang="en">EN</button>
+      <button data-lang="de">DE</button>
+      <button data-lang="fr">FR</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <div class="stars" aria-hidden="true">
+      <span style="top:12%;left:18%;animation-delay:0s"></span>
+      <span style="top:28%;left:72%;animation-delay:1.2s"></span>
+      <span style="top:55%;left:32%;animation-delay:2.1s"></span>
+      <span style="top:18%;left:52%;animation-delay:0.6s"></span>
+      <span style="top:66%;left:80%;animation-delay:2.8s"></span>
+      <span style="top:44%;left:10%;animation-delay:1.7s"></span>
+      <span style="top:74%;left:58%;animation-delay:3.4s"></span>
+    </div>
+    <div class="wrap">
+      <h1 data-i18n="hero_title"></h1>
+      <p class="lead" data-i18n="hero_lead"></p>
+      <a class="cta" href="#waitlist" data-i18n="hero_cta"></a>
+    </div>
+  </div>
+
+  <section>
+    <div class="wrap">
+      <h2 data-i18n="refusals_title"></h2>
+      <ul class="refusals">
+        <li><strong data-i18n="r1_t"></strong><span data-i18n="r1_b"></span></li>
+        <li><strong data-i18n="r2_t"></strong><span data-i18n="r2_b"></span></li>
+        <li><strong data-i18n="r3_t"></strong><span data-i18n="r3_b"></span></li>
+        <li><strong data-i18n="r4_t"></strong><span data-i18n="r4_b"></span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2 data-i18n="how_title"></h2>
+      <div class="steps">
+        <div class="step">
+          <div class="num">1</div>
+          <div><h3 data-i18n="s1_t"></h3><p data-i18n="s1_b"></p></div>
+        </div>
+        <div class="step">
+          <div class="num">2</div>
+          <div><h3 data-i18n="s2_t"></h3><p data-i18n="s2_b"></p></div>
+        </div>
+        <div class="step">
+          <div class="num">3</div>
+          <div><h3 data-i18n="s3_t"></h3><p data-i18n="s3_b"></p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap trust">
+      <h2 data-i18n="trust_title"></h2>
+      <p data-i18n="trust_b1"></p>
+      <p data-i18n="trust_b2"></p>
+      <div class="badges">
+        <span data-i18n="badge1"></span>
+        <span data-i18n="badge2"></span>
+        <span data-i18n="badge3"></span>
+        <span data-i18n="badge4"></span>
+      </div>
+    </div>
+  </section>
+
+  <section id="waitlist">
+    <div class="wrap closing">
+      <h2 data-i18n="close_title"></h2>
+      <p data-i18n="close_b"></p>
+      <a class="cta" href="mailto:sadotatsu1023@gmail.com?subject=Arc%20Waitlist" data-i18n="close_cta"></a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="brand-foot">ARC</div>
+  <div data-i18n="footer"></div>
+</footer>
+
+<script>
+const I18N = {
+  ja: {
+    hero_title: "夜、一日を静かに閉じる。\nその記録が、いつか人生の章になる。",
+    hero_lead: "Arc は書かせない日記。AIコンパニオン Nilo が夜に数問だけ聞いて、あなたの一日を拾い上げます。導かず、評価せず、記録を手伝うだけ。",
+    hero_cta: "ウェイトリストに登録",
+    refusals_title: "Arc がしないこと",
+    r1_t: "評価しない",
+    r1_b: "良い一日か悪い一日かを、Nilo は決して判定しません。あなたの一日は、あなたのものです。",
+    r2_t: "コーチしない",
+    r2_b: "アドバイスも目標設定もありません。Nilo は「旅の記録係」。導くのではなく、そばで書き留めます。",
+    r3_t: "継続を煽らない",
+    r3_b: "ストリークも達成バッジもありません。休んだ日を責める仕組みは、最初から入れていません。",
+    r4_t: "白紙を突きつけない",
+    r4_b: "「さあ書いて」とは言いません。夜の儀式は最大5問、一問ずつ。3分で終わる、終わりのある時間です。",
+    how_title: "Arc の一日",
+    s1_t: "夜の儀式",
+    s1_b: "一日の終わりに、Nilo が静かに数問。答えるだけで今日が記録として残ります。",
+    s2_t: "ジャーナルが育つ",
+    s2_b: "日々の記録は月ごとの帯になり、Nilo が記憶の中から長い「探求」のテーマを見つけてきます。",
+    s3_t: "人生の章になる",
+    s3_b: "数ヶ月、数年。振り返るとき、Nilo は章の区切りを差し出します。章に名前をつけるのは、あなたです。",
+    trust_title: "最も私的な記録だから",
+    trust_b1: "日記は、あなたの最も私的なデータです。Arc はそれを預かる責任を、機能ではなく約束として設計しています。",
+    trust_b2: "AI処理はすべてサーバー側で完結し、記録は暗号化して保存。データの所有権はあなたにあり、いつでもエクスポートでき、アカウントと全データの完全削除もワンタップです。",
+    badge1: "GDPR準拠",
+    badge2: "暗号化保存",
+    badge3: "データエクスポート",
+    badge4: "完全削除の権利",
+    close_title: "今夜から、はじまる",
+    close_b: "日記が続かなかったのは、意志が弱いからではありません。Arc は近日、ドイツ・フランス・日本で公開予定です。",
+    close_cta: "ウェイトリストに登録",
+    footer: "© 2026 Meridian — Arc. 導かず、評価せず、記録を手伝うだけ。"
+  },
+  en: {
+    hero_title: "Close your day quietly, at night.\nOne day, those records become the chapters of your life.",
+    hero_lead: "Arc is the journal that never makes you write. At night, your AI companion Nilo asks just a few questions and gathers your day. No guiding, no judging — only keeping the record.",
+    hero_cta: "Join the waitlist",
+    refusals_title: "What Arc refuses to do",
+    r1_t: "No judging",
+    r1_b: "Nilo never decides whether you had a good day or a bad one. Your day belongs to you.",
+    r2_t: "No coaching",
+    r2_b: "No advice, no goal-setting. Nilo is the chronicler of your journey — walking beside you, writing things down.",
+    r3_t: "No streak pressure",
+    r3_b: "No streaks, no achievement badges. There is no mechanism that blames you for a day off — by design.",
+    r4_t: "No blank page",
+    r4_b: "Arc never says “now write.” The night ritual is at most five questions, one at a time. Three minutes, with a real ending.",
+    how_title: "A day with Arc",
+    s1_t: "The night ritual",
+    s1_b: "At the end of the day, Nilo quietly asks a few questions. Just answering leaves today on record.",
+    s2_t: "Your journal grows",
+    s2_b: "Daily records settle into monthly bands, and Nilo finds long-running themes of exploration in your memories.",
+    s3_t: "It becomes chapters",
+    s3_b: "Months, years. When you look back, Nilo offers where a chapter might end. Naming it is yours alone.",
+    trust_title: "Because nothing is more private",
+    trust_b1: "A journal is your most private data. Arc treats that responsibility as a promise, not a feature.",
+    trust_b2: "All AI processing stays server-side, records are stored encrypted. Your data is yours: export anytime, and delete your account and all data completely with one tap.",
+    badge1: "GDPR compliant",
+    badge2: "Encrypted at rest",
+    badge3: "Data export",
+    badge4: "Right to erasure",
+    close_title: "It begins tonight",
+    close_b: "If journaling never lasted, it was never about willpower. Arc is coming soon to Germany, France, and Japan.",
+    close_cta: "Join the waitlist",
+    footer: "© 2026 Meridian — Arc. No guiding, no judging — only keeping the record."
+  },
+  de: {
+    hero_title: "Schließe deinen Tag in Ruhe ab — am Abend.\nEines Tages werden diese Aufzeichnungen zu den Kapiteln deines Lebens.",
+    hero_lead: "Arc ist das Tagebuch, das dich nie zum Schreiben zwingt. Am Abend stellt dir dein KI-Begleiter Nilo nur wenige Fragen und sammelt deinen Tag ein. Kein Anleiten, kein Bewerten — nur das Festhalten.",
+    hero_cta: "Auf die Warteliste",
+    refusals_title: "Was Arc bewusst nicht tut",
+    r1_t: "Kein Bewerten",
+    r1_b: "Nilo entscheidet nie, ob dein Tag gut oder schlecht war. Dein Tag gehört dir.",
+    r2_t: "Kein Coaching",
+    r2_b: "Keine Ratschläge, keine Zielvorgaben. Nilo ist der Chronist deiner Reise — er geht neben dir und schreibt auf.",
+    r3_t: "Kein Streak-Druck",
+    r3_b: "Keine Serien, keine Abzeichen. Es gibt keinen Mechanismus, der dich für einen freien Tag tadelt — mit Absicht.",
+    r4_t: "Keine leere Seite",
+    r4_b: "Arc sagt nie „jetzt schreib“. Das Abendritual sind höchstens fünf Fragen, eine nach der anderen. Drei Minuten, mit einem echten Ende.",
+    how_title: "Ein Tag mit Arc",
+    s1_t: "Das Abendritual",
+    s1_b: "Am Ende des Tages stellt Nilo leise ein paar Fragen. Allein durch das Antworten bleibt der Tag festgehalten.",
+    s2_t: "Dein Journal wächst",
+    s2_b: "Tägliche Einträge fügen sich zu Monatsbändern, und Nilo entdeckt in deinen Erinnerungen langfristige Themen.",
+    s3_t: "Es werden Kapitel",
+    s3_b: "Monate, Jahre. Beim Zurückblicken schlägt Nilo vor, wo ein Kapitel enden könnte. Den Namen gibst allein du.",
+    trust_title: "Weil nichts privater ist",
+    trust_b1: "Ein Tagebuch sind deine privatesten Daten. Arc versteht diese Verantwortung als Versprechen, nicht als Funktion.",
+    trust_b2: "Die gesamte KI-Verarbeitung bleibt serverseitig, Einträge werden verschlüsselt gespeichert. Deine Daten gehören dir: jederzeit exportierbar, und Konto samt aller Daten lassen sich mit einem Tipp vollständig löschen.",
+    badge1: "DSGVO-konform",
+    badge2: "Verschlüsselt gespeichert",
+    badge3: "Datenexport",
+    badge4: "Recht auf Löschung",
+    close_title: "Es beginnt heute Abend",
+    close_b: "Wenn Tagebuchschreiben nie gehalten hat, lag es nie an deiner Willenskraft. Arc erscheint bald in Deutschland, Frankreich und Japan.",
+    close_cta: "Auf die Warteliste",
+    footer: "© 2026 Meridian — Arc. Kein Anleiten, kein Bewerten — nur das Festhalten."
+  },
+  fr: {
+    hero_title: "Refermez votre journée en douceur, le soir.\nUn jour, ces traces deviendront les chapitres de votre vie.",
+    hero_lead: "Arc est le journal qui ne vous force jamais à écrire. Le soir, votre compagnon IA Nilo pose seulement quelques questions et recueille votre journée. Sans guider, sans juger — seulement garder la trace.",
+    hero_cta: "Rejoindre la liste d’attente",
+    refusals_title: "Ce qu’Arc refuse de faire",
+    r1_t: "Ne pas juger",
+    r1_b: "Nilo ne décide jamais si votre journée fut bonne ou mauvaise. Votre journée vous appartient.",
+    r2_t: "Ne pas coacher",
+    r2_b: "Pas de conseils, pas d’objectifs imposés. Nilo est le chroniqueur de votre voyage — il marche à vos côtés et prend note.",
+    r3_t: "Aucune pression de série",
+    r3_b: "Pas de streaks, pas de badges. Aucun mécanisme ne vous reproche un jour de repos — c’est voulu.",
+    r4_t: "Jamais de page blanche",
+    r4_b: "Arc ne dit jamais « écrivez maintenant ». Le rituel du soir : cinq questions au plus, une à la fois. Trois minutes, avec une vraie fin.",
+    how_title: "Une journée avec Arc",
+    s1_t: "Le rituel du soir",
+    s1_b: "À la fin de la journée, Nilo pose doucement quelques questions. Répondre suffit pour que la journée reste inscrite.",
+    s2_t: "Votre journal grandit",
+    s2_b: "Les entrées quotidiennes se déposent en bandes mensuelles, et Nilo découvre dans vos souvenirs des thèmes d’exploration au long cours.",
+    s3_t: "Il devient des chapitres",
+    s3_b: "Des mois, des années. Au moment de regarder en arrière, Nilo propose où un chapitre pourrait se clore. Le nommer ne revient qu’à vous.",
+    trust_title: "Parce que rien n’est plus intime",
+    trust_b1: "Un journal, ce sont vos données les plus intimes. Arc considère cette responsabilité comme une promesse, non comme une fonctionnalité.",
+    trust_b2: "Tout le traitement IA reste côté serveur, les entrées sont chiffrées. Vos données vous appartiennent : exportables à tout moment, et la suppression complète du compte et de toutes les données se fait d’un seul geste.",
+    badge1: "Conforme RGPD",
+    badge2: "Chiffrement au repos",
+    badge3: "Export des données",
+    badge4: "Droit à l’effacement",
+    close_title: "Cela commence ce soir",
+    close_b: "Si tenir un journal n’a jamais duré, la volonté n’y était pour rien. Arc arrive bientôt en Allemagne, en France et au Japon.",
+    close_cta: "Rejoindre la liste d’attente",
+    footer: "© 2026 Meridian — Arc. Sans guider, sans juger — seulement garder la trace."
+  }
+};
+
+function setLang(lang) {
+  const dict = I18N[lang];
+  if (!dict) return;
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const key = el.getAttribute("data-i18n");
+    if (!(key in dict)) return;
+    if (key === "hero_title") {
+      el.innerHTML = "";
+      dict[key].split("\n").forEach((line, i) => {
+        if (i > 0) el.appendChild(document.createElement("br"));
+        el.appendChild(document.createTextNode(line));
+      });
+    } else {
+      el.textContent = dict[key];
+    }
+  });
+  document.querySelectorAll(".lang button").forEach(b => {
+    b.classList.toggle("active", b.dataset.lang === lang);
+  });
+  try { localStorage.setItem("arc-lp-lang", lang); } catch (e) {}
+}
+
+document.querySelectorAll(".lang button").forEach(b => {
+  b.addEventListener("click", () => setLang(b.dataset.lang));
+});
+
+let initial = "ja";
+try { initial = localStorage.getItem("arc-lp-lang") || (navigator.language || "ja").slice(0, 2); } catch (e) {}
+setLang(I18N[initial] ? initial : "ja");
+</script>
+</body>
+</html>
