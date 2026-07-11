@@ -565,6 +565,220 @@ JSONだけを返してください。Markdownは禁止です。
 `.trim();
 }
 
+const NIGHT_QUESTION_FOCUSES = new Set([
+  "event",
+  "context",
+  "relationship",
+  "feeling",
+  "body",
+  "timeline",
+  "next_step"
+]);
+
+type NightQuestionPlan = {
+  unintelligible: boolean;
+  done: boolean;
+  anchor: string;
+  focus: string;
+  reference: string;
+  questUpdates: Array<{
+    id: string;
+    title: string;
+    progressDelta: number;
+    completed: boolean;
+    note: string;
+  }>;
+};
+
+function buildNightQuestionPlanPrompt(body: JsonRecord, lang: SupportedLanguage) {
+  const messages = Array.isArray(body.messages) ? body.messages as JsonRecord[] : [];
+  const safeMessages = messages.slice(-10).map((message, index) => {
+    const speaker = message.role === "user" ? "User" : "Nilo";
+    return `${index + 1}. ${speaker}: ${String(message.text || "").slice(0, 500)}`;
+  }).join("\n");
+  const userMessages = messages.filter((message) => message.role === "user");
+  const latestAnswer = userMessages.length ? String(userMessages[userMessages.length - 1].text || "").slice(0, 500) : "";
+  const activeQuests = Array.isArray(body.activeQuests) ? body.activeQuests as JsonRecord[] : [];
+  const questLines = activeQuests.map((quest, index) => {
+    if (typeof quest === "string") return `${index + 1}. ${quest}`;
+    return `${index + 1}. id:${quest.id} / ${quest.title} / ${quest.current || 0}/${quest.target || 1}`;
+  }).join("\n") || "なし";
+  const currentQuestionCount = Number(body.questionCount) || 1;
+  const mustFinish = Boolean(body.forceFinish) || currentQuestionCount >= 5;
+  const pastMemories = Array.isArray(body.pastMemories) ? body.pastMemories as JsonRecord[] : [];
+  const chapterEchoes = Array.isArray(body.chapterEchoes) ? body.chapterEchoes as JsonRecord[] : [];
+  const variationGuidance = mustFinish ? "" : pickVariationGuidance({
+    currentQuestionCount,
+    activeQuests,
+    pastMemories,
+    chapterEchoes,
+    latestAnswer,
+    lang
+  });
+
+  return `
+あなたは人生アプリ ARC のNilo対話における、非表示の質問計画器です。
+ユーザー向けの返答や説明、思考過程は書かず、次の一問を正確に設計するための最小JSONだけを返してください。
+
+ルール:
+- anchor は直前のユーザー回答から一字も変えずに抜き出す、2〜24文字の具体的な語句です。回答内に存在しない語句は絶対に書かないでください。
+- focus は event / context / relationship / feeling / body / timeline / next_step のいずれか一つだけです。
+- 直前のNiloの問いで既に聞いたことを繰り返さず、回答の中でまだ整理されていない一箇所だけを選びます。
+- ユーザーの発話より抽象度を上げないでください。助言、評価、診断、象徴化、人生観への飛躍は禁止です。
+- 文章として意味を受け取れない入力だけ unintelligible:true にします。短い回答、一語、曖昧な回答は通常の入力です。
+- 十分に記録できたときだけ done:true にします。mustFinish:true なら必ず done:true にします。
+- reference は任意です。下の任意コンテキストから、今回の問いに本当に必要な短い引用だけをそのまま抜き出してください。不要なら空文字にします。
+- questUpdates は、進行中の探求が実際に一区切りついたと読み取れる場合だけ入れます。id は下の進行中クエストにあるものだけを使います。
+
+直前のユーザー回答:
+${latestAnswer || "なし"}
+
+現在の質問数: ${currentQuestionCount}
+必ず終了: ${mustFinish}
+
+会話ログ:
+${safeMessages || "なし"}
+
+進行中クエスト:
+${questLines}
+
+${variationGuidance ? `任意コンテキスト:\n${variationGuidance}\n` : ""}
+JSONだけを返してください。
+{
+  "unintelligible": false,
+  "done": false,
+  "anchor": "直前の回答にある短い語句",
+  "focus": "event",
+  "reference": "",
+  "questUpdates": []
+}
+`.trim();
+}
+
+function normalizeNightQuestionPlan(value: JsonRecord, body: JsonRecord): NightQuestionPlan {
+  const messages = Array.isArray(body.messages) ? body.messages as JsonRecord[] : [];
+  const userMessages = messages.filter((message) => message.role === "user");
+  const latestAnswer = userMessages.length ? String(userMessages[userMessages.length - 1].text || "").slice(0, 500) : "";
+  const rawAnchor = String(value.anchor || "").trim().slice(0, 24);
+  const anchor = rawAnchor && latestAnswer.includes(rawAnchor)
+    ? rawAnchor
+    : latestAnswer.slice(0, 24);
+  const focus = String(value.focus || "event");
+  const activeQuests = Array.isArray(body.activeQuests) ? body.activeQuests as JsonRecord[] : [];
+  const allowedQuestIds = new Set(activeQuests.map((quest) => String(quest.id || "")).filter(Boolean));
+  const questUpdates = Array.isArray(value.questUpdates)
+    ? value.questUpdates.slice(0, 5).map((update: any) => ({
+      id: String(update.id || "").slice(0, 80),
+      title: String(update.title || "").slice(0, 36),
+      progressDelta: Number.isFinite(Number(update.progressDelta)) ? Math.max(0, Math.min(1, Number(update.progressDelta))) : 0,
+      completed: Boolean(update.completed),
+      note: String(update.note || "").slice(0, 80)
+    })).filter((update) => allowedQuestIds.has(update.id))
+    : [];
+  const rawReference = String(value.reference || "").trim().slice(0, 120);
+  const pastMemories = Array.isArray(body.pastMemories) ? body.pastMemories as JsonRecord[] : [];
+  const chapterEchoes = Array.isArray(body.chapterEchoes) ? body.chapterEchoes as JsonRecord[] : [];
+  const referenceSource = [...pastMemories, ...chapterEchoes]
+    .map((item) => Object.values(item).join(" "))
+    .join("\n");
+
+  return {
+    unintelligible: Boolean(value.unintelligible),
+    done: !Boolean(value.unintelligible) && Boolean(value.done),
+    anchor,
+    focus: NIGHT_QUESTION_FOCUSES.has(focus) ? focus : "event",
+    reference: rawReference && referenceSource.includes(rawReference) ? rawReference : "",
+    questUpdates
+  };
+}
+
+function buildNightQuestionComposerPrompt(body: JsonRecord, lang: SupportedLanguage, plan: NightQuestionPlan) {
+  const messages = Array.isArray(body.messages) ? body.messages as JsonRecord[] : [];
+  const userMessages = messages.filter((message) => message.role === "user");
+  const latestAnswer = userMessages.length ? String(userMessages[userMessages.length - 1].text || "").slice(0, 500) : "";
+  const previousQuestion = messages.slice().reverse().find((message) => message.role === "nilo");
+  const niloStyle = String(body.niloStyle || "empathetic");
+  const styleGuidance = NILO_DIALOGUE_STYLES[niloStyle] || NILO_DIALOGUE_STYLES.empathetic;
+
+  return `
+あなたは人生アプリ ARC のNiloです。夜の記録のため、次の一問だけを静かに書いてください。
+
+${buildLanguageInstruction(lang)}
+
+検証済みの質問計画:
+- 根拠語: 「${plan.anchor}」
+- 焦点: ${plan.focus}
+${plan.reference ? `- 任意の文脈引用: 「${plan.reference}」` : ""}
+
+直前のユーザー回答:
+${latestAnswer || "なし"}
+
+直前のNiloの問い:
+${previousQuestion ? String(previousQuestion.text || "").slice(0, 160) : "なし"}
+
+話し方:
+${styleGuidance}
+
+ルール:
+- 根拠語を手掛かりに、まだ聞いていない具体的な一点だけを尋ねる。
+- 質問は一つ、40文字以内。助言、評価、診断、抽象化、複数の問いは禁止。
+- 根拠語が選択言語と異なる場合は、引用を無理に残さず自然に訳してよい。ただし内容は根拠語から離れない。
+- acknowledgment は任意の短い受け止め。一問の代わりにはしない。
+
+JSONだけを返してください。
+{
+  "acknowledgment": "",
+  "nextQuestion": "根拠語に係留した短い一問"
+}
+`.trim();
+}
+
+function isValidPlannedQuestion(question: string, plan: NightQuestionPlan, body: JsonRecord) {
+  const normalized = String(question || "").replace(/\s+/g, "").trim();
+  if (!plan.anchor || normalized.length < 2 || normalized.length > 40) return false;
+  if ((normalized.match(/[?？]/g) || []).length > 1) return false;
+  const priorQuestions = (Array.isArray(body.messages) ? body.messages as JsonRecord[] : [])
+    .filter((message) => message.role === "nilo")
+    .map((message) => String(message.text || "").replace(/\s+/g, "").trim());
+  return !priorQuestions.includes(normalized);
+}
+
+async function runNightRitual(body: JsonRecord, lang: SupportedLanguage, strings: Record<string, string>) {
+  const currentQuestionCount = Number(body.questionCount) || 1;
+  const mustFinish = Boolean(body.forceFinish) || currentQuestionCount >= 5;
+
+  // 締めは既存の要約生成を使う。二段化するのは精度が重要な「次の問い」だけ。
+  if (mustFinish) {
+    const json = await callGeminiJson(buildAdaptiveNightRitualPrompt(body, lang), { temperature: 0.82 });
+    return normalizeNightRitual(json, strings);
+  }
+
+  const planJson = await callGeminiJson(buildNightQuestionPlanPrompt(body, lang), { temperature: 0.2 });
+  const plan = normalizeNightQuestionPlan(planJson, body);
+  if (plan.unintelligible) {
+    return normalizeNightRitual({ unintelligible: true, done: false }, strings);
+  }
+
+  // 早期終了は、計画器の判定を受けて既存の締め生成へ渡す。
+  if (plan.done) {
+    const json = await callGeminiJson(buildAdaptiveNightRitualPrompt({ ...body, forceFinish: true }, lang), { temperature: 0.82 });
+    return normalizeNightRitual(json, strings);
+  }
+
+  const composed = await callGeminiJson(buildNightQuestionComposerPrompt(body, lang, plan), { temperature: 0.55 });
+  const result = normalizeNightRitual({
+    ...composed,
+    done: false,
+    unintelligible: false,
+    questUpdates: plan.questUpdates
+  }, strings);
+  if (isValidPlannedQuestion(result.nextQuestion, plan, body)) return result;
+
+  // 計画に沿わない出力だけ、従来の一段生成へ戻して対話を止めない。
+  const fallback = await callGeminiJson(buildAdaptiveNightRitualPrompt(body, lang), { temperature: 0.82 });
+  return normalizeNightRitual(fallback, strings);
+}
+
 function normalizeChapters(value: JsonRecord) {
   const proposals = Array.isArray(value?.proposals)
     ? value.proposals.slice(0, 6).map((p: any) => ({
@@ -799,6 +1013,49 @@ function normalizeLifeChat(value: JsonRecord) {
   return { reply: String(value?.reply || "").slice(0, 400) };
 }
 
+function normalizeLifeChatSummary(value: JsonRecord, strings: Record<string, string>) {
+  const summaryLines = toStrList(value?.summaryLines, 5, 90);
+  return {
+    title: String(value?.title || strings.defaultTitle).slice(0, 32),
+    summaryLines: summaryLines.length >= 3
+      ? summaryLines
+      : summaryLines.concat([strings.defaultSummaryLine]).slice(0, 3),
+    niloLine: String(value?.niloLine || "").slice(0, 56)
+  };
+}
+
+function buildLifeChatSummaryPrompt(body: JsonRecord, lang: SupportedLanguage) {
+  const messages = Array.isArray(body.messages) ? body.messages as JsonRecord[] : [];
+  const safeMessages = messages.slice(-12).map((message, index) => {
+    const speaker = message.role === "user" ? "User" : "Nilo";
+    return `${index + 1}. ${speaker}: ${String(message.text || "").slice(0, 300)}`;
+  }).join("\n");
+
+  return `
+あなたは人生アプリ ARC の Nilo です。ユーザーが明示して残したい、この短い対話から日記本文を作ります。
+これは箇条書きの要約ではありません。対話の中でユーザーが実際に話したことだけを、本人があとで読み返すための自然な短い日記として書いてください。
+
+${buildLanguageInstruction(lang)}
+
+ルール:
+- Nilo の発言を事実として混ぜず、ユーザーの発言に根拠があることだけを書く。
+- ユーザー自身の一人称で書く。各 summaryLines は独立した箇条書きではなく、上から順に読んで一つの短い日記本文になる文にする。
+- 新しい解釈・原因・意味・感情を足さない。評価語、励まし、次の行動の提案は禁止。
+- タイトルは32文字以内。summaryLines は3〜5文、各90文字以内。箇条書き記号・見出し・会話の逐語録・引用の羅列は使わない。個人情報を推測・補完しない。
+- niloLine は常に空文字にする。日記本文にNiloの感想や締めを足さない。
+
+対話:
+${safeMessages || "なし"}
+
+JSONだけを返してください。Markdownは禁止です。
+{
+  "title": "短い日記の題",
+  "summaryLines": ["一人称の自然な日記本文の一文目。", "前の文につながる二文目。", "静かに閉じる三文目。"],
+  "niloLine": ""
+}
+`.trim();
+}
+
 function buildLifeChatPrompt(body: JsonRecord, lang: SupportedLanguage) {
   const messages = Array.isArray(body.messages) ? body.messages as JsonRecord[] : [];
   const safeMessages = messages.slice(-12).map((message, index) => {
@@ -855,8 +1112,7 @@ async function handleRoute(route: string, body: JsonRecord) {
   if (route === "night-ritual") {
     const messages = Array.isArray(body.messages) ? body.messages : [];
     if (!messages.length) return jsonResponse(400, { message: strings.emptyRitualLog });
-    const json = await callGeminiJson(buildAdaptiveNightRitualPrompt(body, lang), { temperature: 0.82 });
-    return jsonResponse(200, normalizeNightRitual(json, strings));
+    return jsonResponse(200, await runNightRitual(body, lang, strings));
   }
 
   if (route === "chapters") {
@@ -880,6 +1136,13 @@ async function handleRoute(route: string, body: JsonRecord) {
     if (!messages.length) return jsonResponse(400, { message: strings.emptyLifeChat });
     const json = await callGeminiJson(buildLifeChatPrompt(body, lang), { temperature: 0.6 });
     return jsonResponse(200, normalizeLifeChat(json));
+  }
+
+  if (route === "life-chat-summary") {
+    const messages = Array.isArray(body.messages) ? body.messages : [];
+    if (!messages.length) return jsonResponse(400, { message: strings.emptyLifeChat });
+    const json = await callGeminiJson(buildLifeChatSummaryPrompt(body, lang), { temperature: 0.35 });
+    return jsonResponse(200, normalizeLifeChatSummary(json, strings));
   }
 
   if (route === "quest-proposals") {

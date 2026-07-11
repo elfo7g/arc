@@ -53,6 +53,7 @@ import {
   useLang,
   translate,
   formatMonthDay,
+  formatMonthLabel as formatLocalizedMonthLabel,
   formatWeekday,
   formatQuestSince as formatLocalizedQuestSince,
   formatQuestDuration as formatLocalizedQuestDuration,
@@ -1093,7 +1094,6 @@ function AppContent() {
   const [bgmStatus, setBgmStatus] = useState({ playing: false, isLoaded: false });
   const bgmPlayerRef = useRef(null);
   const sfxPlayerRef = useRef(null);
-  const tabBarOpacity = useRef(new Animated.Value(1)).current;
   const unlockNoticeOpacity = useRef(new Animated.Value(0)).current;
   // A hard blackout the instant the ritual begins, held briefly, then faded
   // away — so the dialogue arrives out of black rather than cross-fading
@@ -1548,15 +1548,6 @@ function AppContent() {
       setBgmStatus({ playing: false, isLoaded: false });
     }
   }, [settings.bgmEnabled, settings.bgmVolume]);
-
-  useEffect(() => {
-    Animated.timing(tabBarOpacity, {
-      toValue: inputMode || keyboardVisible || ritualLocked ? 0 : 1,
-      duration: inputMode || keyboardVisible || ritualLocked ? 180 : 260,
-      easing: Easing.inOut(Easing.cubic),
-      useNativeDriver: true
-    }).start();
-  }, [inputMode, keyboardVisible, ritualLocked, tabBarOpacity]);
 
   useEffect(() => {
     if (ritualLocked) return;
@@ -2620,7 +2611,7 @@ function AppContent() {
       <View style={styles.scrim} />
       <NightGrain />
       <FloatingOrbs />
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
         <Header
           profile={profile}
           session={session}
@@ -2688,20 +2679,10 @@ function AppContent() {
           )}
         </KeyboardAvoidingView>
 
-        {activeTab !== "home" && (
-          <LinearGradient
-            pointerEvents="none"
-            colors={["rgba(0,0,0,0)", "rgba(0,0,0,0.55)", "rgba(0,0,0,0.88)", "#000000"]}
-            locations={[0, 0.4, 0.75, 1]}
-            style={styles.screenBottomFade}
-          />
-        )}
-
         <TabBar
           activeTab={activeTab}
           setActiveTab={goToTab}
           hidden={inputMode || keyboardVisible || ritualLocked}
-          opacity={tabBarOpacity}
           unlocks={tabUnlocks}
         />
 
@@ -2972,11 +2953,11 @@ function NightGrain() {
   );
 }
 
-function OuterGradient() {
+function OuterGradient({ colors = ["rgba(8,15,30,0.36)", "rgba(7,13,27,0.16)", "rgba(3,7,17,0.46)"] }) {
   return (
     <View pointerEvents="none" style={styles.outerGradient}>
       <LinearGradient
-        colors={["rgba(32,26,20,0.96)", "rgba(22,18,15,0.68)", "rgba(14,11,9,0.92)"]}
+        colors={colors}
         locations={[0, 0.54, 1]}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
@@ -4101,6 +4082,9 @@ function HomeScreen({
   const [moteToken, setMoteToken] = useState(0);
   const hadPreview = useRef(false);
   const needsProfile = !profile.name?.trim() || !profile.birthdate?.trim();
+  // 人生何日目かの「Day 12,345」。誕生日基準の生涯日数であって利用日数ではない
+  // (streakではないので中断しても減らず、罪悪感を作らない)。創業者発案 2026-07-11。
+  const lifeDay = daysSince(profile.birthdate);
   const showFirstRun = !authLoading && (!session || needsProfile);
   const compact = keyboardVisible;
   const leadHour = new Date().getHours();
@@ -4170,6 +4154,11 @@ function HomeScreen({
           ]
         }]}
       >
+        {!answerPreview && !!lifeDay && (
+          <Animated.Text style={[styles.homeDayCounter, questionTransitioning && styles.homeLeadTextDimmed]}>
+            {t("home.dayCounter", lifeDay)}
+          </Animated.Text>
+        )}
         {!answerPreview && (
           <Animated.Text style={[styles.homeLeadText, questionTransitioning && styles.homeLeadTextDimmed]}>
             {/* 挨拶は時間帯に合わせる(創業者指摘 2026-07-11: 真昼の「おつかれさま」は不自然)。
@@ -4529,7 +4518,7 @@ function NiloDialogScreen({ visible, closing, question, dimmed, thinking, dateLa
   return (
     <Animated.View style={[styles.niloScreen, { opacity: fade }]}>
       <BackgroundTexture />
-      <OuterGradient />
+      <OuterGradient colors={["rgba(8,15,30,0.28)", "rgba(7,13,27,0.1)", "rgba(3,7,17,0.34)"]} />
       <View style={styles.niloScreenScrim} />
       <NightGrain />
       <FloatingOrbs />
@@ -5005,8 +4994,6 @@ function QuestScreen({ onUiSound, active, proposals, explorations, onAccept, onD
 
   return (
     <>
-    <BackgroundTexture />
-    <NightGrain />
     <ScrollView contentContainerStyle={styles.questScrollContent} showsVerticalScrollIndicator={false}>
       <RiseIn index={0} playToken={token} style={styles.questHeader}>
         <QuestHeaderShimmer />
@@ -5193,36 +5180,100 @@ function QuestScreen({ onUiSound, active, proposals, explorations, onAccept, onD
 // 日記タブ (per the Diary spec): 意味を主役にした二層のタイムライン。直近の
 // 窓だけを詳細に見せ、それ以前は月の帯に畳み、さらに古い日々は章へ委ねる。
 // 糸は「今」に最も近い一点だけが淡く光る。
+// The latest six recorded calendar months stay within reach; older history
+// belongs to chapters. Months with no record never become an empty judgement.
 function JournalScreen({ journal, active, onOpenDetail, onGoToStory, compareLastYear }) {
   const token = useEntrancePlay(active);
   const t = useT();
   const lang = useLang();
-  const { recentEntries, monthlyBands, hasOlder } = getDiaryModel(journal, { lang });
-  const [expandedBands, setExpandedBands] = useState([]);
+  const { months, hasOlder } = getJournalMonthView(journal, { lang });
+  const [selectedMonthKey, setSelectedMonthKey] = useState(null);
   // 一年前のこの頃（初年は「◯週間前の今夜」）。設定でOFFにできる。
-  const echoEntry = compareLastYear ? findLastYearEcho(journal, { lang }) : null;
   const now = new Date(`${getJournalDateKey()}T00:00:00`);
+  const monthKeys = months.map((month) => month.monthKey);
+  const monthKeySignature = monthKeys.join("|");
+  const activeMonthKey = monthKeys.includes(selectedMonthKey) ? selectedMonthKey : monthKeys[0] || null;
+  const activeMonth = months.find((month) => month.monthKey === activeMonthKey);
+  const selectedEntries = activeMonth?.entries || [];
+  const selectedMonthDate = activeMonthKey ? new Date(`${activeMonthKey}-01T00:00:00`) : now;
+  const activeMonthIsLatest = activeMonthKey === monthKeys[0];
+  const lunarMonthName = lang === "ja" ? japaneseMonthNames[selectedMonthDate.getMonth()] : null;
+  const echoEntry = activeMonthIsLatest && compareLastYear ? findLastYearEcho(journal, { lang }) : null;
+  const showStoryGuide = hasOlder && (!activeMonthKey || activeMonthKey === monthKeys[monthKeys.length - 1]);
+  // スクロール連動の奥行き: 透かしは背景より遅れて上がり静かに消え、ヘッダーの灯は引いていく。
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const watermarkParallaxStyle = {
+    opacity: scrollY.interpolate({ inputRange: [0, 220], outputRange: [1, 0], extrapolate: "clamp" }),
+    transform: [
+      { rotate: "-7deg" },
+      { translateY: scrollY.interpolate({ inputRange: [0, 300], outputRange: [0, -46], extrapolate: "clamp" }) }
+    ]
+  };
+  const auraFadeStyle = {
+    opacity: scrollY.interpolate({ inputRange: [0, 140], outputRange: [1, 0.35], extrapolate: "clamp" })
+  };
 
-  function toggleBand(monthKey) {
-    setExpandedBands((keys) =>
-      keys.includes(monthKey) ? keys.filter((key) => key !== monthKey) : [...keys, monthKey]);
-  }
+  useEffect(() => {
+    setSelectedMonthKey((current) => (monthKeys.includes(current) ? current : monthKeys[0] || null));
+  }, [monthKeySignature]);
 
   return (
-    <ScrollView contentContainerStyle={styles.journalScrollContent} showsVerticalScrollIndicator={false}>
+    <View style={styles.journalScreen}>
+      {lunarMonthName && (
+        <Animated.Text
+          pointerEvents="none"
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={[styles.journalLunarWatermark, watermarkParallaxStyle]}
+        >
+          {lunarMonthName}
+        </Animated.Text>
+      )}
+      <Animated.ScrollView
+        style={styles.journalScroll}
+        contentContainerStyle={styles.journalScrollContent}
+        showsVerticalScrollIndicator={false}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
+        scrollEventThrottle={16}
+      >
       <RiseIn index={0} playToken={token} style={styles.journalHeader}>
+        <Animated.View pointerEvents="none" style={[styles.journalHeaderAura, auraFadeStyle]}>
+          <LinearGradient
+            pointerEvents="none"
+            colors={["rgba(119,149,143,0.12)", "rgba(18,29,39,0.025)", "rgba(217,168,108,0.045)"]}
+            locations={[0, 0.56, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+        </Animated.View>
         <View style={styles.journalHeaderTop}>
           <View style={styles.journalTitleBlock}>
             <Text style={styles.mobileScreenTitle}>{t("journal.title")}</Text>
             <Text style={styles.mobileGoldLabel}>{t("journal.goldLabel")}</Text>
           </View>
           <View style={styles.journalMonthPill}>
-            <Text style={styles.journalMonth}>{`${englishMonthNames[now.getMonth()]} ${now.getFullYear()}`}</Text>
+            <Text style={styles.journalMonth}>{`${englishMonthNames[selectedMonthDate.getMonth()]} ${selectedMonthDate.getFullYear()}`}</Text>
           </View>
         </View>
+        <View pointerEvents="none" style={styles.journalHeaderRule}>
+          <LinearGradient
+            colors={["rgba(217,168,108,0)", "rgba(232,200,150,0.85)", "rgba(217,168,108,0)"]}
+            locations={[0, 0.5, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.journalHeaderRuleAccent}
+          />
+        </View>
       </RiseIn>
+      {months.length > 1 && (
+        <RiseIn index={1} playToken={token} duration={420}>
+          <JournalMonthSelector months={months} selectedMonthKey={activeMonthKey} onSelect={setSelectedMonthKey} />
+        </RiseIn>
+      )}
       {!!echoEntry && (
-        <RiseIn index={1} playToken={token}>
+        <RiseIn index={2} playToken={token}>
           <DiaryLastYearEcho entry={echoEntry} onOpenDetail={onOpenDetail} />
         </RiseIn>
       )}
@@ -5233,32 +5284,23 @@ function JournalScreen({ journal, active, onOpenDetail, onGoToStory, compareLast
           locations={[0, 0.1, 0.82, 1]}
           style={styles.timelineLine}
         />
-        {recentEntries.length === 0 && (
-          <RiseIn index={1} playToken={token}>
-            <Text style={styles.diaryEmptyRecent}>{t("journal.emptyRecent")}</Text>
+        {selectedEntries.length === 0 && (
+          <RiseIn index={2} playToken={token}>
+            <View style={styles.timelineItem}>
+              <DiaryBreathingDot />
+              <Text style={styles.diaryEmptyRecent}>{t("journal.emptyRecent")}</Text>
+            </View>
           </RiseIn>
         )}
-        {recentEntries.map((entry, index) => (
-          <RiseIn key={entry.id} index={index + 2} playToken={token} duration={550}>
-            <DiaryEntryRow entry={entry} isCurrent={index === 0} />
+        {selectedEntries.map((entry, index) => (
+          <RiseIn key={entry.id} index={index + 3} playToken={token} duration={550}>
+            <DiaryEntryRow entry={entry} isCurrent={activeMonthIsLatest && index === 0} />
           </RiseIn>
         ))}
       </View>
-      {monthlyBands.length > 0 && (
-        <FirstBandReveal firstEver={monthlyBands.length === 1}>
-          {monthlyBands.map((band) => (
-            <DiaryMonthBand
-              key={band.monthKey}
-              band={band}
-              expanded={expandedBands.includes(band.monthKey)}
-              onToggle={() => toggleBand(band.monthKey)}
-              onOpenDetail={onOpenDetail}
-            />
-          ))}
-        </FirstBandReveal>
-      )}
-      {hasOlder && <DiaryStoryGuide onGoToStory={onGoToStory} />}
-    </ScrollView>
+      {showStoryGuide && <DiaryStoryGuide onGoToStory={onGoToStory} />}
+      </Animated.ScrollView>
+    </View>
   );
 }
 
@@ -5266,6 +5308,39 @@ function JournalScreen({ journal, active, onOpenDetail, onGoToStory, compareLast
 // 大きくなるが、その強弱は組版だけで語り、数値やバッジは出さない。
 // 対話ログがある日は意味の末尾に沈黙記号「···」を淡く添え、タップでその場に
 // 静かに展開する(離脱防止方針書 §05。モーダルへは遷移しない)。
+function JournalMonthSelector({ months, selectedMonthKey, onSelect }) {
+  const lang = useLang();
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.journalMonthSelector}
+      contentContainerStyle={styles.journalMonthSelectorContent}
+    >
+      {months.map((month) => {
+        const selected = month.monthKey === selectedMonthKey;
+        const label = formatLocalizedMonthLabel(month.monthKey, lang);
+        return (
+          <Pressable
+            key={month.monthKey}
+            onPress={() => onSelect(month.monthKey)}
+            accessibilityRole="tab"
+            accessibilityLabel={label}
+            accessibilityState={{ selected }}
+            style={({ pressed }) => [
+              styles.journalMonthTab,
+              selected && styles.journalMonthTabActive,
+              pressed && styles.touchPressedTight
+            ]}
+          >
+            <Text style={[styles.journalMonthTabText, selected && styles.journalMonthTabTextActive]}>{label}</Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
 function DiaryEntryRow({ entry, isCurrent }) {
   const [expanded, setExpanded] = useState(false);
   const t = useT();
@@ -5305,13 +5380,14 @@ function DiaryEntryRow({ entry, isCurrent }) {
       style={({ pressed }) => [styles.timelineItem, tierItem, hasLog && pressed && styles.touchPressedSubtle]}
       accessibilityRole={hasLog ? "button" : undefined}
       accessibilityState={hasLog ? { expanded } : undefined}
+      accessibilityLabel={hasLog ? [entry.dateLabel, entry.weekday, entry.meaning].filter(Boolean).join(" ") : undefined}
     >
       {isCurrent ? <DiaryBreathingDot /> : <View style={styles.timelineDot} />}
       <Animated.View style={[styles.timelineCopy, isCurrent && styles.timelineCopyCurrent, currentFloatStyle]}>
         {isCurrent && (
           <LinearGradient
             pointerEvents="none"
-            colors={["rgba(119,149,143,0.14)", "rgba(40,34,28,0.72)", "rgba(217,168,108,0.07)"]}
+            colors={["rgba(232,200,150,0.12)", "rgba(22,16,12,0.9)", "rgba(119,149,143,0.05)"]}
             locations={[0, 0.62, 1]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -5327,7 +5403,7 @@ function DiaryEntryRow({ entry, isCurrent }) {
         {!!entry.event && <Text style={styles.diaryEventText}>{entry.event}</Text>}
         <Text style={tierMeaning}>
           {entry.meaning}
-          {hasLog && <Text style={styles.diarySilenceMark}> ···</Text>}
+          {hasLog && <Text style={[styles.diarySilenceMark, expanded && styles.diarySilenceMarkDim]}> ···</Text>}
         </Text>
         {hasLog && expanded && <DiaryDialogueLog messages={logMessages} meaning={entry.meaning} />}
       </Animated.View>
@@ -5421,12 +5497,18 @@ function DiaryLastYearEcho({ entry, onOpenDetail }) {
     <Pressable
       onPress={() => onOpenDetail?.(entry)}
       accessibilityRole="button"
+      accessibilityLabel={[
+        entry.echoMode === "weeksAgo" ? t("journal.weeksAgoEchoLabel", entry.weeksAgo) : t("journal.lastYearEchoLabel"),
+        entry.dateLabel,
+        entry.meaning
+      ]
+        .filter(Boolean)
+        .join(" ")}
       style={({ pressed }) => [styles.diaryEchoCard, pressed && styles.touchPressedSubtle]}
-      accessibilityRole="button"
     >
       <LinearGradient
         pointerEvents="none"
-        colors={["rgba(119,149,143,0.16)", "rgba(217,168,108,0.055)", "rgba(246,239,228,0.02)"]}
+        colors={["rgba(119,149,143,0.22)", "rgba(24,38,45,0.2)", "rgba(217,168,108,0.09)"]}
         locations={[0, 0.62, 1]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -5501,6 +5583,7 @@ function DiaryMonthBand({ band, expanded, onToggle, onOpenDetail }) {
         style={({ pressed }) => [styles.diaryBandRow, expanded && styles.diaryBandRowOpen, pressed && styles.touchPressedSubtle]}
         accessibilityRole="button"
         accessibilityState={{ expanded }}
+        accessibilityLabel={`${band.label} ${band.entries.length}${t("journal.entriesUnitSuffix")}`}
       >
         <View style={[styles.diaryBandBar, { height: barHeight }, expanded && styles.diaryBandBarOpen]} />
         <View style={styles.diaryBandCopy}>
@@ -5516,6 +5599,7 @@ function DiaryMonthBand({ band, expanded, onToggle, onOpenDetail }) {
               onPress={() => onOpenDetail?.(entry)}
               style={({ pressed }) => [styles.diaryBandEntryRow, pressed && styles.touchPressedSubtle]}
               accessibilityRole="button"
+              accessibilityLabel={[entry.dateLabel, entry.meaning].filter(Boolean).join(" ")}
             >
               <Text style={styles.diaryBandEntryDate}>{entry.dateLabel}</Text>
               <Text style={styles.diaryBandEntryText}>{entry.meaning}</Text>
@@ -5534,6 +5618,7 @@ function DiaryStoryGuide({ onGoToStory }) {
       onPress={() => onGoToStory?.()}
       style={({ pressed }) => [styles.diaryStoryGuide, pressed && styles.touchPressedSubtle]}
       accessibilityRole="button"
+      accessibilityLabel={`${t("journal.storyGuideText")} ${t("journal.storyGuideLink")}`}
     >
       <LinearGradient
         pointerEvents="none"
@@ -6045,7 +6130,14 @@ function EntryDetailModal({ entry, onClose }) {
                 {isTonight && <Text style={styles.entryDetailTonight}>TONIGHT</Text>}
                 {isQuest && <Text style={styles.entryDetailQuestTag}>QUEST</Text>}
               </View>
-              <View style={styles.entryDetailRule} />
+              <LinearGradient
+                pointerEvents="none"
+                colors={["rgba(217,168,108,0)", "rgba(232,200,150,0.85)", "rgba(217,168,108,0)"]}
+                locations={[0, 0.5, 1]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.entryDetailRule}
+              />
             </RiseIn>
 
             <View style={styles.entryDetailDialogue}>
@@ -6077,12 +6169,22 @@ function EntryDetailModal({ entry, onClose }) {
               </View>
             )}
 
+            <View style={styles.entryDetailFooterRule} />
             <Text style={styles.entryDetailFooter}>{t("entryDetail.footer")}</Text>
           </ScrollView>
           <View pointerEvents="none" style={styles.entryDetailTopFade}>
             <LinearGradient colors={["rgba(16,12,9,0.92)", "rgba(16,12,9,0)"]} style={StyleSheet.absoluteFill} />
           </View>
-          <Pressable focusable={false} onPress={onClose} style={({ pressed }) => [styles.lifeQuestBack, pressed && styles.touchPressedTight]}>
+          <View pointerEvents="none" style={styles.entryDetailBottomFade}>
+            <LinearGradient colors={["rgba(16,12,9,0)", "rgba(16,12,9,0.9)"]} style={StyleSheet.absoluteFill} />
+          </View>
+          <Pressable
+            focusable={false}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel={t("common.back")}
+            style={({ pressed }) => [styles.lifeQuestBack, pressed && styles.touchPressedTight]}
+          >
             <Text style={styles.lifeQuestBackText}>‹</Text>
           </Pressable>
           <StatusBar barStyle="light-content" />
@@ -6316,21 +6418,8 @@ function EmptyState({ title, body }) {
   );
 }
 
-function TabBar({ activeTab, setActiveTab, hidden, opacity, unlocks }) {
+function TabBar({ activeTab, setActiveTab, hidden, unlocks }) {
   const tabs = getTabs(useLang());
-  // tabIn: the bar settles up into place once, as the night opens (prototype).
-  const entrance = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.timing(entrance, {
-      toValue: 1,
-      duration: 520,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true
-    }).start();
-  }, [entrance]);
-  const entranceTranslate = entrance.interpolate({ inputRange: [0, 1], outputRange: [12, 0] });
-  const composedOpacity = Animated.multiply(opacity, entrance);
-
   // Each tab's lift/scale animates in on every tab-button press.
   const tabAnim = useRef(tabs.map((tab) => new Animated.Value(tab.id === activeTab ? 1 : 0))).current;
   useEffect(() => {
@@ -6346,18 +6435,10 @@ function TabBar({ activeTab, setActiveTab, hidden, opacity, unlocks }) {
   }, [activeTab, tabAnim]);
 
   return (
-    <Animated.View
+    <View
       pointerEvents={hidden ? "none" : "auto"}
-      style={[styles.tabBar, { opacity: composedOpacity, transform: [{ translateY: entranceTranslate }] }]}
+      style={[styles.tabBar, hidden && styles.tabBarHidden]}
     >
-      <LinearGradient
-        pointerEvents="none"
-        colors={["rgba(6,4,3,0)", "rgba(4,3,2,0.92)", "#000000"]}
-        locations={[0, 0.28, 1]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-      />
       {tabs.map((tab, index) => {
         const isActive = activeTab === tab.id;
         const isUnlocked = unlocks?.[tab.id] !== false;
@@ -6389,6 +6470,7 @@ function TabBar({ activeTab, setActiveTab, hidden, opacity, unlocks }) {
               pointerEvents="none"
               style={[
                 styles.tabItemMotion,
+                tab.id === "journal" && styles.tabItemMotionJournal,
                 {
                   transform: [{ translateY: tabLift }, { scale: tabScale }]
                 }
@@ -6400,13 +6482,13 @@ function TabBar({ activeTab, setActiveTab, hidden, opacity, unlocks }) {
           </Pressable>
         );
       })}
-    </Animated.View>
+    </View>
   );
 }
 
 function TabIcon({ id, active, locked }) {
   const stroke = active ? "rgba(255,254,244,0.9)" : "rgba(246,239,228,0.62)";
-  const fill = active ? "rgba(232,200,150,0.32)" : "rgba(246,239,228,0.12)";
+  const fill = "none";
   const common = {
     stroke,
     strokeWidth: 1.4,
@@ -8076,6 +8158,39 @@ function getDiaryModel(journal, options = {}) {
   };
 }
 
+function getJournalMonthView(journal, options = {}) {
+  const source = getJournalDisplayEntries(journal, options.includeDemo ?? DEV_MODE);
+  const lang = normalizeLanguageCode(options.lang);
+  const entries = [...source]
+    .sort((a, b) => String(b.dateKey || "").localeCompare(String(a.dateKey || "")))
+    .map((entry, index) => normalizeDiaryEntry(entry, index, lang));
+  const currentMonth = new Date(`${getJournalDateKey()}T00:00:00`);
+  const oldestMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - (DIARY_ARCHIVE_MONTHS - 1), 1);
+  const currentMonthKey = toDateKey(currentMonth).slice(0, 7);
+  const oldestMonthKey = toDateKey(oldestMonth).slice(0, 7);
+  const monthMap = new Map();
+  let hasOlder = false;
+
+  entries.forEach((entry) => {
+    const monthKey = String(entry.dateKey || "").slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(monthKey)) return;
+    if (monthKey < oldestMonthKey) {
+      hasOlder = true;
+      return;
+    }
+    if (monthKey > currentMonthKey) return;
+    if (!monthMap.has(monthKey)) monthMap.set(monthKey, []);
+    monthMap.get(monthKey).push(entry);
+  });
+
+  return {
+    months: [...monthMap.entries()]
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([monthKey, monthEntries]) => ({ monthKey, entries: assignDiaryTiers(monthEntries) })),
+    hasOlder
+  };
+}
+
 // Chapters become full pages (1章＝1画面). Confirmed chapters from Nilo carry
 // only period/observation/people/emotions — every richer element renders only
 // when its data exists, so a sparse chapter stays quiet instead of empty.
@@ -8545,6 +8660,8 @@ const TOKENS = {
     goldDeep: "#b98a50",
     // sage 副アクセント
     sage: "rgba(119,149,143,1)",
+    sageBorder: "rgba(119,149,143,0.36)",
+    sageHairline: "rgba(119,149,143,0.18)",
     // ニュートラル / テキスト
     ink: "#f6efe4",
     inkSoft: "rgba(246,239,228,0.72)",
@@ -9869,9 +9986,7 @@ const baseStyleDefs = ({
   },
   tabBar: {
     alignSelf: "center",
-    backgroundColor: "rgba(255,254,244,0.105)",
-    borderColor: "rgba(255,254,244,0.22)",
-    borderTopWidth: 1,
+    backgroundColor: "transparent",
     bottom: 0,
     flexDirection: "row",
     gap: 2,
@@ -9882,10 +9997,6 @@ const baseStyleDefs = ({
     paddingTop: 7,
     position: "absolute",
     right: 0,
-    shadowColor: TOKENS.color.goldCore,
-    shadowOffset: { width: -8, height: -10 },
-    shadowOpacity: 0.08,
-    shadowRadius: 26,
     zIndex: 30
   },
   tabItem: {
@@ -11181,7 +11292,7 @@ const baseStyleDefs = ({
   },
   scrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(8,6,4,0.22)"
+    backgroundColor: "rgba(2,5,12,0.18)"
   },
   lowerGlowBase: {
     bottom: 0,
@@ -11249,10 +11360,12 @@ const baseStyleDefs = ({
     width: 38
   },
   settingsSunButton: {
-    right: 24
+    right: 24,
+    top: 52
   },
   notificationButton: {
-    right: 72
+    right: 72,
+    top: 52
   },
   notificationBellDot: {
     backgroundColor: "#E8B25E",
@@ -11356,6 +11469,14 @@ const baseStyleDefs = ({
     alignItems: "center",
     flex: 0,
     justifyContent: "flex-start"
+  },
+  homeDayCounter: {
+    color: "rgba(190,180,162,0.46)",
+    fontFamily: fontSerifJa,
+    fontSize: 13,
+    letterSpacing: 2.4,
+    marginBottom: 10,
+    textAlign: "center"
   },
   homeLeadText: {
     color: "rgba(190,180,162,0.72)",
@@ -11855,15 +11976,80 @@ const baseStyleDefs = ({
     fontFamily: fontSerifJa,
     fontSize: 13
   },
+  journalScreen: {
+    flex: 1,
+    overflow: "hidden",
+    position: "relative"
+  },
+  journalLunarWatermark: {
+    color: "rgba(217,168,108,0.07)",
+    fontFamily: fontSerifJa,
+    fontSize: 116,
+    letterSpacing: 8,
+    lineHeight: 130,
+    position: "absolute",
+    right: -22,
+    top: 34,
+    transform: [{ rotate: "-7deg" }],
+    zIndex: 0
+  },
+  journalMonthSelector: {
+    marginBottom: 12,
+    marginTop: -8
+  },
+  journalMonthSelectorContent: {
+    gap: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 2
+  },
+  journalMonthTab: {
+    alignItems: "center",
+    backgroundColor: "rgba(16,12,10,0.3)",
+    borderColor: "rgba(119,149,143,0.16)",
+    borderRadius: TOKENS.radius.pill,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 34,
+    outlineStyle: "none",
+    paddingHorizontal: 13,
+    paddingVertical: 7
+  },
+  journalMonthTabActive: {
+    backgroundColor: "rgba(119,149,143,0.15)",
+    borderColor: "rgba(196,218,207,0.5)"
+  },
+  journalMonthTabText: {
+    color: "rgba(200,207,194,0.56)",
+    fontFamily: fontSerifJa,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    lineHeight: 15
+  },
+  journalMonthTabTextActive: {
+    color: "rgba(232,226,214,0.94)",
+    fontFamily: fontSerifJaMedium
+  },
+  journalScroll: {
+    position: "relative",
+    zIndex: 1
+  },
   journalScrollContent: {
     paddingBottom: 118,
-    paddingHorizontal: 30,
-    paddingTop: 46
+    paddingHorizontal: TOKENS.space.xxl,
+    paddingTop: 38
   },
   journalHeader: {
-    marginBottom: 18,
+    borderBottomColor: "rgba(232,226,214,0.1)",
+    borderBottomWidth: 1,
+    marginBottom: 22,
     minHeight: 0,
+    overflow: "hidden",
+    paddingHorizontal: 4,
+    paddingTop: 8,
     position: "relative"
+  },
+  journalHeaderAura: {
+    ...StyleSheet.absoluteFillObject
   },
   journalHeaderTop: {
     alignItems: "flex-start",
@@ -11871,6 +12057,17 @@ const baseStyleDefs = ({
     justifyContent: "space-between",
     position: "relative",
     zIndex: 1
+  },
+  journalHeaderRule: {
+    backgroundColor: "rgba(119,149,143,0.18)",
+    height: 1,
+    marginTop: 17,
+    position: "relative",
+    zIndex: 1
+  },
+  journalHeaderRuleAccent: {
+    height: 1,
+    width: 72
   },
   journalTitleBlock: {
     flex: 1,
@@ -11893,66 +12090,22 @@ const baseStyleDefs = ({
   },
   journalMonthPill: {
     alignItems: "flex-end",
-    borderColor: "rgba(119,149,143,0.2)",
-    borderRadius: 8,
+    backgroundColor: "rgba(16,12,10,0.35)",
+    borderColor: "rgba(119,149,143,0.18)",
+    borderRadius: 999,
     borderWidth: 1,
     justifyContent: "center",
     minHeight: 34,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 6
   },
   journalMonth: {
     color: "rgba(200,207,194,0.58)",
     fontFamily: fontSerifEnMedium,
     fontSize: 11,
-    letterSpacing: 2,
+    letterSpacing: 2.4,
     lineHeight: 14,
     textAlign: "right"
-  },
-  journalWatermark: {
-    color: "rgba(119,149,143,0.07)",
-    fontFamily: fontSerifJa,
-    fontSize: 62,
-    lineHeight: 62,
-    position: "absolute",
-    right: -2,
-    top: 48
-  },
-  journalMetaRail: {
-    borderBottomColor: "rgba(232,226,214,0.08)",
-    borderBottomWidth: 1,
-    borderTopColor: "rgba(232,226,214,0.08)",
-    borderTopWidth: 1,
-    flexDirection: "row",
-    marginTop: 31,
-    paddingVertical: 12,
-    position: "relative",
-    zIndex: 1
-  },
-  journalMetaCell: {
-    flex: 1,
-    gap: 4
-  },
-  journalMetaCellMiddle: {
-    borderLeftColor: "rgba(232,226,214,0.08)",
-    borderLeftWidth: 1,
-    borderRightColor: "rgba(232,226,214,0.08)",
-    borderRightWidth: 1,
-    paddingHorizontal: 16
-  },
-  journalMetaLabel: {
-    color: "rgba(190,180,162,0.66)",
-    fontFamily: fontSerifJa,
-    fontSize: 10,
-    letterSpacing: 1.8,
-    lineHeight: 13
-  },
-  journalMetaValue: {
-    color: "rgba(232,226,214,0.86)",
-    fontFamily: fontSerifJaMedium,
-    fontSize: 16,
-    letterSpacing: 1,
-    lineHeight: 22
   },
   chapterWatermark: {
     bottom: 60,
@@ -11964,49 +12117,40 @@ const baseStyleDefs = ({
     right: -8
   },
   timeline: {
-    marginTop: 0,
-    paddingLeft: 26,
+    marginTop: 2,
+    paddingLeft: 30,
     position: "relative"
   },
   timelineLine: {
     bottom: 36,
-    left: 4,
+    left: 5.5,
     position: "absolute",
     top: 4,
-    width: 2
+    width: 1
   },
   timelineItem: {
     flexDirection: "row",
     gap: 0,
     marginBottom: 0,
     minHeight: 0,
-    paddingVertical: 16,
+    paddingVertical: 18,
     position: "relative"
   },
   timelineDot: {
-    backgroundColor: "rgba(217,168,108,0.6)",
+    backgroundColor: "rgba(217,168,108,0.7)",
     borderRadius: 999,
     height: 7,
-    left: -25,
+    left: -27.5,
     position: "absolute",
     top: 22,
     width: 7
-  },
-  timelineDotActive: {
-    backgroundColor: "rgba(242,200,142,0.98)",
-    height: 10,
-    left: -26,
-    shadowColor: TOKENS.color.gold,
-    shadowOpacity: 0.55,
-    shadowRadius: 14,
-    width: 10
   },
   // 「いま」の一点の呼吸するドット: 中心の芯と、その外に広がるハロー。
   diaryDotCurrentFrame: {
     alignItems: "center",
     height: 22,
     justifyContent: "center",
-    left: -33,
+    left: -35,
     position: "absolute",
     top: 15,
     width: 22
@@ -12039,20 +12183,21 @@ const baseStyleDefs = ({
     flex: 1,
     position: "relative"
   },
+  // 「いま」のカードは寒色を混ぜず、金と暖色ダークだけで語る（残響カードのsage寒色と対比）。
   timelineCopyCurrent: {
-    backgroundColor: "rgba(20,24,22,0.26)",
-    borderColor: "rgba(119,149,143,0.22)",
-    borderRadius: 8,
+    backgroundColor: "rgba(22,16,12,0.66)",
+    borderColor: "rgba(217,168,108,0.2)",
+    borderRadius: TOKENS.radius.card,
     borderWidth: 1,
-    marginLeft: -2,
-    marginTop: -6,
+    marginLeft: -4,
+    marginTop: -8,
     overflow: "hidden",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 17,
     shadowColor: "#000000",
     shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.25,
-    shadowRadius: 26
+    shadowOpacity: 0.26,
+    shadowRadius: 28
   },
   diaryCurrentWash: {
     ...StyleSheet.absoluteFillObject
@@ -12074,39 +12219,6 @@ const baseStyleDefs = ({
   },
   timelineDateActive: {
     color: "rgba(232,200,150,0.88)"
-  },
-  timelineTag: {
-    color: "rgba(232,200,150,0.78)",
-    fontFamily: fontSerifEn,
-    fontSize: 9,
-    letterSpacing: 2.16
-  },
-  timelineQuestTag: {
-    borderColor: "rgba(190,180,162,0.22)",
-    borderRadius: 18,
-    borderWidth: 1,
-    color: "rgba(190,180,162,0.66)",
-    fontFamily: fontSerifEn,
-    fontSize: 9,
-    letterSpacing: 1.8,
-    paddingHorizontal: 8,
-    paddingVertical: 2
-  },
-  timelineText: {
-    color: "rgba(236,230,218,0.94)",
-    fontFamily: fontSerifJa,
-    fontSize: 17,
-    fontWeight: "300",
-    letterSpacing: 0.3,
-    lineHeight: 30
-  },
-  timelineTextMuted: {
-    color: "rgba(232,226,214,0.6)",
-    fontFamily: fontSerifJa,
-    fontSize: 17,
-    fontWeight: "300",
-    letterSpacing: 0.3,
-    lineHeight: 30
   },
   storyScrollContent: {
     paddingBottom: 118,
@@ -12441,6 +12553,13 @@ const baseStyleDefs = ({
     right: 0,
     top: 0
   },
+  entryDetailBottomFade: {
+    bottom: 0,
+    height: 72,
+    left: 0,
+    position: "absolute",
+    right: 0
+  },
   entryDetailHeadRow: {
     alignItems: "baseline",
     flexDirection: "row",
@@ -12470,10 +12589,9 @@ const baseStyleDefs = ({
     paddingVertical: 2
   },
   entryDetailRule: {
-    backgroundColor: "rgba(217,168,108,0.4)",
     height: 1,
     marginTop: 8,
-    width: 46
+    width: 54
   },
   entryDetailDialogue: {
     marginTop: 34
@@ -12552,13 +12670,21 @@ const baseStyleDefs = ({
     lineHeight: 29,
     marginTop: 6
   },
+  // 「消せない」の一文の上に置く、儀式の締めの細いルール。
+  entryDetailFooterRule: {
+    alignSelf: "center",
+    backgroundColor: "rgba(217,168,108,0.35)",
+    height: 1,
+    marginTop: 46,
+    width: 28
+  },
   entryDetailFooter: {
     color: "rgba(190,180,162,0.66)",
     fontFamily: fontSerifJa,
     fontSize: 11,
     fontWeight: "300",
     letterSpacing: 1.76,
-    marginTop: 50,
+    marginTop: 16,
     textAlign: "center"
   },
   niloScreen: {
@@ -12569,7 +12695,7 @@ const baseStyleDefs = ({
   },
   niloScreenScrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(8,6,4,0.36)"
+    backgroundColor: "rgba(2,5,12,0.26)"
   },
   niloScreenSafe: {
     flex: 1
@@ -12833,14 +12959,6 @@ const baseStyleDefs = ({
     fontSize: 13,
     fontWeight: "600"
   },
-  screenBottomFade: {
-    bottom: 60,
-    height: 160,
-    left: 0,
-    position: "absolute",
-    right: 0,
-    zIndex: 20
-  },
   ritualBlackout: {
     backgroundColor: "#000000",
     bottom: 0,
@@ -12860,13 +12978,16 @@ const baseStyleDefs = ({
     height: 90,
     justifyContent: "space-around",
     left: 0,
-    overflow: "hidden",
+    overflow: "visible",
     paddingBottom: 0,
     paddingHorizontal: 12,
     paddingTop: 18,
     position: "absolute",
     right: 0,
     zIndex: 30
+  },
+  tabBarHidden: {
+    display: "none"
   },
   tabItem: {
     alignItems: "center",
@@ -12882,6 +13003,9 @@ const baseStyleDefs = ({
     minHeight: 40,
     minWidth: 54,
     position: "relative"
+  },
+  tabItemMotionJournal: {
+    top: 4
   },
   tabText: {
     color: "rgba(190,180,162,0.66)",
@@ -13369,11 +13493,11 @@ const baseStyleDefs = ({
     letterSpacing: 1
   },
   diaryNowLabel: {
-    backgroundColor: "rgba(119,149,143,0.16)",
-    borderColor: "rgba(119,149,143,0.28)",
-    borderRadius: 999,
+    backgroundColor: "rgba(217,168,108,0.12)",
+    borderColor: "rgba(217,168,108,0.3)",
+    borderRadius: TOKENS.radius.pill,
     borderWidth: 1,
-    color: "rgba(196,218,207,0.82)",
+    color: "rgba(238,206,156,0.9)",
     fontFamily: fontSerifJa,
     fontSize: 10,
     letterSpacing: 1.5,
@@ -13382,16 +13506,20 @@ const baseStyleDefs = ({
     paddingVertical: 2
   },
   diaryEchoCard: {
-    backgroundColor: "rgba(20,18,15,0.38)",
-    borderColor: "rgba(119,149,143,0.2)",
-    borderRadius: 8,
+    backgroundColor: "rgba(12,24,34,0.58)",
+    borderColor: TOKENS.color.sageBorder,
+    borderRadius: TOKENS.radius.card,
     borderWidth: 1,
-    marginBottom: 16,
-    marginTop: 6,
+    marginBottom: TOKENS.space.xl,
+    marginTop: 2,
     overflow: "hidden",
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    position: "relative"
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    position: "relative",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20
   },
   diaryEchoWash: {
     ...StyleSheet.absoluteFillObject
@@ -13429,23 +13557,17 @@ const baseStyleDefs = ({
     letterSpacing: 1,
     marginTop: 8
   },
-  diaryClosingLine: {
-    color: "rgba(205,191,168,0.42)",
-    fontFamily: fontSerifJa,
-    fontSize: 12,
-    letterSpacing: 1,
-    lineHeight: 24,
-    marginTop: 44,
-    paddingHorizontal: 4,
-    textAlign: "center"
+  // 対話ログを開いている間、沈黙記号は息をひそめる。
+  diarySilenceMarkDim: {
+    opacity: 0.25
   },
   diarySilenceMark: {
-    color: "rgba(205,191,168,0.32)",
+    color: "rgba(205,191,168,0.42)",
     fontSize: 13,
     letterSpacing: 2
   },
   diaryLog: {
-    borderLeftColor: "rgba(119,149,143,0.18)",
+    borderLeftColor: TOKENS.color.sageHairline,
     borderLeftWidth: 1,
     gap: 14,
     marginTop: 18,
@@ -13493,9 +13615,9 @@ const baseStyleDefs = ({
   diaryMeaningStrong: {
     color: "rgba(240,234,222,0.98)",
     fontFamily: fontSerifJaMedium,
-    fontSize: 21,
+    fontSize: 20,
     letterSpacing: 0.6,
-    lineHeight: 36
+    lineHeight: 35
   },
   diaryItemQuiet: {
     paddingVertical: 12
@@ -13508,7 +13630,7 @@ const baseStyleDefs = ({
   },
   diaryQuestLabel: {
     backgroundColor: "rgba(217,168,108,0.08)",
-    borderColor: "rgba(217,168,108,0.16)",
+    borderColor: "rgba(217,168,108,0.22)",
     borderRadius: 999,
     borderWidth: 1,
     color: "rgba(222,190,144,0.62)",
@@ -13519,44 +13641,47 @@ const baseStyleDefs = ({
     paddingHorizontal: 8,
     paddingVertical: 2
   },
-  diaryDotCurrent: {
-    backgroundColor: "rgba(242,200,142,0.98)",
-    height: 9,
-    left: -26,
-    top: 21,
-    width: 9
-  },
   diaryEmptyRecent: {
-    color: "rgba(205,191,168,0.5)",
+    color: "rgba(205,191,168,0.55)",
     fontFamily: fontSerifJa,
     fontSize: 13,
     letterSpacing: 0.6,
     lineHeight: 24,
-    paddingVertical: 18
+    paddingTop: 4
   },
   diaryBandFirstGlow: {
     backgroundColor: "rgba(217,168,108,0.09)",
-    borderRadius: 16
+    borderRadius: TOKENS.radius.card
   },
   diaryBandRow: {
     alignItems: "center",
-    borderBottomColor: "rgba(232,226,214,0.055)",
-    borderBottomWidth: 1,
+    backgroundColor: "rgba(12,24,34,0.38)",
+    borderColor: "rgba(232,226,214,0.09)",
+    borderRadius: TOKENS.radius.card,
+    borderWidth: 1,
     flexDirection: "row",
     gap: 16,
+    marginTop: 10,
     minHeight: 48,
-    paddingRight: 2,
-    paddingVertical: 12,
-    position: "relative"
+    paddingHorizontal: 14,
+    paddingLeft: 24,
+    paddingVertical: 13,
+    position: "relative",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12
   },
   diaryBandRowOpen: {
-    borderBottomColor: "rgba(119,149,143,0.16)"
+    backgroundColor: "rgba(12,24,34,0.58)",
+    borderColor: TOKENS.color.sageBorder
   },
   diaryBandBar: {
     backgroundColor: "rgba(119,149,143,0.32)",
     borderRadius: 2,
-    left: -27,
+    left: 10,
     position: "absolute",
+    top: 10,
     width: 3
   },
   diaryBandBarOpen: {
@@ -13592,9 +13717,10 @@ const baseStyleDefs = ({
     width: 24
   },
   diaryBandEntryRow: {
-    borderBottomColor: "rgba(232,226,214,0.045)",
+    borderBottomColor: "rgba(232,226,214,0.06)",
     borderBottomWidth: 1,
-    marginLeft: 4,
+    marginLeft: 18,
+    marginRight: 8,
     paddingBottom: 13,
     paddingLeft: 12,
     paddingTop: 12
@@ -13615,11 +13741,11 @@ const baseStyleDefs = ({
     lineHeight: 24
   },
   diaryStoryGuide: {
-    backgroundColor: "rgba(20,18,15,0.34)",
-    borderColor: "rgba(119,149,143,0.18)",
-    borderRadius: 8,
+    backgroundColor: "rgba(12,24,34,0.28)",
+    borderColor: TOKENS.color.sageHairline,
+    borderRadius: TOKENS.radius.card,
     borderWidth: 1,
-    marginTop: 26,
+    marginTop: TOKENS.space.xxl,
     overflow: "hidden",
     paddingHorizontal: 20,
     paddingVertical: 18,
